@@ -1,0 +1,46 @@
+# Placeholders. In a real deployment these resolve to actual Slack handles,
+# emails, or other destination identifiers via Fulfil's identity provider.
+
+people:
+  "@eng-lead":
+    name: "Lead Engineer, Commerce Core"
+    slack: "@eng-lead"
+    email: "engineering-lead@fulfil.io"
+  "@integrations-lead":
+    name: "Lead Engineer, Integration Platform"
+    slack: "@integrations-lead"
+    email: "integrations@fulfil.io"
+  "@ai-lead":
+    name: "AI / MCP Lead"
+    slack: "@ai-lead"
+    email: "ai@fulfil.io"
+    notes: "Owns Claude integration, MCP server, AI-SQL features."
+  "@product-lead":
+    name: "Head of Product"
+    slack: "@product-lead"
+    email: "product@fulfil.io"
+  "@billing-ops":
+    name: "Billing Ops"
+    slack: "@billing-ops"
+    email: "billing@fulfil.io"
+  "@merchant-success-lead":
+    name: "Head of Merchant Success"
+    slack: "@merchant-success"
+    email: "merchant-success@fulfil.io"
+
+channels:
+  "#triage":
+    slack_channel: "#resound-triage"
+    description: "Default landing zone for routed signals."
+  "#exec-incidents":
+    slack_channel: "#exec-incidents"
+    description: "ST + co-founders + on-call eng lead. Outages and critical PR."
+  "#eng-bugs":
+    slack_channel: "#eng-bugs"
+    description: "Engineering bug triage queue."
+  "#gtm-watch":
+    slack_channel: "#gtm-watch"
+    description: "GTM / marketing team watches competitor and positioning signals."
+  "#review-queue":
+    slack_channel: "#resound-review"
+    description: "Low-confidence signals for human review before routing."

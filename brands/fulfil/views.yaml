@@ -1,0 +1,28 @@
+saved_views:
+  - name: "Critical this week"
+    filters:
+      severity: ["critical"]
+    period_days: 7
+  - name: "Engineering bugs trending"
+    filters:
+      area: ["engineering"]
+      severity: ["medium", "high", "critical"]
+    period_days: 30
+  - name: "Competitor mentions (NetSuite, Brightpearl, Cin7)"
+    filters:
+      area: ["marketing"]
+    period_days: 30
+  - name: "Claude / MCP signals"
+    filters:
+      area: ["engineering"]
+      subarea: ["mcp", "claude_integration"]
+    period_days: 60
+  - name: "Implementation friction"
+    filters:
+      area: ["cs"]
+    period_days: 30
+
+alert_thresholds:
+  critical_per_day: 2          # >2 critical in 24h pages exec
+  area_spike_factor: 3.0       # any area 3x its 7-day avg → alert
+  shopify_integration_breakage: 1   # any Shopify integration signal at >=high pages integrations-lead

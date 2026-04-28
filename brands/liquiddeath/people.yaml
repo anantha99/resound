@@ -1,0 +1,33 @@
+people:
+  "@billing-lead":
+    name: "Billing Lead"
+    slack: "@U01BILLING"
+    email: "billing@example.com"
+  "@retail-ops":
+    name: "Retail Ops"
+    slack: "@U01RETAIL"
+    email: "retail@example.com"
+  "@product-pm":
+    name: "Product PM"
+    slack: "@U01PM"
+    email: "product@example.com"
+
+channels:
+  "#triage":
+    slack_channel: "#resound-triage"
+    description: "Default landing zone for routed signals."
+  "#exec-pr":
+    slack_channel: "#exec-pr"
+    description: "Exec + comms team. Critical / PR-sensitive only."
+  "#cs-team":
+    slack_channel: "#cs-incoming"
+    description: "Customer service queue."
+  "#eng-bugs":
+    slack_channel: "#eng-bugs"
+    description: "Engineering bug triage."
+  "#marketing-watch":
+    slack_channel: "#marketing-watch"
+    description: "Marketing FYI feed."
+  "#review-queue":
+    slack_channel: "#resound-review"
+    description: "Low-confidence signals for human review before routing."

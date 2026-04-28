@@ -1,0 +1,50 @@
+default_route: "#triage"
+
+rules:
+  - name: "critical_pr_risk"
+    when:
+      severity: "critical"
+    route_to: "#exec-pr"
+    priority: "immediate"
+    notes: "Anything critical — comms team triages first."
+
+  - name: "billing_high"
+    when:
+      area: "billing"
+      severity: ">=high"
+    route_to: "@billing-lead"
+    priority: "immediate"
+
+  - name: "cs_damaged_shipment"
+    when:
+      area: "cs"
+      action_class: "sprint"
+    route_to: "#cs-team"
+
+  - name: "ops_retail_availability"
+    when:
+      area: "ops"
+    route_to: "@retail-ops"
+
+  - name: "product_roadmap_input"
+    when:
+      area: "product"
+      action_class: "roadmap"
+    route_to: "@product-pm"
+
+  - name: "engineering_bugs"
+    when:
+      area: "engineering"
+      severity: ">=medium"
+    route_to: "#eng-bugs"
+
+  - name: "marketing_fyi"
+    when:
+      area: "marketing"
+    route_to: "#marketing-watch"
+
+  - name: "low_confidence_review_queue"
+    when:
+      confidence: "<0.5"
+    route_to: "#review-queue"
+    notes: "Classifier was unsure — human reviews before routing."

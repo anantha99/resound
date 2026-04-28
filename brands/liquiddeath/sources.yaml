@@ -1,0 +1,20 @@
+reddit:
+  enabled: true
+  subreddits:
+    - liquiddeath
+  search_terms:
+    - "liquid death"
+    - "liquiddeath"
+  limit: 25
+
+g2:
+  enabled: false  # not relevant for a DTC beverage brand
+  product_slug: ""
+
+twitter:
+  enabled: false  # turn on once TWITTER_BEARER_TOKEN is set
+  handles:
+    - "@LiquidDeath"
+  search_terms:
+    - "liquid death"
+  limit: 50

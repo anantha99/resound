@@ -1,0 +1,71 @@
+default_route: "#triage"
+
+rules:
+  - name: "outage_or_critical"
+    when:
+      severity: "critical"
+    route_to: "#exec-incidents"
+    priority: "immediate"
+    notes: "Outages, security, viral PR. Pages exec + eng leadership."
+
+  - name: "engineering_high_severity"
+    when:
+      area: "engineering"
+      severity: ">=high"
+    route_to: "@eng-lead"
+    priority: "immediate"
+
+  - name: "engineering_bugs_general"
+    when:
+      area: "engineering"
+      severity: ">=medium"
+    route_to: "#eng-bugs"
+
+  - name: "shopify_integration_specific"
+    when:
+      area: "engineering"
+      subarea: "shopify_integration"
+    route_to: "@integrations-lead"
+
+  - name: "claude_mcp_signals"
+    when:
+      area: "engineering"
+      subarea: ["mcp", "claude_integration"]
+    route_to: "@ai-lead"
+    notes: "AI surface is a strategic moat — surface every signal."
+
+  - name: "product_roadmap_input"
+    when:
+      area: "product"
+      action_class: "roadmap"
+    route_to: "@product-lead"
+
+  - name: "product_feature_complaints"
+    when:
+      area: "product"
+      sentiment: "negative"
+    route_to: "@product-lead"
+
+  - name: "billing_issues"
+    when:
+      area: "billing"
+    route_to: "@billing-ops"
+    priority: "immediate"
+
+  - name: "implementation_cs"
+    when:
+      area: "cs"
+    route_to: "@merchant-success-lead"
+
+  - name: "competitive_mentions"
+    when:
+      area: "marketing"
+      sentiment: ["positive", "mixed", "negative"]
+    route_to: "#gtm-watch"
+    notes: "Track every competitor comparison; ST cares about GTM positioning."
+
+  - name: "low_confidence_review_queue"
+    when:
+      confidence: "<0.5"
+    route_to: "#review-queue"
+    notes: "Classifier was unsure — human review before routing."

@@ -1,0 +1,27 @@
+reddit:
+  enabled: true
+  subreddits:
+    - shopify
+    - ecommerce
+    - smallbusiness
+    - amazonfba
+  search_terms:
+    - "fulfil.io"
+    - "fulfil erp"
+    - "fulfil io"
+  limit: 25
+
+g2:
+  enabled: true
+  product_slug: "fulfil"
+  max_pages: 2
+  throttle_seconds: 2
+
+twitter:
+  enabled: false  # turn on once TWITTER_BEARER_TOKEN is set
+  handles:
+    - "@fulfilio"
+  search_terms:
+    - "fulfil.io"
+    - "@fulfilio"
+  limit: 50
