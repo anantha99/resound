@@ -1,0 +1,53 @@
+# =============================================================================
+# Resound LLM Model Configuration — Global Defaults
+# =============================================================================
+# Each stage uses a specific model tuned to its latency/cost/capability needs.
+# These are DEMO-PROVISIONAL models (per design decision #17) — suitable for
+# development and early demos; revisit at demo time against current top-tier
+# efficient + cheap picks on OpenRouter.
+#
+# Stage purposes:
+#   filter             - Fast cheap triage; ~70% of signals rejected here (5s cap)
+#   classify           - Deep classification + full taxonomy extraction (30s cap)
+#   routing_tiebreaker - LLM fallback when no rule matches and confidence is low
+#   memory_query       - Natural-language → structured filter translation
+#
+# Brand override semantics: brands/<slug>/models.yaml may override any stage.
+# Field-level merge over these defaults; list fields (fallbacks) replace whole.
+# See docs/design_decisions.md decisions #15-17.
+# =============================================================================
+
+defaults:
+  filter:
+    model: openai/gpt-4.1-mini
+    temperature: 0.0
+    max_tokens: 64
+    timeout_s: 5
+    fallbacks:
+      - anthropic/claude-haiku-4-5
+      - google/gemini-2.0-flash
+
+  classify:
+    model: anthropic/claude-sonnet-4-6
+    temperature: 0.1
+    max_tokens: 1024
+    timeout_s: 30
+    fallbacks:
+      - openai/gpt-4.1
+      - google/gemini-2.5-pro
+
+  routing_tiebreaker:
+    model: openai/gpt-4.1-mini
+    temperature: 0.0
+    max_tokens: 128
+    timeout_s: 10
+    fallbacks:
+      - anthropic/claude-haiku-4-5   # OpenAI-hiccup insurance
+
+  memory_query:
+    model: openai/gpt-4.1-mini
+    temperature: 0.0
+    max_tokens: 256
+    timeout_s: 10
+    fallbacks:
+      - anthropic/claude-haiku-4-5   # OpenAI-hiccup insurance
