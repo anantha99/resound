@@ -7,9 +7,10 @@ single-responsibility and substitutable.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
-from resound.classifiers import ClaudeClassifier
+from resound.classifiers import build_classifier, make_fallback_classification
 from resound.config import BrandConfig
 from resound.core.classifier import Classifier
 from resound.core.feedback import FeedbackChannel
@@ -17,7 +18,13 @@ from resound.core.memory import Memory
 from resound.core.router import Router
 from resound.core.source import SourceAdapter
 from resound.feedback import FileFeedback
+from resound.gateway import (
+    LLMGatewayAuthError,
+    LLMGatewayConfigError,
+    LLMGatewayError,
+)
 from resound.memory import SqlMemory
+from resound.prompts.classify import build_classify_prompt
 from resound.routers import RulesRouter
 from resound.sources import build_sources
 
@@ -48,7 +55,7 @@ class Pipeline:
     ):
         self.brand = brand
         self.sources = sources if sources is not None else build_sources(brand.slug, brand.sources)
-        self.classifier = classifier or ClaudeClassifier()
+        self.classifier = classifier or build_classifier(brand.slug)
         self.router = router or RulesRouter(brand.routing, brand.people)
         self.memory = memory or SqlMemory()
         self.feedback = feedback or FileFeedback(brand.slug)
@@ -75,13 +82,51 @@ class Pipeline:
                 stats.new += 1
                 signal_id = self.memory.record_signal(self.brand.slug, raw)
 
+                # Pre-build the prompt: needed by both success-path
+                # record_llm_call and failure-path record_llm_failure.
+                prompt = build_classify_prompt(raw, self.brand.understanding)
+                t0 = time.perf_counter()
+
                 try:
-                    classification = self.classifier.classify(raw, self.brand.understanding)
-                except Exception:
-                    logger.exception("Classifier failed on signal %s", key)
+                    classification, response = self.classifier.classify(
+                        raw, self.brand.understanding
+                    )
+                    self.memory.record_llm_call(
+                        brand_slug=self.brand.slug,
+                        signal_id=signal_id,
+                        stage="classify",
+                        prompt=prompt,
+                        response=response,
+                        was_fallback=response.was_fallback,
+                        attempt_count=response.attempt_count,
+                    )
+                    stats.classified += 1
+                except (LLMGatewayConfigError, LLMGatewayAuthError):
+                    # FATAL per design #14 — operator must fix config/credentials.
+                    raise
+                except LLMGatewayError as exc:
+                    self.memory.record_llm_failure(
+                        brand_slug=self.brand.slug,
+                        signal_id=signal_id,
+                        stage="classify",
+                        prompt=prompt,
+                        error=exc,
+                        latency_ms=(time.perf_counter() - t0) * 1000.0,
+                        attempt_count=getattr(exc, "attempts", 1),
+                    )
+                    classification = make_fallback_classification(
+                        f"{type(exc).__name__}: {exc}"
+                    )
                     stats.errors += 1
-                    continue
-                stats.classified += 1
+                except Exception as exc:
+                    # Backstop for unforeseen bugs. No properly-formed
+                    # LLMGatewayError to record, so no audit row written.
+                    logger.exception("Unexpected classifier failure on signal %s", key)
+                    classification = make_fallback_classification(
+                        f"unexpected: {type(exc).__name__}"
+                    )
+                    stats.errors += 1
+
                 cls_id = self.memory.record_classification(signal_id, classification)
 
                 route = self.router.route(raw, classification)

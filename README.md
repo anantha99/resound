@@ -2,13 +2,31 @@
 
 A customer-signal intelligence layer. Resound ingests every public touchpoint about a brand — reviews, social posts, forum discussions — classifies and diagnoses each signal, and routes it to the single internal owner who can act on it. Every signal, route, and outcome accumulates in an append-only memory layer that becomes the brand's living database of customer voice.
 
-> **Status:** v1. Reddit + G2 + Twitter ingestion, Claude classification, rules-based routing, file feedback, Streamlit dashboard. Two brand bundles ship: `liquiddeath` (DTC consumer demo) and `fulfil` (B2B SaaS — the pitch artifact).
+> **Status:** v1. Reddit + G2 + Twitter ingestion, OpenRouter-backed classification, rules-based routing, file feedback, Streamlit dashboard. Two brand bundles ship: `liquiddeath` (DTC consumer demo) and `fulfil` (B2B SaaS — the pitch artifact).
 
 See [`docs/PRD.md`](docs/PRD.md) for the full product spec.
 
 ## Architecture in one sentence
 
 Five modular layers — Source → Classifier → Router → Memory → Feedback — each defined by an ABC, each pluggable per brand via six configuration files in `brands/<slug>/`.
+
+```mermaid
+flowchart LR
+    SOURCES["🌐 Public sources<br/>Reddit · G2 · Twitter"]
+    CLASSIFY["🧠 Classify<br/>(LLM via OpenRouter)"]
+    ROUTE["🎯 Route<br/>(rules + tiebreaker)"]
+    OWNER["👤 Right owner<br/>PM · CS · Eng"]
+    MEMORY[("📚 Memory<br/>append-only")]
+    DASH["📊 Dashboard"]
+
+    SOURCES --> CLASSIFY --> ROUTE --> OWNER
+    CLASSIFY -.-> MEMORY
+    ROUTE -.-> MEMORY
+    OWNER -. feedback .-> MEMORY
+    MEMORY --> DASH
+```
+
+A signal flows left-to-right: ingested from a public source, classified by an LLM, routed to the one person who can act, with everything written to memory along the way. The dashboard reads memory; feedback from the owner flows back in.
 
 ```
 brands/<slug>/
@@ -41,9 +59,11 @@ cp .env.example .env
 
 Fill in:
 
-- `ANTHROPIC_API_KEY` — required.
+- `OPENROUTER_API_KEY` — required. One key gives access to ~300 models (Claude, Gemini, GPT, DeepSeek, Llama, etc.). Get from https://openrouter.ai/keys.
 - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` — for the Reddit adapter. Get from https://www.reddit.com/prefs/apps (script-type app, takes 2 minutes).
 - `TWITTER_BEARER_TOKEN` — only if you enable the Twitter source (stub in v1).
+
+Model selection lives in [`config/models.yaml`](config/models.yaml) with optional per-brand overrides at `brands/<slug>/models.yaml`. Browse the OpenRouter catalog at https://openrouter.ai/models. See [`docs/design_decisions.md`](docs/design_decisions.md) for the merge semantics.
 
 ### 3. Verify the brand bundle
 
@@ -68,7 +88,7 @@ resound poll-once --brand fulfil
 resound run --brand fulfil --interval-seconds 300
 ```
 
-The first run will hit the Reddit API, classify each new post via Claude, route per the rules, and write everything to:
+The first run will hit the Reddit API, classify each new post via the configured OpenRouter model, route per the rules, and write everything to:
 
 - `data/resound.db` — SQLite memory layer
 - `data/routes/liquiddeath/<date>.jsonl` — file feedback log
@@ -114,7 +134,7 @@ resound/
 ├── src/resound/
 │   ├── core/               # the five ABCs
 │   ├── sources/            # ingestion adapters (reddit + stubs)
-│   ├── classifiers/        # Claude classifier
+│   ├── classifiers/        # OpenRouter classifier
 │   ├── routers/            # rules-based router with predicate DSL
 │   ├── memory/             # SQLAlchemy-backed Memory
 │   ├── feedback/           # file-based feedback channel
@@ -129,7 +149,7 @@ resound/
 
 ## Roadmap
 
-- **v1** ✅: Reddit + G2 + Twitter sources, Claude classifier, rules router, file feedback, dashboard. Two brand bundles (`liquiddeath`, `fulfil`).
+- **v1** ✅: Reddit + G2 + Twitter sources, OpenRouter classifier, rules router, file feedback, dashboard. Two brand bundles (`liquiddeath`, `fulfil`).
 - **v1.1**: Slack feedback channel; cross-source deduplication (catch the same complaint surfacing across Reddit + Twitter + G2).
 - **v2**: Learned routing (use feedback events to adjust rule confidence over time); LLM-assisted brand onboarding (auto-draft `understanding.md` from the brand's help docs); outcome tracking (did the complaint pattern stop after the action shipped?).
 - **v3**: Multi-tenant deployment; customer-facing portal where merchants see their own routed signals (the Fulfil-customer extension angle).

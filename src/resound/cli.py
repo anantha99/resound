@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.table import Table
 
 from resound.config import env, load_brand_config
+from resound.gateway import load_models_config
 from resound.pipeline import Pipeline
 
 app = typer.Typer(add_completion=False, help="Resound — voice-of-customer routing.")
@@ -84,10 +85,26 @@ def healthcheck(
     console.print(f"  channel entries: {len(cfg.people.get('channels', {}))}")
     console.print(f"  understanding doc: {len(cfg.understanding)} chars")
 
-    if not env("ANTHROPIC_API_KEY"):
-        console.print("[red]✗ ANTHROPIC_API_KEY not set[/]")
+    global_cfg = load_models_config(brand_slug=None)
+    brand_cfg = load_models_config(brand_slug=brand)
+    classify = brand_cfg.get_stage_config("classify")
+    global_classify_model = global_cfg.get_stage_config("classify").model
+
+    if classify.model != global_classify_model:
+        source = f"brand override (brands/{brand}/models.yaml)"
     else:
-        console.print("[green]✓ ANTHROPIC_API_KEY set[/]")
+        source = "config/models.yaml (global default)"
+
+    console.print(f"  classify model: {classify.model}")
+    console.print(f"    source: {source}")
+    fallback_str = ", ".join(classify.fallbacks) if classify.fallbacks else "(none)"
+    console.print(f"    fallbacks: {fallback_str}")
+    console.print(f"    timeout: {classify.timeout_s}s")
+
+    if not env("OPENROUTER_API_KEY"):
+        console.print("[red]✗ OPENROUTER_API_KEY not set[/]")
+    else:
+        console.print("[green]✓ OPENROUTER_API_KEY set[/]")
 
 
 @app.command()

@@ -601,6 +601,7 @@ class TestExports:
         "LLMGateway", "LLMResponse", "OpenRouterGateway",
         "load_models_config", "StageConfig", "ModelsConfig",
         "build_gateway",
+        "JSON_MODE",
         "LLMGatewayError", "LLMGatewayConfigError", "LLMGatewayAuthError",
         "LLMGatewayExhaustedError", "LLMGatewayTimeoutError",
         "LLMGatewayParseError",

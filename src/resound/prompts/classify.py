@@ -68,8 +68,13 @@ URL: {url}
 Now classify this signal. Return only the JSON object."""
 
 
-def build_classify_messages(raw: RawSignal, brand_context: str) -> tuple[str, list[dict]]:
-    """Return (system_prompt, messages) ready for the Anthropic SDK."""
+def build_classify_prompt(raw: RawSignal, brand_context: str) -> str:
+    """Return the single-string classify prompt sent through the gateway.
+
+    Joins the system framing and the signal block with ``\\n\\n---\\n\\n``.
+    The same string is used by ``Pipeline`` for the audit row and by
+    ``OpenRouterClassifier`` for the gateway call, so the two cannot drift.
+    """
     system = CLASSIFY_PROMPT_V1.format(brand_context=brand_context or "(no additional context)")
     user = SIGNAL_TEMPLATE.format(
         source=raw.source,
@@ -78,4 +83,4 @@ def build_classify_messages(raw: RawSignal, brand_context: str) -> tuple[str, li
         url=raw.url or "(no url)",
         content=raw.content,
     )
-    return system, [{"role": "user", "content": user}]
+    return f"{system}\n\n---\n\n{user}"

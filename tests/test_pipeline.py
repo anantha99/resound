@@ -6,12 +6,20 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from resound.config import BrandConfig
 from resound.core.classifier import Classifier
 from resound.core.feedback import FeedbackChannel
 from resound.core.source import SourceAdapter
-from resound.memory import SqlMemory
+from resound.gateway import (
+    LLMGatewayAuthError,
+    LLMGatewayConfigError,
+    LLMGatewayExhaustedError,
+    LLMResponse,
+)
+from resound.memory import LLMCallRow, SqlMemory
 from resound.models import (
     ActionClass,
     Classification,
@@ -37,14 +45,53 @@ class FakeSource(SourceAdapter):
         return list(self._signals)
 
 
+def _fake_response(model: str = "fake/test") -> LLMResponse:
+    return LLMResponse(
+        content="{}",
+        model_used=model,
+        tokens_in=10,
+        tokens_out=20,
+        cost_usd=0.0001,
+        latency_ms=5.0,
+        raw_response={},
+        was_fallback=False,
+        attempt_count=1,
+    )
+
+
 class FakeClassifier(Classifier):
-    def __init__(self, fixed: Classification):
+    def __init__(
+        self,
+        fixed: Classification | None = None,
+        raise_exc: Exception | None = None,
+    ):
         self.fixed = fixed
+        self.raise_exc = raise_exc
         self.calls = 0
 
-    def classify(self, raw: RawSignal, brand_context: str) -> Classification:
+    def classify(
+        self, raw: RawSignal, brand_context: str
+    ) -> tuple[Classification, LLMResponse]:
         self.calls += 1
-        return self.fixed
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        assert self.fixed is not None
+        return self.fixed, _fake_response()
+
+
+class _RotatingClassifier(Classifier):
+    """Returns each result from `results` in order. Raises if the entry is an Exception."""
+
+    def __init__(self, results: list):
+        self.results = list(results)
+        self.idx = 0
+
+    def classify(self, raw: RawSignal, brand_context: str):
+        result = self.results[self.idx]
+        self.idx += 1
+        if isinstance(result, Exception):
+            raise result
+        return result, _fake_response()
 
 
 class CapturingFeedback(FeedbackChannel):
@@ -214,3 +261,228 @@ def test_pipeline_dedupes_on_second_run(brand, memory):
     assert s1.new == 1
     assert s2.new == 0
     assert classifier.calls == 1  # second run hit dedup
+
+
+# ---- three-tier exception backstop + audit-write tests (subtask 9.5/9.7) ----
+
+
+def _llm_call_rows(memory: SqlMemory) -> list[LLMCallRow]:
+    with Session(memory.engine) as s:
+        return list(s.execute(select(LLMCallRow)).scalars())
+
+
+def test_pipeline_writes_llm_call_on_success(brand, memory):
+    fixed = _classification(area="cs", sev=Severity.MEDIUM)
+    classifier = FakeClassifier(fixed=fixed)
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s1")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    pipe.run_once()
+    rows = _llm_call_rows(memory)
+    assert len(rows) == 1
+    assert rows[0].stage == "classify"
+    assert rows[0].success is True
+    assert rows[0].signal_id is not None
+
+
+def test_pipeline_writes_llm_failure_on_exhausted_error(brand, memory):
+    classifier = FakeClassifier(
+        raise_exc=LLMGatewayExhaustedError("all retries spent", attempts=3)
+    )
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s2")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    stats = pipe.run_once()
+    rows = [r for r in _llm_call_rows(memory) if r.success is False]
+    assert len(rows) == 1
+    assert rows[0].error_class == "LLMGatewayExhaustedError"
+    assert rows[0].attempt_count == 3
+    assert stats.errors == 1
+    assert stats.classified == 0
+
+
+def test_pipeline_substitutes_stub_on_exhausted_error(brand, memory):
+    classifier = FakeClassifier(
+        raise_exc=LLMGatewayExhaustedError("retries spent", attempts=3)
+    )
+    feedback = CapturingFeedback()
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s3")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=feedback,
+    )
+    pipe.run_once()
+    # Stub Classification → ignored_by_classifier → no feedback fired.
+    assert len(feedback.routes) == 0
+    # But signal/classification/route rows still exist (stub-as-data).
+    with Session(memory.engine) as s:
+        from resound.memory import ClassificationRow
+        cls_count = s.query(ClassificationRow).count()
+    assert cls_count == 1
+
+
+def test_pipeline_propagates_config_error_as_fatal(brand, memory):
+    classifier = FakeClassifier(raise_exc=LLMGatewayConfigError("bad models.yaml"))
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s4")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    with pytest.raises(LLMGatewayConfigError):
+        pipe.run_once()
+
+
+def test_pipeline_propagates_auth_error_as_fatal(brand, memory):
+    classifier = FakeClassifier(raise_exc=LLMGatewayAuthError("401"))
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s5")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    with pytest.raises(LLMGatewayAuthError):
+        pipe.run_once()
+
+
+def test_pipeline_substitutes_stub_on_unexpected_exception_no_audit(brand, memory):
+    classifier = FakeClassifier(raise_exc=KeyError("unexpected internal bug"))
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s6")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    stats = pipe.run_once()
+    assert stats.errors == 1
+    # No audit row — broad except path doesn't write llm_calls.
+    assert len(_llm_call_rows(memory)) == 0
+
+
+def test_pipeline_stub_routes_as_ignored_by_classifier(brand, memory):
+    classifier = FakeClassifier(raise_exc=LLMGatewayExhaustedError("x", attempts=1))
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="s7")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    stats = pipe.run_once()
+    assert stats.ignored == 1
+    assert stats.routed == 0
+
+
+def test_pipeline_stats_classified_only_increments_on_success(brand, memory):
+    fixed = _classification(area="cs", sev=Severity.MEDIUM)
+    classifier = _RotatingClassifier(
+        results=[fixed, LLMGatewayExhaustedError("x", attempts=2)]
+    )
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="ok"), _signal(sid="bad")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    stats = pipe.run_once()
+    assert stats.classified == 1  # only the successful one
+    assert stats.errors == 1
+
+
+def test_pipeline_one_failure_does_not_block_other_signals(brand, memory):
+    fixed = _classification(area="cs", sev=Severity.MEDIUM)
+    classifier = _RotatingClassifier(
+        results=[LLMGatewayExhaustedError("x", attempts=1), fixed]
+    )
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="bad-first"), _signal(sid="ok-after")])]
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=CapturingFeedback(),
+    )
+    stats = pipe.run_once()
+    assert stats.new == 2
+    assert stats.classified == 1
+    assert stats.errors == 1
+
+
+# ---- end-to-end smoke test (subtask 9.7 PART 3) ----
+
+
+def test_smoke_real_classifier_through_pipeline(brand, memory):
+    """Real OpenRouterClassifier + FakeGateway + real Pipeline + real SqlMemory.
+
+    Closest test analogue to ``resound poll-once`` — verifies llm_calls row
+    populates with the correct schema fields after a real classifier walk.
+    """
+    from resound.classifiers import OpenRouterClassifier
+    from tests.test_classifier import FakeGateway, _ok_response
+
+    valid_json = (
+        '{"is_about_brand": true, "area": "cs", "sentiment": "negative", '
+        '"severity": "medium", "action_class": "sprint", "summary": "smoke", '
+        '"confidence": 0.85}'
+    )
+    fake_gw = FakeGateway(response=_ok_response(valid_json, model="anthropic/claude-fake"))
+    classifier = OpenRouterClassifier(fake_gw)
+    feedback = CapturingFeedback()
+    sources = [FakeSource(brand.slug, {}, [_signal(sid="smoke1")])]
+
+    pipe = Pipeline(
+        brand=brand,
+        sources=sources,
+        classifier=classifier,
+        router=RulesRouter(brand.routing, brand.people),
+        memory=memory,
+        feedback=feedback,
+    )
+    stats = pipe.run_once()
+
+    assert stats.classified == 1
+    assert stats.routed == 1
+    assert len(feedback.routes) == 1
+
+    rows = _llm_call_rows(memory)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.stage == "classify"
+    assert row.success is True
+    assert row.model == "anthropic/claude-fake"
+    assert row.signal_id is not None
+    assert row.tokens_in == 10
+    assert row.was_fallback is False
+    assert row.attempt_count == 1
+    assert "is_about_brand" in (row.response_content or "")

@@ -20,6 +20,15 @@ from resound.gateway.base import (
 from resound.gateway.models_config import ModelsConfig, StageConfig, load_models_config
 from resound.gateway.openrouter import OpenRouterGateway
 
+JSON_MODE: dict = {}
+"""Sentinel for ``LLMGateway.complete(response_schema=JSON_MODE)``.
+
+Per design #2 the gateway treats ``response_schema`` as a presence flag —
+non-None means "request JSON mode" and the schema body is not validated.
+Callers pass this named sentinel instead of a bare ``{}`` so the intent is
+self-documenting at the call site (per design #38).
+"""
+
 __all__ = [
     # Core abstractions
     "LLMGateway",
@@ -31,6 +40,8 @@ __all__ = [
     "ModelsConfig",
     # Factory
     "build_gateway",
+    # Sentinels
+    "JSON_MODE",
     # Exceptions (per design #13 — hierarchy under LLMGatewayError)
     "LLMGatewayError",
     "LLMGatewayConfigError",
