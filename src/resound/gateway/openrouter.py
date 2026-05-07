@@ -122,13 +122,14 @@ class OpenRouterGateway(LLMGateway):
         total_attempts = 0
         last_error: Exception | None = None
 
-        for model in models:
+        for model_idx, model in enumerate(models):
+            is_fallback = model_idx > 0
             for attempt in range(1, MAX_ATTEMPTS_PER_MODEL + 1):
                 total_attempts += 1
                 self._check_deadline(deadline, stage, stage_cfg.timeout_s)
 
                 try:
-                    return self._call_once(
+                    response = self._call_once(
                         model, stage_cfg, prompt, response_schema, deadline
                     )
                 except _RetryWithinModel as wrap:
@@ -140,6 +141,10 @@ class OpenRouterGateway(LLMGateway):
                 except _TryNextModel as wrap:
                     last_error = wrap.original
                     break  # try next model
+
+                response.was_fallback = is_fallback
+                response.attempt_count = total_attempts
+                return response
 
         raise LLMGatewayExhaustedError(
             f"Stage {stage!r}: all {len(models)} model(s) failed after "

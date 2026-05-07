@@ -31,6 +31,12 @@ class LLMResponse(BaseModel):
     its own. Audit-trail fields (``stage``, ``prompt_hash``, ``timestamp``,
     ``signal_id``) live in the ``llm_calls`` table written by the pipeline,
     not here.
+
+    ``was_fallback`` and ``attempt_count`` were added per design decision
+    #29 (Task 3 amendment): the audit trail needs to know whether this row
+    was served by the stage's primary model or a fallback, and how many
+    HTTP attempts were burned getting here. Computing these from
+    ``ModelsConfig`` after the fact is lossy when config drifts.
     """
 
     content: str
@@ -40,6 +46,8 @@ class LLMResponse(BaseModel):
     cost_usd: Optional[float] = None  # None when OpenRouter omits usage.cost
     latency_ms: float
     raw_response: dict[str, Any] = Field(default_factory=dict)
+    was_fallback: bool = False
+    attempt_count: int = 1
 
 
 class LLMGateway(ABC):
