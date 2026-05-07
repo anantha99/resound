@@ -1,0 +1,708 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Implement LLM Gateway Abstraction Layer",
+        "description": "Create the cross-cutting LLM gateway module that centralizes all model calls through OpenRouter with retry logic, fallback chains, and cost tracking.",
+        "details": "Create `src/resound/gateway/` module with:\n\n1. `base.py` - Define `LLMGateway` ABC with method:\n```python\ndef complete(\n    self,\n    stage: str,  # 'filter' | 'classify' | 'routing_tiebreaker' | 'memory_query'\n    prompt: str,\n    response_schema: dict | None = None,\n    temperature: float = 0.1,\n    max_tokens: int = 1024,\n) -> LLMResponse\n```\nDefine `LLMResponse` dataclass: `content`, `model_used`, `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms`, `raw_response`.\n\n2. `openrouter.py` - Implement `OpenRouterGateway`:\n   - Use `openai` SDK with `base_url=\"https://openrouter.ai/api/v1\"`\n   - Set required headers: `HTTP-Referer`, `X-Title`\n   - Implement retry with exponential backoff (max 3 retries) for 5xx/timeout/429\n   - Implement fallback chain: on 4xx (non-429), try next model in `fallbacks` list\n   - Request JSON-mode output when `response_schema` provided\n   - Fallback to \"JSON only, no prose\" prompt suffix + regex extraction for non-JSON-mode models\n   - Parse cost from OpenRouter's `usage.cost` field, compute from tokens × price if unavailable\n\n3. `models_config.py` - Load and merge models.yaml:\n   - Global defaults from `config/models.yaml`\n   - Per-brand overrides from `brands/<brand>/models.yaml`\n   - Dataclass: `StageConfig` with `model`, `temperature`, `max_tokens`, `fallbacks`\n\n4. `__init__.py` - Export `OpenRouterGateway`, `LLMResponse`, `load_models_config`",
+        "testStrategy": "Unit tests with mocked OpenRouter API:\n- Test happy path returns valid LLMResponse with correct fields\n- Test rate limit (429) triggers exponential backoff and retry\n- Test provider error (5xx) triggers retry up to 3 times\n- Test permanent error (4xx) falls through to next fallback model\n- Test all fallbacks fail raises `LLMGatewayError`\n- Test JSON-mode extraction with valid and malformed responses\n- Test models.yaml loading with global defaults and brand overrides",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create base.py with LLMGateway ABC and LLMResponse dataclass",
+            "description": "Define the abstract base class LLMGateway with the complete() method signature and create the LLMResponse dataclass with all required fields for tracking LLM call results.",
+            "dependencies": [],
+            "details": "Create `src/resound/gateway/base.py` with:\n1. `LLMResponse` dataclass using Python dataclasses (following existing codebase pattern with pydantic) containing: `content: str`, `model_used: str`, `tokens_in: int`, `tokens_out: int`, `cost_usd: float`, `latency_ms: float`, `raw_response: dict[str, Any]`\n2. `LLMGateway` ABC with abstract method `complete(stage: str, prompt: str, response_schema: dict | None = None, temperature: float = 0.1, max_tokens: int = 1024) -> LLMResponse`\n3. Define Literal type for stage: `'filter' | 'classify' | 'routing_tiebreaker' | 'memory_query'`\n4. Add docstrings explaining the contract and expected usage patterns\n<info added on 2026-05-02T11:41:48.071Z>\nDesign decisions to apply: (1) Use Pydantic BaseModel for LLMResponse, consistent with existing models in src/resound/models.py which uses Pydantic for all domain models (RawSignal, Classification, Route, FeedbackEvent). (2) Use plain str type for stage parameter instead of Literal to allow extensibility without code changes. (3) Use synchronous complete() method signature as the pipeline is serial today, with async support deferred to a future acomplete() method.\n</info added on 2026-05-02T11:41:48.071Z>\n<info added on 2026-05-02T13:17:57.614Z>\nDESIGN LOCKED via grilling on 2026-05-02. Final implementation spec:\n\nLLMResponse as Pydantic BaseModel (7 fields):\n- content: str\n- model_used: str (model that actually returned; may differ from stage primary if fallback fired)\n- tokens_in: int\n- tokens_out: int\n- cost_usd: float | None (None when OpenRouter does not return usage.cost; no price-table fallback for demo)\n- latency_ms: float\n- raw_response: dict[str, Any]\n\nFields explicitly excluded from LLMResponse (belong to audit trail layer in Task 3): stage, attempts, prompt_hash, timestamp.\n\nLLMGateway ABC complete() signature (simplified - NO temperature, NO max_tokens, NO model_override):\n\ndef complete(\n    self,\n    stage: str,\n    prompt: str,\n    response_schema: dict | None = None,\n) -> LLMResponse\n\nDesign rationale: stage is plain str for extensibility. response_schema is flag-only sentinel for structured output requests. Gateway implementation owns model selection, retry, and fallback logic per models.yaml config for each stage. Follows existing Pydantic pattern in src/resound/models.py.\n</info added on 2026-05-02T13:17:57.614Z>",
+            "status": "done",
+            "testStrategy": "Unit tests to verify: LLMResponse dataclass instantiation with all fields, LLMGateway cannot be instantiated directly (is abstract), and that implementing classes must provide complete() method",
+            "updatedAt": "2026-05-02T14:21:15.816Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Create models_config.py for loading and merging models.yaml",
+            "description": "Implement configuration loading that merges global defaults from config/models.yaml with per-brand overrides from brands/<brand>/models.yaml.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `src/resound/gateway/models_config.py` with:\n1. `StageConfig` dataclass with fields: `model: str`, `temperature: float`, `max_tokens: int`, `fallbacks: list[str]`\n2. `ModelsConfig` dataclass containing a dict mapping stage names to StageConfig\n3. `load_models_config(brand_slug: str | None = None, config_dir: Path | None = None, brands_dir: Path | None = None) -> ModelsConfig` function\n4. Deep merge logic: brand-specific settings override global defaults at the field level\n5. Follow existing yaml loading pattern from `resound/config.py` using `yaml.safe_load()`\n6. Provide sensible defaults if no yaml files exist (using models from task description)\n<info added on 2026-05-02T13:20:03.296Z>\nNow I have sufficient context. Let me read the design_decisions.md for the complete spec and then formulate the update.Now I have the complete context. Let me formulate the update text for the subtask:\n\nDESIGN LOCKED via grilling on 2026-05-02. Implementation spec for models_config.py:\n\nFile location: src/resound/gateway/models_config.py\n\nStageConfig (Pydantic BaseModel, NOT dataclass) - exactly 5 fields:\n- model: str\n- temperature: float\n- max_tokens: int\n- fallbacks: list[str]\n- timeout_s: float (per-stage wall-clock cap: filter ~5s, classify ~30s, others ~10s)\n\nExcluded fields (out of demo scope): prompt_price, completion_price, provider_routing, system_prompt.\n\nModelsConfig: dict mapping stage name (str) to StageConfig. Implements get_stage_config(stage: str) -> StageConfig that raises LLMGatewayConfigError (imported from base.py) on unknown stage.\n\nFunction signature: load_models_config(brand_slug: str | None = None, config_dir: Path | None = None, brands_dir: Path | None = None) -> ModelsConfig\n\nConfig file locations:\n- Global defaults: config/models.yaml\n- Brand overrides: brands/<brand_slug>/models.yaml\n\nBrand override merge semantics (LOCKED per design_decisions.md #16):\n- FIELD-LEVEL merge over global defaults. Brand override file specifies only deltas; missing fields inherit from global.\n- List fields (fallbacks) REPLACE the global list entirely - do NOT concat. Order matters in fallback chains.\n- Merge happens at stage granularity: brand can override one stage without touching others.\n\nYAML loading: Follow existing pattern from src/resound/config.py:37-65 using yaml.safe_load() with graceful fallback for missing files.\n\nSensible built-in defaults (no YAML required for tests): Use same model picks that subtask 1.6 will put in config/models.yaml (claude-sonnet-4-6 for classify, gpt-4.1-mini for filter/routing_tiebreaker/memory_query, with 1-element fallbacks for all stages).\n\nFile header comment must document precedence: \"Brand overrides merge field-by-field over global defaults; list fields (fallbacks) replace; missing fields inherit.\"\n</info added on 2026-05-02T13:20:03.296Z>",
+            "status": "done",
+            "testStrategy": "Unit tests: verify global defaults load correctly, brand overrides merge properly at field level, missing yaml files use sensible defaults, invalid yaml raises clear error, get_stage_config() returns correct StageConfig for each stage",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-02T14:23:17.480Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement OpenRouterGateway with retry and fallback logic",
+            "description": "Create the OpenRouter gateway implementation with exponential backoff retry for transient errors and fallback chain support for permanent errors.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create `src/resound/gateway/openrouter.py` implementing `OpenRouterGateway(LLMGateway)`:\n1. Initialize OpenAI client with `base_url='https://openrouter.ai/api/v1'` (pattern from existing `classifiers/openrouter.py`)\n2. Set required headers: `HTTP-Referer`, `X-Title` (from env or defaults)\n3. Accept `ModelsConfig` in constructor to get per-stage model settings\n4. Implement retry logic with exponential backoff (base 2s, max 3 retries) for: 5xx errors, timeout errors, 429 rate limits\n5. Implement fallback chain: on 4xx (non-429), try next model in stage's `fallbacks` list\n6. Request JSON-mode (`response_format={'type': 'json_object'}`) when `response_schema` provided\n7. Track timing with `time.perf_counter()` for latency_ms\n8. Parse cost from `response.usage.cost` if available, else compute from tokens × model price lookup\n<info added on 2026-05-02T13:22:12.066Z>\nBased on my analysis of the codebase and the locked design decisions, I can now provide the update text for subtask 1.3.\n\nDESIGN LOCKED via grilling on 2026-05-02. Implement OpenRouterGateway per the following final spec:\n\nConstructor signature (testability lift - accept all four optionals, env-default the unset ones):\n\n```python\ndef __init__(\n    self,\n    config: ModelsConfig,                  # required\n    api_key: str | None = None,            # default: os.environ[\"OPENROUTER_API_KEY\"]; raise LLMGatewayConfigError if missing\n    http_referer: str | None = None,       # default: env OPENROUTER_APP_URL or \"https://github.com/resound\"\n    app_title: str | None = None,          # default: env OPENROUTER_APP_NAME or \"Resound\"\n    client: OpenAI | None = None,          # CRITICAL for testability - lets tests inject mock client without monkeypatching openai.OpenAI\n)\n```\n\nPer-brand instance - one gateway per Pipeline. Pipeline wiring deferred to Task 9; do NOT touch src/resound/pipeline.py in this task.\n\nRetry orchestration (LOCKED - both knobs matter):\n- Per-model: max 3 attempts with exponential backoff (2s, 4s, 8s) on TRANSIENT errors only: 5xx, openai timeout exceptions (openai.APITimeoutError), 429 rate limits.\n- Fallback chain: each fallback model gets a FRESH 3-attempt budget. Do not share the budget across the chain - point of fallbacks is to escape an outage on the primary provider.\n- Per-stage wall-clock cap from StageConfig.timeout_s (filter ~5s, classify ~30s, others ~10s). Once exceeded, raise LLMGatewayTimeoutError even if retries/fallbacks remain. Use time.perf_counter() for timing.\n\nFallback trigger (NARROW - most 4xx are bugs, not fallback-able):\n- TRIGGER fallback on: 404 (model not found), 422 (unprocessable), 413 (context too long), OpenRouter \"no available provider\" error.\n- FATAL (raise immediately, no retry/fallback): 400 (bad request), 401 (auth), 403 (forbidden) - these are bugs to fix, not to fall back from.\n\nJSON mode handling (try-and-detect with per-instance cache per design decision #6):\n- First call with response_schema uses native JSON mode (response_format={\"type\": \"json_object\"}).\n- On 400 error containing \"response_format\" or \"json_object\" in message, mark model in instance-level set _no_json_mode_models, retry once with prompt suffix \"Respond with JSON only, no additional prose.\" + regex extraction.\n- ALWAYS run regex extraction defensively r\"\\{.*\\}\" with re.DOTALL (pattern from existing classifiers/openrouter.py:69) even on JSON-mode success.\n\nCost handling (per design decision #7):\n- Always include extra_body={\"usage\": {\"include\": true}} in API call.\n- If response.usage.cost is present, use it for cost_usd.\n- If missing, set cost_usd = None and log warning. No hardcoded price table for demo scope.\n\nException hierarchy (per design decision #13):\n- Import from base.py: LLMGatewayError (base), LLMGatewayConfigError, LLMGatewayAuthError, LLMGatewayExhaustedError(attempts: int), LLMGatewayTimeoutError, LLMGatewayParseError(raw_text: str).\n- Config/Auth errors are FATAL - let them propagate.\n- Exhausted/Timeout/Parse errors should be catchable via LLMGatewayError.\n\ncomplete() implementation:\n- Signature: complete(self, stage: str, prompt: str, response_schema: dict | None = None) -> LLMResponse\n- Use self.config.get_stage_config(stage) to get StageConfig (raises LLMGatewayConfigError on unknown stage).\n- Build model list: [stage_config.model] + stage_config.fallbacks\n- Iterate models with fresh 3-attempt budget each, checking wall-clock timeout before each attempt.\n- On success, return LLMResponse with model_used reflecting the actual model that succeeded (may be a fallback).\n- On all models exhausted, raise LLMGatewayExhaustedError(attempts=total_attempts_made).\n\nReference existing pattern in src/resound/classifiers/openrouter.py:34-48 for OpenAI client initialization with base_url and default_headers. Use env() and require_env() helpers from src/resound/config.py:68-81.\n</info added on 2026-05-02T13:22:12.066Z>",
+            "status": "done",
+            "testStrategy": "Unit tests with mocked OpenRouter API: test happy path returns valid LLMResponse, test 429 triggers exponential backoff retry, test 5xx triggers retry up to 3 times, test 4xx falls through to fallback model, test JSON-mode requested when schema provided, test cost calculation from tokens when usage.cost missing",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-02T14:31:20.391Z"
+          },
+          {
+            "id": 4,
+            "title": "Add JSON extraction fallback for non-JSON-mode models",
+            "description": "Implement fallback JSON extraction using prompt suffix and regex parsing for models that don't support native JSON mode.",
+            "dependencies": [
+              3
+            ],
+            "details": "Enhance `OpenRouterGateway` in `openrouter.py`:\n1. Maintain a list/set of models known to NOT support JSON mode (e.g., some older/smaller models)\n2. When `response_schema` is provided but model doesn't support JSON mode:\n   - Append 'Respond with JSON only, no additional prose.' to the prompt\n   - After response, use regex `r'\\{.*\\}'` with `re.DOTALL` to extract JSON (pattern from existing `classifiers/openrouter.py:69`)\n3. Validate extracted JSON against provided `response_schema` if possible\n4. Log warning when falling back to regex extraction\n5. Raise clear error if no valid JSON found after fallback extraction\n<info added on 2026-05-02T13:23:26.701Z>\nNow I have a good understanding of the existing codebase structure, particularly the `classifiers/openrouter.py` file which shows the regex pattern at line 69. Let me generate the updated subtask details based on the user's design-locked specification.\n\nDESIGN LOCKED via grilling on 2026-05-02. Implement JSON-mode fallback using TRY-AND-DETECT with per-process cache instead of a hardcoded blocklist.\n\nRationale: Hardcoded blocklists rot fast as OpenRouter's JSON-mode support matrix changes weekly. Try-and-detect costs one wasted request per new model per process, then never again.\n\nImplementation algorithm for OpenRouterGateway in `src/resound/gateway/openrouter.py`:\n\n1. Add per-instance cache: `self._no_json_mode_models: set[str] = set()`\n\n2. When `complete()` called with `response_schema is not None`:\n   a. If `self.model` already in `self._no_json_mode_models` -> skip native JSON mode, go directly to step 4\n   b. Otherwise: send request with `response_format={\"type\": \"json_object\"}`\n\n3. On 400 response containing \"response_format\" or \"json_object\" in the error message:\n   a. Log warning: `f\"{model} does not support JSON mode; caching and retrying with prompt-based fallback\"`\n   b. Add model to `self._no_json_mode_models`\n   c. Fall through to step 4\n\n4. Prompt-based fallback (when JSON mode unavailable):\n   a. Append to prompt: \"Respond with JSON only, no additional prose.\"\n   b. Send request WITHOUT `response_format`\n   c. Extract JSON from response using regex `r'\\{.*\\}'` with `re.DOTALL` (pattern from existing `classifiers/openrouter.py:69`)\n   d. Validate extracted JSON against `response_schema` if provided\n   e. If no valid JSON found, raise clear error\n\n5. Error handling:\n   - Log warning when falling back to regex extraction\n   - Raise `JSONExtractionError` (or similar) if no valid JSON found after fallback\n</info added on 2026-05-02T13:23:26.701Z>",
+            "status": "done",
+            "testStrategy": "Unit tests: test JSON mode used for supported models, test prompt suffix added for non-JSON-mode models, test regex extraction successfully parses valid JSON from prose, test extraction fails gracefully with clear error when no JSON found, test logging occurs on fallback",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-02T19:04:39.499Z"
+          },
+          {
+            "id": 5,
+            "title": "Create gateway __init__.py with public exports",
+            "description": "Create the gateway module's __init__.py file that exports all public interfaces for easy importing.",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Create `src/resound/gateway/__init__.py` with:\n1. Import and re-export `LLMGateway`, `LLMResponse` from `base.py`\n2. Import and re-export `OpenRouterGateway` from `openrouter.py`\n3. Import and re-export `load_models_config`, `StageConfig`, `ModelsConfig` from `models_config.py`\n4. Define `__all__` list with all public exports\n5. Add module-level docstring explaining the gateway abstraction purpose\n6. Optionally add a `build_gateway()` factory function (similar to `build_classifier()` in `classifiers/__init__.py`) that returns default configured gateway\n<info added on 2026-05-02T13:25:09.045Z>\nNow I have the context on the existing `classifiers/__init__.py` pattern. Let me also check if there are any existing gateway-related files or exception patterns in the codebase.Now I have a complete understanding of the codebase structure and the design decisions. Let me check the design_decisions.md for additional context.Now I have all the context needed. Let me formulate the update text for subtask 1.5 based on the user request and the design decisions document.\n\nDESIGN LOCKED via grilling on 2026-05-02. Implement gateway/__init__.py per the following final spec.\n\nFile location: src/resound/gateway/__init__.py\n\nModule docstring: Gateway abstraction layer for all LLM calls. Centralizes model selection, retry logic with exponential backoff, fallback chains, and cost tracking through OpenRouter.\n\nPublic exports (__all__) - INCLUDE exception classes from subtask 1.1 per design decision #13 (callers need these to catch correctly):\n\n__all__ = [\n    # Core abstractions\n    \"LLMGateway\",\n    \"LLMResponse\",\n    \"OpenRouterGateway\",\n    # Config\n    \"load_models_config\",\n    \"StageConfig\",\n    \"ModelsConfig\",\n    # Factory\n    \"build_gateway\",\n    # Exceptions (per design #13 - hierarchy under LLMGatewayError)\n    \"LLMGatewayError\",\n    \"LLMGatewayConfigError\",\n    \"LLMGatewayAuthError\",\n    \"LLMGatewayExhaustedError\",\n    \"LLMGatewayTimeoutError\",\n    \"LLMGatewayParseError\",\n]\n\nImport structure:\nfrom resound.gateway.base import (\n    LLMGateway,\n    LLMResponse,\n    LLMGatewayError,\n    LLMGatewayConfigError,\n    LLMGatewayAuthError,\n    LLMGatewayExhaustedError,\n    LLMGatewayTimeoutError,\n    LLMGatewayParseError,\n)\nfrom resound.gateway.openrouter import OpenRouterGateway\nfrom resound.gateway.models_config import load_models_config, StageConfig, ModelsConfig\n\nbuild_gateway() factory per design decision #19 - brand-aware one-liner:\n\ndef build_gateway(brand_slug: str) -> OpenRouterGateway:\n    \"\"\"Build an OpenRouterGateway configured for a specific brand.\n\n    Loads models.yaml config with global defaults merged with brand-specific\n    overrides from brands/<brand_slug>/models.yaml. This is the public API;\n    use OpenRouterGateway(config=..., client=...) directly for tests.\n    \"\"\"\n    return OpenRouterGateway(config=load_models_config(brand_slug))\n\nReturn type annotation is OpenRouterGateway (concrete), not LLMGateway (abstract), per design decision #19 - public API stays brand-shaped.\n\nReference pattern: src/resound/classifiers/__init__.py:13-27 for factory function style and docstring format.\n</info added on 2026-05-02T13:25:09.045Z>",
+            "status": "done",
+            "testStrategy": "Unit tests: verify all exports are importable from `resound.gateway`, verify __all__ contains expected symbols, verify build_gateway() returns properly configured OpenRouterGateway instance",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-02T19:08:58.676Z"
+          },
+          {
+            "id": 6,
+            "title": "Create default config/models.yaml with global defaults",
+            "description": "Create the default models.yaml configuration file with sensible defaults for all LLM stages including model selection, temperature, max tokens, and fallback chains.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create `config/models.yaml` file with:\n1. `defaults:` section containing configuration for each stage:\n   - `filter:` model: openai/gpt-4.1-mini, temperature: 0.0, max_tokens: 64, fallbacks: [anthropic/claude-haiku-4-5, google/gemini-2.0-flash]\n   - `classify:` model: anthropic/claude-sonnet-4-6, temperature: 0.1, max_tokens: 1024, fallbacks: [openai/gpt-4.1, google/gemini-2.5-pro]\n   - `routing_tiebreaker:` model: openai/gpt-4.1-mini, temperature: 0.0, max_tokens: 128, fallbacks: []\n   - `memory_query:` model: openai/gpt-4.1-mini, temperature: 0.0, max_tokens: 256, fallbacks: []\n2. Add YAML comments explaining each stage's purpose and why specific models were chosen\n3. Ensure config directory exists (create `config/` if needed)\n<info added on 2026-05-02T13:26:54.963Z>\nBased on my analysis of the codebase, I can see:\n1. No `config/` directory exists yet at the project root\n2. YAML config patterns are already established in `brands/*/` with proper commenting style\n3. The existing `OpenRouterClassifier` in `src/resound/classifiers/openrouter.py` uses OpenRouter-namespaced model identifiers like `anthropic/claude-sonnet-4-5`\n4. The `config.py` uses `yaml.safe_load()` for config loading\n5. Brand-level override semantics already exist (brands can have their own routing.yaml, etc.)\n\nHere is the subtask update content:\n\nDESIGN LOCKED via grilling on 2026-05-02. Updated specification includes the timeout_s field (added to StageConfig in subtask 1.2) and adds 1-element fallbacks for all stages (was empty for routing_tiebreaker/memory_query in original plan).\n\nFinal config/models.yaml content to implement:\n\n```yaml\n# =============================================================================\n# Resound LLM Model Configuration - Global Defaults\n# =============================================================================\n# Each stage uses a specific model tuned to its latency/cost/capability needs.\n# These are DEMO-PROVISIONAL models - suitable for development and early demos;\n# production deployments may tune these based on observed cost/latency/accuracy.\n#\n# Stage purposes:\n#   filter           - Fast cheap triage: ~70% of signals rejected here (5s timeout)\n#   classify         - Deep classification work: full taxonomy extraction (30s timeout)\n#   routing_tiebreaker - LLM fallback when no rule matches + low confidence (10s timeout)\n#   memory_query     - Natural language -> structured filter translation (10s timeout)\n#\n# Brand override semantics: Brand-specific models.yaml files in brands/<slug>/\n# can override any stage configuration. Brand configs are merged on top of these\n# defaults, allowing per-brand model selection, temperature tuning, or fallback chains.\n# =============================================================================\n\ndefaults:\n  filter:\n    model: openai/gpt-4.1-mini\n    temperature: 0.0\n    max_tokens: 64\n    timeout_s: 5\n    fallbacks:\n      - anthropic/claude-haiku-4-5\n      - google/gemini-2.0-flash\n\n  classify:\n    model: anthropic/claude-sonnet-4-6\n    temperature: 0.1\n    max_tokens: 1024\n    timeout_s: 30\n    fallbacks:\n      - openai/gpt-4.1\n      - google/gemini-2.5-pro\n\n  routing_tiebreaker:\n    model: openai/gpt-4.1-mini\n    temperature: 0.0\n    max_tokens: 128\n    timeout_s: 10\n    fallbacks:\n      - anthropic/claude-haiku-4-5   # Added for OpenAI hiccup insurance\n\n  memory_query:\n    model: openai/gpt-4.1-mini\n    temperature: 0.0\n    max_tokens: 256\n    timeout_s: 10\n    fallbacks:\n      - anthropic/claude-haiku-4-5   # Added for same reliability reasoning\n```\n\nImplementation notes:\n- Create `config/` directory at project root (same level as `src/`, `brands/`)\n- File path: `config/models.yaml`\n- Uses OpenRouter-namespaced model identifiers consistent with existing `src/resound/classifiers/openrouter.py` patterns\n- Gateway loader (subtask 1.4) must implement brand override merging: load `config/models.yaml` as defaults, then deep-merge any `brands/<slug>/models.yaml` on top\n</info added on 2026-05-02T13:26:54.963Z>",
+            "status": "done",
+            "testStrategy": "Integration test: verify models.yaml loads without errors, verify all four stages have valid configuration, verify load_models_config() returns expected defaults when no brand override exists",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-02T19:10:36.919Z"
+          }
+        ],
+        "updatedAt": "2026-05-02T19:10:36.919Z"
+      },
+      {
+        "id": 2,
+        "title": "Add models.yaml Configuration Schema",
+        "description": "Create the models.yaml configuration file schema and example files for per-stage model selection with fallback chains.",
+        "details": "1. Create `config/models.yaml` with global defaults:\n```yaml\ndefaults:\n  filter:\n    model: openai/gpt-4.1-mini\n    temperature: 0.0\n    max_tokens: 64\n    fallbacks: [anthropic/claude-haiku-4-5, google/gemini-2.0-flash]\n  classify:\n    model: anthropic/claude-sonnet-4-6\n    temperature: 0.1\n    max_tokens: 1024\n    fallbacks: [openai/gpt-4.1, google/gemini-2.5-pro]\n  routing_tiebreaker:\n    model: openai/gpt-4.1-mini\n    temperature: 0.0\n    max_tokens: 128\n    fallbacks: []\n  memory_query:\n    model: openai/gpt-4.1-mini\n    temperature: 0.2\n    max_tokens: 512\n    fallbacks: []\n```\n\n2. Create `brands/liquiddeath/models.yaml` with optional overrides:\n```yaml\nbrand_overrides:\n  liquiddeath:\n    classify:\n      model: anthropic/claude-sonnet-4-5\n```\n\n3. Update `BrandConfig` in `src/resound/config.py`:\n   - Add `models: dict[str, Any]` field\n   - Load `models.yaml` from brand directory if exists\n   - Add method `get_model_config(stage: str) -> StageConfig` that merges global + brand overrides\n\n4. Update `.env.example` to document that `RESOUND_CLASSIFIER_MODEL` and `RESOUND_FILTER_MODEL` are deprecated in favor of models.yaml",
+        "testStrategy": "Test models.yaml loading:\n- Test global defaults load correctly when no brand override exists\n- Test brand overrides merge correctly with global defaults\n- Test missing models.yaml uses sensible defaults\n- Test invalid YAML raises clear error message\n- Test `get_model_config()` returns correct merged config per stage",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create brands/liquiddeath/models.yaml as single-field classify.model override",
+            "description": "Add the brand-side example file demonstrating the field-level merge. This file is the on-camera artifact for the demo model swap (Tasks 21, 25).",
+            "details": "DESIGN LOCKED via grilling on 2026-05-03 (see docs/design_decisions.md #22).\n\nFile path: brands/liquiddeath/models.yaml\n\nContents (single-field override â€” model name is DEMO-PROVISIONAL per #17):\n\n# Brand-specific model overrides for Liquid Death.\n# Field-level merge over config/models.yaml: only fields listed here\n# override the global default; everything else (fallbacks, temperature,\n# max_tokens, timeout_s) inherits.\n#\n# Why we override classify here: Liquid Death's brand voice is\n# deliberately loud and sarcastic. The default classify model\n# misreads ironic praise as genuine and snark as outage-level negative.\n# Routing this brand to a stronger model materially improves precision\n# on the action_class field. (Demo-provisional model name; revisit\n# closer to demo per docs/design_decisions.md #17.)\n\nclassify:\n  model: anthropic/claude-opus-4-7\n\nCRITICAL constraints from the grilling:\n\n1. Override exactly ONE field (classify.model). Do NOT override filter, routing_tiebreaker, memory_query, or any other classify field. The demo's field-level",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 2,
+            "updatedAt": "2026-05-05T12:16:12.434Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add docstring to BrandConfig documenting models.yaml + why no data field",
+            "description": "Update the BrandConfig docstring in src/resound/config.py to document where models config lives and explain the deliberate decision NOT to expose it as a data field.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-03 (see docs/design_decisions.md #24).\n\nFile: src/resound/config.py\n\nChange: docstring update ONLY. Do NOT add a `models` field. Do NOT add a `get_model_config()` method. Do NOT touch load_brand_config().\n\nRationale (capture in the docstring): no current caller (Pipeline post-Task-9, CLI testing in Task 10) reads from brand.models. Adding the field would create a resound.config -> resound.gateway import edge that does not otherwise exist. A merged ModelsConfig would be inconsistent with the raw-dict shape of routing / people / views fields.\n\nSuggested docstring (drop into BrandConfig at line 18):\n\n    @dataclass\n    class BrandConfig:\n        \"A",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 2,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T12:16:12.522Z"
+          },
+          {
+            "id": 3,
+            "title": "Update .env.example: deprecate RESOUND_CLASSIFIER_MODEL, delete RESOUND_FILTER_MODEL",
+            "description": "Surgically update .env.example to communicate the new models.yaml mechanism without prematurely breaking still-load-bearing env vars.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-03 (see docs/design_decisions.md #25).\n\nFile: .env.example\n\nThree surgical edits, current state (lines 23-30):\n\n    # Optional - model overrides\n    # Use OpenRouter's namespaced format when provider=openrouter:\n    #   anthropic/claude-sonnet-4-5, google/gemini-2.5-pro,\n    #   deepseek/deepseek-chat, meta-llama/llama-3.3-70b-instruct, etc.\n    # Use bare Claude IDs when provider=anthropic:\n    #   claude-sonnet-4-6, claude-haiku-4-5-20251001\n    RESOUND_CLASSIFIER_MODEL=anthropic/claude-sonnet-4-5\n    RESOUND_FILTER_MODEL=meta-llama/llama-3.3-70b-instruct\n\nReplace with:\n\n    # Model selection lives in config/models.yaml (with optional per-brand\n    # overrides in brands/<slug>/models.yaml). See docs/design_decisions.md\n    # for the merge semantics.\n    #\n    # DEPRECATED - RESOUND_CLASSIFIER_MODEL is still read by the existing\n    # classifier and will be removed once classifiers route through the\n    # gateway (Task 9). New deployments should configure models.yaml\n    # instead of setting this.\n    # RESOUND_CLASSIFIER_MODEL=anthropic/claude-sonnet-4-5\n\nCRITICAL constraints from the grilling:\n\n1. DELETE RESOUND_FILTER_MODEL line outright. Do NOT label it deprecated. It was documented but NEVER read by any code (verified: grep RESOUND_FILTER_MODEL across src/ returns zero hits). Labeling pure cruft as deprecated is dishonest about what was ever live.\n\n2. COMMENT OUT (do not delete) the RESOUND_CLASSIFIER_MODEL line. It is still genuinely live â€” read by classifiers/openrouter.py:45, classifiers/claude.py:31, cli.py:88. Commenting preserves discoverability for someone debugging why",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 2,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T12:16:12.597Z"
+          }
+        ],
+        "updatedAt": "2026-05-05T12:16:12.597Z"
+      },
+      {
+        "id": 3,
+        "title": "Add llm_calls Table for Audit Trail",
+        "description": "Extend the database schema to track every LLM invocation with stage, model, tokens, cost, and latency for cost dashboards and debugging.",
+        "details": "1. Add `LLMCallRow` to `src/resound/memory/__init__.py`:\n```python\nclass LLMCallRow(Base):\n    __tablename__ = \"llm_calls\"\n    \n    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)\n    brand_slug: Mapped[str] = mapped_column(String(64), index=True)\n    stage: Mapped[str] = mapped_column(String(32), index=True)  # filter/classify/routing_tiebreaker/memory_query\n    model: Mapped[str] = mapped_column(String(128), index=True)\n    prompt_hash: Mapped[str] = mapped_column(String(64))  # SHA-256 of prompt for dedup analysis\n    response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)\n    tokens_in: Mapped[int] = mapped_column(Integer)\n    tokens_out: Mapped[int] = mapped_column(Integer)\n    cost_usd: Mapped[float] = mapped_column(Float)\n    latency_ms: Mapped[int] = mapped_column(Integer)\n    success: Mapped[bool] = mapped_column(Boolean)\n    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)\n    called_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)\n```\n\n2. Add `record_llm_call()` method to `SqlMemory`:\n```python\ndef record_llm_call(self, brand_slug: str, response: LLMResponse, stage: str, prompt: str, success: bool = True, error: str | None = None) -> int\n```\n\n3. Add query methods to `SqlMemory`:\n   - `query_llm_costs(brand_slug: str, since: datetime) -> list[dict]` - aggregate costs by stage and model\n   - `query_llm_latency(brand_slug: str, since: datetime) -> dict` - p50/p95 latency by stage\n   - `query_fallback_rate(brand_slug: str, since: datetime) -> dict` - count of fallback triggers by stage\n\n4. Create Alembic migration for the new table under `src/resound/memory/migrations/`",
+        "testStrategy": "Unit tests:\n- Test `record_llm_call()` persists all fields correctly\n- Test `query_llm_costs()` correctly aggregates by stage and model\n- Test `query_llm_latency()` computes correct p50/p95 percentiles\n- Test `query_fallback_rate()` counts primary vs fallback model usage\n- Test Alembic migration applies and rolls back cleanly",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add LLMCallRow ORM model to memory module",
+            "description": "Add the llm_calls table schema to src/resound/memory/__init__.py. No Alembic â€” relies on existing Base.metadata.create_all() pattern.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-05 (see docs/design_decisions.md #26, #27, #30).\n\nFile: src/resound/memory/__init__.py\n\nAdd this class before the SqlMemory class definition (after FeedbackRow, around line 110):\n\nclass LLMCallRow(Base):\n    __tablename__ = llm_calls\n\n    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)\n    brand_slug: Mapped[str] = mapped_column(String(64), index=True)\n    signal_id: Mapped[int | None] = mapped_column(\n        ForeignKey(signals.id), nullable=True, index=True,\n    )  # nullable: memory_query has no signal context (per #27)\n    stage: Mapped[str] = mapped_column(String(32), index=True)\n    # values: filter | classify | routing_tiebreaker | memory_query\n\n    # nullable model: failure-before-any-call rows (e.g., LLMGatewayConfigError) have no model\n    model: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)\n\n    prompt_hash: Mapped[str] = mapped_column(String(64), index=True)\n    # SHA-256 of the assembled prompt â€” supports are",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3,
+            "updatedAt": "2026-05-05T13:12:18.440Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Amend LLMResponse: add was_fallback and attempt_count fields",
+            "description": "Add 2 fields to LLMResponse that the audit trail needs (Task 1 amendment per #29). Update OpenRouterGateway.complete() to set them based on retry/fallback orchestration outcome.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-05 (see docs/design_decisions.md #29 â€” amends Task 1 #11).\n\nCONTEXT: Task 3 needs to know did",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T13:12:18.502Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement record_llm_call and record_llm_failure on SqlMemory",
+            "description": "Add the two writer methods to SqlMemory. Split by success vs failure to avoid conditional logic everywhere (per #28).",
+            "details": "DESIGN LOCKED via grilling on 2026-05-05 (see docs/design_decisions.md #28, #29, #30).\n\nFile: src/resound/memory/__init__.py\n\nDepends on subtask 3.1 (LLMCallRow exists) and 3.2 (LLMResponse has was_fallback + attempt_count).\n\nAdd these two methods to SqlMemory class, in the writes section (after record_feedback, around line 191). Both use keyword-only args after the leading positional brand_slug:\n\nimport hashlib\nfrom resound.gateway import LLMResponse, LLMGatewayError\n\ndef record_llm_call(\n    self,\n    *,\n    brand_slug: str,\n    stage: str,\n    prompt: str,\n    response: LLMResponse,\n    was_fallback: bool,\n    attempt_count: int,\n    signal_id: int | None = None,\n) -> int:\n    \"Record",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T13:12:18.561Z"
+          },
+          {
+            "id": 4,
+            "title": "Implement query_llm_costs / query_llm_latency / query_fallback_rate",
+            "description": "Add the three query methods to SqlMemory for the LLM telemetry dashboard. Python-side percentile computation; required since param.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-05 (see docs/design_decisions.md #32, #33, #34).\n\nFile: src/resound/memory/__init__.py\n\nDepends on subtask 3.1 (LLMCallRow exists). Add to the reads section (after query_recent, around line 222).\n\nfrom sqlalchemy import func\n\ndef query_llm_costs(\n    self,\n    brand_slug: str,\n    since: datetime,\n) -> list[dict[str, Any]]:\n    \"Aggregate",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T13:18:24.438Z"
+          },
+          {
+            "id": 5,
+            "title": "Add unit tests for LLMCallRow writers and queries",
+            "description": "Comprehensive test suite for record_llm_call, record_llm_failure, and the three query methods using in-memory SQLite for speed and isolation.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-05 (see docs/design_decisions.md #32 for percentile testing notes).\n\nDepends on subtasks 3.1, 3.2, 3.3, 3.4.\n\nFile: tests/memory/test_llm_calls.py (create new file; create tests/memory/ if missing).\n\nTest cases (use pytest, sqlite:///:memory: for isolation):\n\nCLASS: TestRecordLlmCall (success path)\n- test_records_all_fields_from_response: construct LLMResponse with known values, call record_llm_call, query back the row, assert every column matches.\n- test_signal_id_optional: omit signal_id, row has signal_id=None.\n- test_signal_id_set: pass signal_id=42, row has signal_id=42.\n- test_was_fallback_persisted: pass was_fallback=True, row has was_fallback=True.\n- test_attempt_count_persisted: pass attempt_count=4, row has attempt_count=4.\n- test_prompt_hash_is_sha256: assert returned row prompt_hash matches manually computed sha256(prompt).\n- test_response_content_persisted: response.content is stored verbatim.\n- test_cost_usd_none_persists_as_null: LLMResponse.cost_usd=None persists as NULL (per Task 1 #7).\n\nCLASS: TestRecordLlmFailure\n- test_records_error_class_and_message: pass LLMGatewayTimeoutError(budget",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 3,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-05T13:18:24.491Z"
+          }
+        ],
+        "updatedAt": "2026-05-05T13:18:24.491Z"
+      },
+      {
+        "id": 4,
+        "title": "Implement Two-Stage Filter→Classify Pipeline",
+        "description": "Add a fast, cheap filter stage before full classification to reduce costs by filtering out ~70% of irrelevant signals.",
+        "details": "1. Create `src/resound/prompts/filter.py` with filter prompt template:\n```python\nFILTER_PROMPT_V1 = '''You are a relevance filter. Given a signal and brand context, decide ONLY whether this signal is potentially about the specified brand.\n\nReturn a JSON object: {\"is_about_brand\": boolean, \"confidence\": float}\n\nBe generous - when in doubt, say true. The full classifier will make the final call. Say false only for clear false positives (brand name mentioned but clearly about something else).'''\n```\n\n2. Create `src/resound/classifiers/two_stage.py` with `TwoStageClassifier`:\n```python\nclass TwoStageClassifier(Classifier):\n    def __init__(self, gateway: LLMGateway, brand_slug: str):\n        self.gateway = gateway\n        self.brand_slug = brand_slug\n    \n    def classify(self, raw: RawSignal, brand_context: str) -> Classification:\n        # Stage 1: Filter with cheap model\n        filter_result = self._filter(raw, brand_context)\n        if not filter_result.is_about_brand:\n            return Classification(\n                is_about_brand=False,\n                action_class=ActionClass.IGNORE,\n                ...\n            )\n        \n        # Stage 2: Full classification with quality model\n        return self._classify(raw, brand_context)\n```\n\n3. Update `build_classifier()` in `src/resound/classifiers/__init__.py`:\n   - Accept `gateway: LLMGateway` and `brand_slug: str` parameters\n   - Return `TwoStageClassifier` by default\n   - Support `RESOUND_CLASSIFIER_MODE=single` env var to skip filter stage\n\n4. Update `Pipeline.__init__` to instantiate gateway and pass to classifier\n\n5. Wire llm_calls recording: after each gateway.complete() call, call memory.record_llm_call()",
+        "testStrategy": "Unit tests:\n- Test filter stage rejects obviously off-topic signals (cost verification)\n- Test filter stage passes potentially relevant signals to classify stage\n- Test full classification runs only when filter passes\n- Test fallback classification when filter model fails\n- Test llm_calls table records both filter and classify stages\n- Integration test: measure cost per 100 signals is within PRD target (<$0.50 filter + <$5 classify)",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "2",
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Implement LLM Routing Tiebreaker",
+        "description": "Add optional LLM-based routing fallback when no rule matches and classification confidence is low.",
+        "details": "1. Create `src/resound/prompts/routing_tiebreaker.py`:\n```python\nTIEBREAKER_PROMPT_V1 = '''You are a routing assistant. Given a signal's classification and a list of potential owners, pick the single best owner.\n\nSignal summary: {summary}\nArea: {area}\nSeverity: {severity}\nAction class: {action_class}\n\nCandidate owners:\n{candidates}\n\nReturn JSON: {\"owner_id\": \"@handle or #channel\", \"reasoning\": \"brief explanation\"}'''\n```\n\n2. Update `RulesRouter` to accept optional `gateway: LLMGateway`:\n```python\ndef route(self, signal: RawSignal, classification: Classification, gateway: LLMGateway | None = None) -> Route:\n    # ... existing rule matching ...\n    \n    # If no rule matched and confidence < 0.6 and gateway provided:\n    if no_match and classification.confidence < 0.6 and gateway:\n        return self._llm_tiebreak(classification, gateway)\n    \n    # Otherwise return default route\n```\n\n3. Add `_llm_tiebreak()` method that:\n   - Builds candidate list from people.yaml entries\n   - Calls gateway.complete() with 'routing_tiebreaker' stage\n   - Parses response and returns Route with matched_rule='llm_tiebreaker'\n\n4. Update Pipeline to pass gateway to router\n\n5. Add config option in routing.yaml: `enable_llm_tiebreaker: true/false`",
+        "testStrategy": "Unit tests:\n- Test tiebreaker is NOT called when a rule matches\n- Test tiebreaker is NOT called when confidence >= 0.6\n- Test tiebreaker is called when no match and low confidence\n- Test tiebreaker returns valid Route with correct owner\n- Test tiebreaker failure falls back to default route\n- Test llm_calls records tiebreaker invocations",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "2",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Add Memory Query LLM Stage",
+        "description": "Implement free-text memory search using LLM to interpret natural language queries against the signal database.",
+        "details": "1. Create `src/resound/prompts/memory_query.py`:\n```python\nMEMORY_QUERY_PROMPT_V1 = '''You are a memory query assistant. Convert natural language questions about customer signals into structured filters.\n\nAvailable filter fields: area, subarea, sentiment, severity, action_class, source, date_range, keywords\n\nUser query: {query}\n\nReturn JSON: {\n  \"filters\": {\"area\": [\"product\"], \"severity\": [\"high\", \"critical\"], ...},\n  \"keywords\": [\"word1\", \"word2\"],\n  \"date_range\": {\"start\": \"2024-01-01\", \"end\": null},\n  \"interpretation\": \"Looking for high-severity product complaints\"\n}'''\n```\n\n2. Add `query_natural_language()` to `SqlMemory`:\n```python\ndef query_natural_language(\n    self,\n    brand_slug: str,\n    query: str,\n    gateway: LLMGateway,\n    limit: int = 100\n) -> tuple[list[dict], str]:  # (results, interpretation)\n```\nThis method:\n- Calls gateway.complete() with 'memory_query' stage\n- Parses the structured filters from LLM response\n- Builds SQL query with the filters\n- Returns results + the LLM's interpretation string\n\n3. Add SQL query builder method `_build_filtered_query()` that constructs SQLAlchemy query from filter dict\n\n4. Export via gateway for dashboard use",
+        "testStrategy": "Unit tests:\n- Test natural language 'all complaints about billing last month' produces correct filters\n- Test 'show me critical issues from Reddit' produces source + severity filters\n- Test invalid/empty query returns sensible default (all recent)\n- Test results returned within 5 second target\n- Integration test with real signals in test database",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "2",
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Add LLM Telemetry Dashboard View",
+        "description": "Extend the Streamlit dashboard with a fourth tab showing LLM cost/latency telemetry grouped by stage and model.",
+        "details": "1. Update `src/resound/dashboard/app.py` to add fourth tab 'LLM Telemetry':\n```python\ntab1, tab2, tab3, tab4 = st.tabs(['Live feed', 'Memory browser', 'Routing audit', 'LLM telemetry'])\n\nwith tab4:\n    st.subheader('LLM Cost & Performance')\n    \n    # Date range selector\n    col1, col2 = st.columns(2)\n    start_date = col1.date_input('From', value=datetime.now() - timedelta(days=30))\n    end_date = col2.date_input('To', value=datetime.now())\n    \n    # Cost breakdown by stage\n    costs = memory.query_llm_costs(brand_slug, since=start_date)\n    st.markdown('**Monthly spend by stage:**')\n    cost_df = pd.DataFrame(costs)\n    st.bar_chart(cost_df.pivot(index='stage', columns='model', values='total_cost'))\n    \n    # Cost breakdown by model\n    st.markdown('**Spend by model:**')\n    st.dataframe(cost_df.groupby('model')['total_cost'].sum())\n    \n    # Latency metrics\n    latency = memory.query_llm_latency(brand_slug, since=start_date)\n    st.markdown('**Latency (p50/p95) by stage:**')\n    latency_df = pd.DataFrame(latency)\n    st.dataframe(latency_df)\n    \n    # Fallback rate\n    fallbacks = memory.query_fallback_rate(brand_slug, since=start_date)\n    st.markdown('**Fallback trigger rate:**')\n    st.metric('Primary model success rate', f\"{fallbacks['primary_rate']:.1%}\")\n```\n\n2. Add helper function to calculate if call used fallback model (compare model_used vs stage default)\n\n3. Add cost reconciliation note: 'Cost tracking within ±10% of OpenRouter dashboard'",
+        "testStrategy": "Manual testing:\n- Verify cost charts render with sample llm_calls data\n- Verify latency percentiles calculate correctly\n- Verify fallback rate displays correctly\n- Verify date range filter works\n- Verify empty state shows helpful message",
+        "priority": "medium",
+        "dependencies": [
+          "3",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Integrate Memory Query into Dashboard",
+        "description": "Add natural language search to the Memory Browser tab using the memory_query LLM stage.",
+        "details": "1. Update Memory browser tab in `src/resound/dashboard/app.py`:\n```python\nwith tab2:\n    st.subheader('Memory browser')\n    \n    # Natural language search box\n    query = st.text_input(\n        'Search signals (natural language)',\n        placeholder='e.g., \"critical billing issues from last week\"'\n    )\n    \n    if query:\n        with st.spinner('Searching...'):\n            gateway = get_gateway()  # cached\n            results, interpretation = memory.query_natural_language(\n                brand_slug, query, gateway, limit=200\n            )\n        st.caption(f'Interpreted as: {interpretation}')\n        if results:\n            st.dataframe(pd.DataFrame(results), use_container_width=True)\n        else:\n            st.info('No signals match your query.')\n    else:\n        # Show all recent signals as before\n        st.dataframe(filtered[memory_cols], use_container_width=True)\n```\n\n2. Add `@st.cache_resource` for gateway instantiation\n\n3. Add search history/suggestions sidebar (optional enhancement)\n\n4. Handle LLM errors gracefully with user-friendly message",
+        "testStrategy": "Manual testing:\n- Test 'show me all negative reviews' returns filtered results\n- Test 'billing complaints this month' correctly filters by area + date\n- Test empty query shows all signals\n- Test LLM failure shows graceful error message\n- Test search completes within 5 second target",
+        "priority": "medium",
+        "dependencies": [
+          "6",
+          "7"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Refactor Classifiers to Use Gateway",
+        "description": "Update OpenRouterClassifier and ClaudeClassifier to use the new LLMGateway abstraction instead of direct API calls.",
+        "details": "1. Update `OpenRouterClassifier` to accept gateway:\n```python\nclass OpenRouterClassifier(Classifier):\n    def __init__(self, gateway: LLMGateway, brand_slug: str):\n        self.gateway = gateway\n        self.brand_slug = brand_slug\n    \n    def classify(self, raw: RawSignal, brand_context: str) -> Classification:\n        system, messages = build_classify_messages(raw, brand_context)\n        prompt = f\"{system}\\n\\n{messages[0]['content']}\"\n        \n        response = self.gateway.complete(\n            stage='classify',\n            prompt=prompt,\n            response_schema=CLASSIFICATION_SCHEMA,\n            temperature=0.1,\n            max_tokens=1024,\n        )\n        \n        return self._parse(response.content, raw)\n```\n\n2. Remove direct `openai` SDK usage from classifier - all calls go through gateway\n\n3. Update `ClaudeClassifier` similarly to use gateway (or deprecate in favor of OpenRouter path)\n\n4. Update `build_classifier()` factory to instantiate gateway and pass to classifier\n\n5. Update Pipeline to manage gateway lifecycle and pass to components\n\n6. Define `CLASSIFICATION_SCHEMA` JSON schema for structured output validation",
+        "testStrategy": "Unit tests:\n- Test classifier produces valid Classification via gateway\n- Test classifier handles gateway errors gracefully\n- Test fallback to gateway's fallback chain works\n- Test llm_calls table gets populated with classify stage calls\n- Integration test: end-to-end classify with mocked gateway",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Delete ClaudeClassifier and clean up env vars + dependencies",
+            "description": "Hard-remove the direct-Anthropic classifier path. OpenRouter becomes the only LLM path. Cleans up .env.example, README, pyproject, and the classifier factory.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #35, #41).\n\nDELETIONS:\n\n1. File: src/resound/classifiers/claude.py\n   Delete the whole file.\n\n2. File: pyproject.toml\n   Remove the anthropic entry from dependencies. Keep openai, pydantic, etc.\n\n3. File: .env.example\n   Delete the following lines / blocks:\n   - Line 1-2: # Classifier provider comment + RESOUND_CLASSIFIER_PROVIDER=openrouter\n   - Line 8-9: # Anthropic comment + ANTHROPIC_API_KEY=\n   - Lines 27-31: the entire DEPRECATED RESOUND_CLASSIFIER_MODEL block (was already commented-out per design #25)\n   Keep the explanatory comment at lines 23-25 about models.yaml â€” it remains accurate.\n\n4. File: src/resound/classifiers/openrouter.py\n   In __init__, remove the line that reads env(RESOUND_CLASSIFIER_MODEL, ...). The classifier no longer reads any env var directly; model resolution flows through the gateway via models.yaml (per #16). Note: the full constructor and classify() body get rewritten in subtask 9.4 â€” this subtask only verifies the env var read is removed in passing.\n\n5. File: src/resound/classifiers/__init__.py\n   Replace the existing build_classifier() factory body with the simplified form. The provider toggle goes away. Exact replacement happens in subtask 9.5; this subtask removes the ClaudeClassifier import only:\n\n   - Remove: from resound.classifiers.claude import ClaudeClassifier\n   - Remove: ClaudeClassifier from __all__\n\n6. File: README.md â€” line-by-line cleanup:\n   - Line 5: change Claude",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "updatedAt": "2026-05-06T20:06:47.271Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add build_classify_prompt free function; delete build_classify_messages",
+            "description": "Replace the (system, [{user}]) message-pair shape with a single string suitable for gateway.complete(). Both Pipeline (for audit) and Classifier (for gateway call) will share this function.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #37).\n\nFile: src/resound/prompts/classify.py\n\nADD this function (replaces the existing build_classify_messages):\n\ndef build_classify_prompt(raw: RawSignal, brand_context: str) -> str:\n    \"Single-string",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:06:47.396Z"
+          },
+          {
+            "id": 3,
+            "title": "Add JSON_MODE sentinel and make_fallback_classification free function",
+            "description": "Two small public-API additions: JSON_MODE constant in gateway/__init__.py and make_fallback_classification(reason) in classifiers/__init__.py. Both are consumed by 9.4, 9.5, and 9.7.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #38, #40).\n\nCHANGE 1 â€” JSON_MODE sentinel:\n\nFile: src/resound/gateway/__init__.py\n\nAdd at module level (after the existing imports, before the existing __all__):\n\nJSON_MODE: dict = {}\n\"Sentinel",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:06:47.525Z"
+          },
+          {
+            "id": 4,
+            "title": "Refactor OpenRouterClassifier to use gateway and return tuple",
+            "description": "Rewrite OpenRouterClassifier as a thin gateway wrapper. Remove direct OpenAI client; classify() returns tuple[Classification, LLMResponse]; parse failures return stub-as-data; gateway exceptions propagate.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #36, #39, #40).\n\nFile: src/resound/classifiers/openrouter.py\n\nREPLACE the entire OpenRouterClassifier class with this implementation. The new file should be ~50 lines total (down from ~109).\n\n\"OpenRouter-backed",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:09:50.094Z"
+          },
+          {
+            "id": 5,
+            "title": "Refactor Pipeline.run_once with three-tier exception backstop and audit writes",
+            "description": "Wire the Pipeline to write llm_calls audit rows on success and failure paths. Replace the single broad-except block with the layered backstop. Update build_classifier factory.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #36, #39, #42).\n\nCHANGE 1 â€” build_classifier factory:\n\nFile: src/resound/classifiers/__init__.py\n\nReplace the existing build_classifier() with:\n\ndef build_classifier(brand_slug: str) -> Classifier:\n    \"Build",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:14:00.554Z"
+          },
+          {
+            "id": 6,
+            "title": "Update cli.py healthcheck to show classify model with brand-override status",
+            "description": "Replace env-var-based model display with models.yaml resolution. Show classify model, source (override vs default), fallback chain, timeout, and OPENROUTER_API_KEY check.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #44).\n\nFile: src/resound/cli.py\n\nReplace lines 87-96 (the existing classifier provider/model/API key block) with:\n\n    from resound.gateway import load_models_config\n\n    global_cfg = load_models_config(brand_slug=None)\n    brand_cfg = load_models_config(brand_slug=brand)\n    classify = brand_cfg.get_stage_config(classify)\n    global_classify_model = global_cfg.get_stage_config(classify).model\n\n    if classify.model != global_classify_model:\n        source = fbrand",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:19:54.673Z"
+          },
+          {
+            "id": 7,
+            "title": "Tests: new tests/test_classifier.py + extend tests/test_pipeline.py + smoke test",
+            "description": "Two-file test split. New tests/test_classifier.py (~8 cases with FakeGateway). Extended tests/test_pipeline.py (~9 new cases with updated FakeClassifier). One end-to-end smoke test wiring real OpenRouterClassifier + FakeGateway + real Pipeline + real SqlMemory.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #43).\n\nPART 1 -- New file: tests/test_classifier.py\n\nApproximate structure (~120 lines, ~8 tests):\n\n\"\"\"Unit tests for OpenRouterClassifier with a FakeGateway.\n\nCovers the classifier's contract:\n  * happy path returns (Classification, LLMResponse)\n  * passes JSON_MODE sentinel and stage=\"classify\" to gateway\n  * parse failures return stub-as-data with the actual LLMResponse\n  * gateway exceptions propagate (classifier does NOT catch them)\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom datetime import datetime, timezone\nfrom typing import Any\n\nimport pytest\n\nfrom resound.classifiers import (\n    OpenRouterClassifier,\n    make_fallback_classification,\n)\nfrom resound.gateway import (\n    JSON_MODE,\n    LLMGateway,\n    LLMGatewayAuthError,\n    LLMGatewayConfigError,\n    LLMGatewayExhaustedError,\n    LLMResponse,\n)\nfrom resound.models import (\n    ActionClass,\n    Classification,\n    RawSignal,\n    Sentiment,\n    Severity,\n)\n\n\nclass FakeGateway(LLMGateway):\n    \"\"\"Drop-in stub. Either returns a fixed LLMResponse or raises.\"\"\"\n\n    def __init__(\n        self,\n        response: LLMResponse | None = None,\n        raise_exc: Exception | None = None,\n    ):\n        self.response = response\n        self.raise_exc = raise_exc\n        self.calls: list[tuple[str, str, dict | None]] = []\n\n    def complete(\n        self,\n        stage: str,\n        prompt: str,\n        response_schema: dict | None = None,\n    ) -> LLMResponse:\n        self.calls.append((stage, prompt, response_schema))\n        if self.raise_exc is not None:\n            raise self.raise_exc\n        assert self.response is not None  # tests must set one\n        return self.response\n\n\ndef _ok_response(content: str, model: str = \"fake/model\") -> LLMResponse:\n    return LLMResponse(\n        content=content,\n        model_used=model,\n        tokens_in=10,\n        tokens_out=20,\n        cost_usd=0.0001,\n        latency_ms=5.0,\n        raw_response={},\n        was_fallback=False,\n        attempt_count=1,\n    )\n\n\ndef _signal() -> RawSignal:\n    return RawSignal(\n        source=\"reddit\",\n        external_id=\"t3_test\",\n        url=None,\n        author_handle=\"someone\",\n        content=\"hello world\",\n        posted_at=datetime.now(tz=timezone.utc),\n    )\n\n\n# ---- happy path ----\n\ndef test_classify_happy_path_returns_tuple_with_classification_and_response():\n    valid_json = (\n        '{\"is_about_brand\": true, \"area\": \"cs\", \"sentiment\": \"negative\", '\n        '\"severity\": \"medium\", \"action_class\": \"sprint\", \"summary\": \"test\", '\n        '\"confidence\": 0.8}'\n    )\n    gw = FakeGateway(response=_ok_response(valid_json))\n    classifier = OpenRouterClassifier(gw)\n    result = classifier.classify(_signal(), \"brand context\")\n    assert isinstance(result, tuple) and len(result) == 2\n    classification, response = result\n    assert isinstance(classification, Classification)\n    assert classification.is_about_brand is True\n    assert classification.area == \"cs\"\n    assert response is gw.response\n\n\ndef test_classify_passes_json_mode_sentinel_to_gateway():\n    gw = FakeGateway(response=_ok_response('{\"is_about_brand\": false}'))\n    OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n    assert len(gw.calls) == 1\n    stage, prompt, schema = gw.calls[0]\n    assert schema is JSON_MODE\n\n\ndef test_classify_uses_classify_stage_name():\n    gw = FakeGateway(response=_ok_response('{\"is_about_brand\": false}'))\n    OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n    stage, _, _ = gw.calls[0]\n    assert stage == \"classify\"\n\n\n# ---- parse failures (stub-as-data) ----\n\ndef test_classify_parse_no_json_returns_stub_with_response():\n    gw = FakeGateway(response=_ok_response(\"there is no json here at all\"))\n    classification, response = OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n    assert classification.is_about_brand is False\n    assert classification.action_class == ActionClass.IGNORE\n    assert \"no_json_in_response\" in (classification.reasoning or \"\")\n    assert response is gw.response  # successful gateway call preserved\n\n\ndef test_classify_parse_bad_json_returns_stub():\n    gw = FakeGateway(response=_ok_response('{\"truncated\": \"json'))\n    classification, _ = OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n    assert \"json_decode_error\" in (classification.reasoning or \"\")\n\n\ndef test_classify_parse_pydantic_validation_returns_stub():\n    # Valid JSON but invalid sentiment enum value.\n    bad = '{\"is_about_brand\": true, \"area\": \"cs\", \"sentiment\": \"WIZARDRY\"}'\n    gw = FakeGateway(response=_ok_response(bad))\n    classification, _ = OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n    assert \"validation_error\" in (classification.reasoning or \"\")\n\n\n# ---- gateway exception propagation ----\n\ndef test_classify_propagates_gateway_exhausted_error():\n    gw = FakeGateway(raise_exc=LLMGatewayExhaustedError(\"all retries spent\", attempts=3))\n    with pytest.raises(LLMGatewayExhaustedError):\n        OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n\n\ndef test_classify_propagates_gateway_config_error():\n    gw = FakeGateway(raise_exc=LLMGatewayConfigError(\"bad models.yaml\"))\n    with pytest.raises(LLMGatewayConfigError):\n        OpenRouterClassifier(gw).classify(_signal(), \"ctx\")\n\n\n# ---- make_fallback_classification shape ----\n\ndef test_make_fallback_classification_has_correct_defaults():\n    cls = make_fallback_classification(\"test reason\")\n    assert cls.is_about_brand is False\n    assert cls.area == \"other\"\n    assert cls.action_class == ActionClass.IGNORE\n    assert cls.confidence == 0.0\n    assert \"test reason\" in cls.summary\n    assert cls.reasoning == \"test reason\"\n\n\nPART 2 -- Update tests/test_pipeline.py\n\nUpdate the existing FakeClassifier (lines 40-47) to match the new ABC return type:\n\nclass FakeClassifier(Classifier):\n    def __init__(\n        self,\n        fixed: Classification | None = None,\n        raise_exc: Exception | None = None,\n    ):\n        self.fixed = fixed\n        self.raise_exc = raise_exc\n        self.calls = 0\n\n    def classify(self, raw, brand_context) -> tuple[Classification, LLMResponse]:\n        self.calls += 1\n        if self.raise_exc is not None:\n            raise self.raise_exc\n        return self.fixed, _fake_response()\n\n\ndef _fake_response(model: str = \"fake/test\") -> LLMResponse:\n    return LLMResponse(\n        content=\"{}\",\n        model_used=model,\n        tokens_in=10,\n        tokens_out=20,\n        cost_usd=0.0001,\n        latency_ms=5.0,\n        raw_response={},\n        was_fallback=False,\n        attempt_count=1,\n    )\n\nThe existing tests (test_pipeline_end_to_end, test_pipeline_dedupes_on_second_run) should still pass with this updated FakeClassifier -- they construct it with fixed=Classification(...) which now matches the new __init__ signature.\n\nADD these new tests to tests/test_pipeline.py:\n\nfrom resound.gateway import (\n    LLMGatewayAuthError,\n    LLMGatewayConfigError,\n    LLMGatewayExhaustedError,\n    LLMGatewayParseError,\n)\n\n\ndef test_pipeline_writes_llm_call_on_success(brand, memory):\n    fixed = _classification(area=\"cs\", sev=Severity.MEDIUM)\n    classifier = FakeClassifier(fixed=fixed)\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s1\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    pipe.run_once()\n    # Inspect llm_calls table directly.\n    rows = list(memory.engine.connect().execute(\n        \"SELECT * FROM llm_calls\"\n    ))\n    assert len(rows) == 1\n    assert rows[0].stage == \"classify\"\n    assert rows[0].success is True\n    assert rows[0].signal_id is not None\n\n\ndef test_pipeline_writes_llm_failure_on_exhausted_error(brand, memory):\n    classifier = FakeClassifier(\n        raise_exc=LLMGatewayExhaustedError(\"all retries spent\", attempts=3)\n    )\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s2\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    stats = pipe.run_once()\n    rows = list(memory.engine.connect().execute(\n        \"SELECT * FROM llm_calls WHERE success = 0\"\n    ))\n    assert len(rows) == 1\n    assert rows[0].error_class == \"LLMGatewayExhaustedError\"\n    assert stats.errors == 1\n    assert stats.classified == 0\n\n\ndef test_pipeline_substitutes_stub_on_exhausted_error(brand, memory):\n    classifier = FakeClassifier(\n        raise_exc=LLMGatewayExhaustedError(\"retries spent\", attempts=3)\n    )\n    feedback = CapturingFeedback()\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s3\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=feedback)\n    pipe.run_once()\n    # Stub Classification -> ignored_by_classifier -> no feedback fired.\n    assert len(feedback.routes) == 0\n    # But signal/classification/route rows still exist (stub-as-data).\n    cls_rows = list(memory.engine.connect().execute(\n        \"SELECT * FROM classifications\"\n    ))\n    assert len(cls_rows) == 1\n\n\ndef test_pipeline_propagates_config_error_as_fatal(brand, memory):\n    classifier = FakeClassifier(raise_exc=LLMGatewayConfigError(\"bad models.yaml\"))\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s4\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    with pytest.raises(LLMGatewayConfigError):\n        pipe.run_once()\n\n\ndef test_pipeline_propagates_auth_error_as_fatal(brand, memory):\n    classifier = FakeClassifier(raise_exc=LLMGatewayAuthError(\"401\"))\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s5\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    with pytest.raises(LLMGatewayAuthError):\n        pipe.run_once()\n\n\ndef test_pipeline_substitutes_stub_on_unexpected_exception_no_audit(brand, memory):\n    classifier = FakeClassifier(raise_exc=KeyError(\"unexpected internal bug\"))\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s6\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    stats = pipe.run_once()\n    assert stats.errors == 1\n    # No audit row -- broad except path doesn't write llm_calls.\n    rows = list(memory.engine.connect().execute(\"SELECT * FROM llm_calls\"))\n    assert len(rows) == 0\n\n\ndef test_pipeline_stub_routes_as_ignored_by_classifier(brand, memory):\n    classifier = FakeClassifier(raise_exc=LLMGatewayExhaustedError(\"x\", attempts=1))\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"s7\")])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    stats = pipe.run_once()\n    assert stats.ignored == 1\n    assert stats.routed == 0\n\n\ndef test_pipeline_stats_classified_only_increments_on_success(brand, memory):\n    # One signal succeeds, one fails.\n    fixed = _classification(area=\"cs\", sev=Severity.MEDIUM)\n    classifier = _RotatingClassifier(  # fixture below\n        results=[fixed, LLMGatewayExhaustedError(\"x\", attempts=2)]\n    )\n    sources = [FakeSource(brand.slug, {}, [\n        _signal(sid=\"ok\"), _signal(sid=\"bad\")\n    ])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    stats = pipe.run_once()\n    assert stats.classified == 1  # only the successful one\n    assert stats.errors == 1\n\n\ndef test_pipeline_one_failure_does_not_block_other_signals(brand, memory):\n    # Same as above; assert isolation.\n    fixed = _classification(area=\"cs\", sev=Severity.MEDIUM)\n    classifier = _RotatingClassifier(\n        results=[LLMGatewayExhaustedError(\"x\", attempts=1), fixed]\n    )\n    sources = [FakeSource(brand.slug, {}, [\n        _signal(sid=\"bad-first\"), _signal(sid=\"ok-after\")\n    ])]\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=CapturingFeedback())\n    stats = pipe.run_once()\n    assert stats.new == 2\n    assert stats.classified == 1\n    assert stats.errors == 1\n\n\n# Helper for tests that need different results across calls:\nclass _RotatingClassifier(Classifier):\n    def __init__(self, results):\n        self.results = list(results)\n        self.idx = 0\n    def classify(self, raw, brand_context):\n        result = self.results[self.idx]\n        self.idx += 1\n        if isinstance(result, Exception):\n            raise result\n        return result, _fake_response()\n\n\nPART 3 -- Smoke test in tests/test_pipeline.py\n\nAdd this end-to-end smoke test that wires real OpenRouterClassifier through a real Pipeline against a real SqlMemory, with only the gateway being a fake:\n\ndef test_smoke_real_classifier_through_pipeline(brand, memory):\n    \"\"\"End-to-end: real OpenRouterClassifier + FakeGateway + real Pipeline +\n    real SqlMemory. Verifies llm_calls row populates with correct schema fields\n    after a real classifier walk. Closest test analogue to `resound poll-once`.\"\"\"\n    from resound.classifiers import OpenRouterClassifier\n    from tests.test_classifier import FakeGateway, _ok_response\n\n    valid_json = (\n        '{\"is_about_brand\": true, \"area\": \"cs\", \"sentiment\": \"negative\", '\n        '\"severity\": \"medium\", \"action_class\": \"sprint\", \"summary\": \"smoke\", '\n        '\"confidence\": 0.85}'\n    )\n    fake_gw = FakeGateway(response=_ok_response(valid_json, model=\"anthropic/claude-fake\"))\n    classifier = OpenRouterClassifier(fake_gw)\n    feedback = CapturingFeedback()\n    sources = [FakeSource(brand.slug, {}, [_signal(sid=\"smoke1\")])]\n\n    pipe = Pipeline(brand=brand, sources=sources, classifier=classifier,\n                    router=RulesRouter(brand.routing, brand.people),\n                    memory=memory, feedback=feedback)\n    stats = pipe.run_once()\n\n    # Pipeline went through to feedback (route fired).\n    assert stats.classified == 1\n    assert stats.routed == 1\n    assert len(feedback.routes) == 1\n\n    # llm_calls row populated with expected schema fields.\n    rows = list(memory.engine.connect().execute(\"SELECT * FROM llm_calls\"))\n    assert len(rows) == 1\n    row = rows[0]\n    assert row.stage == \"classify\"\n    assert row.success is True\n    assert row.model == \"anthropic/claude-fake\"\n    assert row.signal_id is not None\n    assert row.tokens_in > 0\n    assert row.was_fallback is False\n    assert row.attempt_count == 1\n    # Verify the response_content was preserved.\n    assert \"is_about_brand\" in (row.response_content or \"\")\n\nCRITICAL constraints:\n\n1. Tests for the classifier (PART 1) MUST use FakeGateway, not mock the openai SDK directly. The point of #39 is that gateway is the seam -- tests should mock at that seam.\n\n2. Tests for the Pipeline (PART 2) MUST NOT import or instantiate OpenRouterGateway. They use FakeClassifier injection (existing pattern). Pipeline tests are about orchestration and audit-write behavior, not about gateway internals.\n\n3. The smoke test (PART 3) is the ONE test that wires real classifier + Pipeline + SqlMemory together. It uses FakeGateway because we don't want network calls in CI. This is the closest test to a real `resound poll-once` invocation.\n\n4. SqlMemory's engine.connect().execute() pattern in the assertions assumes raw SQL is acceptable for tests. If the existing test_llm_calls.py (from Task 3) uses a different query API (e.g. session-based), MIRROR that pattern for consistency. The exact query API can be adapted.\n\n5. The _RotatingClassifier helper is for the multi-signal tests where one succeeds and one fails. Don't over-design -- just a list of results, advance an index per call.\n\n6. Tests must run on Windows (the user's platform per environment) -- no POSIX-only path tricks.\n\n7. Existing tests in tests/test_pipeline.py (test_pipeline_end_to_end, test_pipeline_dedupes_on_second_run) MUST continue to pass with only the FakeClassifier signature update. Don't rewrite their bodies.\n\nAcceptance criteria:\n- tests/test_classifier.py exists with ~9 test cases (8 classifier + 1 fallback shape).\n- tests/test_pipeline.py extended with ~9 new test cases for the three-tier exception handling and audit-write behavior.\n- One smoke test wires real OpenRouterClassifier + FakeGateway + real Pipeline + real SqlMemory and asserts llm_calls row population.\n- All existing tests in tests/test_pipeline.py continue to pass after the FakeClassifier update.\n- Total new test count: ~17.\n- pytest run completes without errors. Total runtime under 10 seconds.\n- No test depends on network, OpenRouter API, or OPENROUTER_API_KEY being set.",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-06T20:26:36.073Z"
+          }
+        ],
+        "updatedAt": "2026-05-06T20:26:36.073Z"
+      },
+      {
+        "id": 10,
+        "title": "Add CLI Model Testing Command",
+        "description": "Add `resound models test --stage classify` command to verify model configuration and test prompts.",
+        "details": "1. Add `models` command group to `src/resound/cli.py`:\n```python\n@app.command()\ndef models_test(\n    stage: str = typer.Option('classify', help='Stage to test: filter, classify, routing_tiebreaker, memory_query'),\n    brand: str = typer.Option('liquiddeath', help='Brand slug for context'),\n) -> None:\n    '''Test a model configuration by running a sample prompt.'''\n    cfg = load_brand_config(brand)\n    gateway = OpenRouterGateway(cfg)\n    \n    sample_prompts = {\n        'filter': 'Is this about Liquid Death? \"I love drinking water\"',\n        'classify': 'Classify: \"The cans are dented when delivered\"',\n        'routing_tiebreaker': 'Route: billing complaint, high severity',\n        'memory_query': 'Find all negative reviews from last week',\n    }\n    \n    console.print(f'Testing stage: {stage}')\n    console.print(f'Model: {gateway.get_model_for_stage(stage)}')\n    \n    response = gateway.complete(stage=stage, prompt=sample_prompts[stage])\n    \n    console.print(f'Response: {response.content}')\n    console.print(f'Tokens: {response.tokens_in} in, {response.tokens_out} out')\n    console.print(f'Cost: ${response.cost_usd:.4f}')\n    console.print(f'Latency: {response.latency_ms}ms')\n```\n\n2. Add `resound models list` command to show current model configuration:\n```python\n@app.command()\ndef models_list(brand: str = typer.Option(None)):\n    '''Show model configuration for each stage.'''\n    # Print table of stage -> model -> fallbacks\n```\n\n3. Add `resound models switch --stage classify --model openai/gpt-4.1` for quick switching (updates models.yaml)",
+        "testStrategy": "Manual testing:\n- Test `resound models test --stage classify` returns valid response\n- Test `resound models list` shows all configured stages\n- Test with invalid stage name shows helpful error\n- Test with missing API key shows clear error message",
+        "priority": "low",
+        "dependencies": [
+          "1",
+          "2"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Create Production Docker Configuration",
+        "description": "Create Dockerfile and docker-compose.yml for production deployment with Postgres backend.",
+        "details": "1. Create `Dockerfile`:\n```dockerfile\nFROM python:3.12-slim\n\nWORKDIR /app\n\n# Install uv for fast dependency installation\nRUN pip install uv\n\n# Copy dependency files\nCOPY pyproject.toml ./\nCOPY src/ ./src/\n\n# Install dependencies\nRUN uv pip install --system -e .\n\n# Copy brand configs\nCOPY brands/ ./brands/\nCOPY config/ ./config/\n\n# Create data directory\nRUN mkdir -p /app/data\n\nEXPOSE 8501\n\nENTRYPOINT [\"resound\"]\nCMD [\"run\", \"--brand\", \"liquiddeath\"]\n```\n\n2. Create `docker-compose.yml`:\n```yaml\nversion: '3.8'\nservices:\n  resound:\n    build: .\n    env_file: .env\n    environment:\n      - RESOUND_DATABASE_URL=postgresql+psycopg://resound:resound@db:5432/resound\n    depends_on:\n      - db\n    volumes:\n      - ./data:/app/data\n      - ./brands:/app/brands:ro\n    command: run --brand ${RESOUND_BRAND:-liquiddeath}\n  \n  dashboard:\n    build: .\n    env_file: .env\n    environment:\n      - RESOUND_DATABASE_URL=postgresql+psycopg://resound:resound@db:5432/resound\n    depends_on:\n      - db\n    ports:\n      - \"8501:8501\"\n    command: dashboard --brand ${RESOUND_BRAND:-liquiddeath}\n  \n  db:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_USER: resound\n      POSTGRES_PASSWORD: resound\n      POSTGRES_DB: resound\n    volumes:\n      - postgres_data:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U resound\"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n\nvolumes:\n  postgres_data:\n```\n\n3. Update `.env.example` with production settings documentation\n\n4. Add healthcheck endpoint to CLI or dashboard",
+        "testStrategy": "Manual testing:\n- Test `docker compose build` succeeds\n- Test `docker compose up` starts all services\n- Test dashboard accessible at localhost:8501\n- Test pipeline writes to Postgres (check with psql)\n- Test container restart preserves data\n- Test with different RESOUND_BRAND values",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Create Operator Runbook Documentation",
+        "description": "Write comprehensive operator documentation covering installation, brand onboarding, model configuration, and key rotation.",
+        "details": "Create `docs/RUNBOOK.md` with sections:\n\n1. **Quick Start**\n   - Prerequisites (Python 3.12+, Docker)\n   - Clone and install\n   - Set up .env with API keys\n   - Run first poll: `resound poll-once --brand liquiddeath`\n   - View dashboard: `resound dashboard --brand liquiddeath`\n\n2. **Brand Onboarding**\n   - Create brand directory: `mkdir brands/newbrand`\n   - Copy template files from existing brand\n   - Edit brand.yaml (name, description, contacts)\n   - Edit sources.yaml (enable/configure sources)\n   - Edit understanding.md (taxonomy, glossary, examples)\n   - Edit routing.yaml (rules, default route)\n   - Edit people.yaml (owners, channels)\n   - Optional: models.yaml for custom model selection\n   - Test: `resound healthcheck --brand newbrand`\n\n3. **Model Configuration**\n   - Understanding models.yaml structure\n   - Available models via OpenRouter\n   - Cost vs quality tradeoffs per stage\n   - Hot-swap procedure: edit models.yaml, restart\n   - Testing: `resound models test --stage classify`\n\n4. **API Key Rotation**\n   - OpenRouter key rotation\n   - Reddit/Twitter credential rotation\n   - Zero-downtime rotation procedure\n\n5. **Production Deployment**\n   - Docker Compose deployment\n   - Postgres setup and backups\n   - Monitoring and alerting\n   - Log aggregation\n\n6. **Troubleshooting**\n   - Common errors and solutions\n   - Checking source health\n   - LLM fallback debugging",
+        "testStrategy": "Review testing:\n- Follow runbook on fresh machine to verify accuracy\n- Test all commands in runbook work as documented\n- Have non-author follow runbook and note confusion points\n- Verify brand onboarding takes <4 hours as per PRD target",
+        "priority": "low",
+        "dependencies": [
+          "11"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Add Classification Fields for Audit Trail",
+        "description": "Extend Classification model and database schema to store model_used, tokens_in, tokens_out, and cost_usd per classification.",
+        "details": "1. Update `Classification` model in `src/resound/models.py`:\n```python\nclass Classification(BaseModel):\n    # ... existing fields ...\n    model_used: Optional[str] = None  # OpenRouter model slug\n    tokens_in: Optional[int] = None\n    tokens_out: Optional[int] = None\n    cost_usd: Optional[float] = None\n```\n\n2. Update `ClassificationRow` in `src/resound/memory/__init__.py`:\n```python\nmodel_used: Mapped[str | None] = mapped_column(String(128), nullable=True)\ntokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)\ntokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)\ncost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)\n```\n\n3. Update `record_classification()` to persist new fields\n\n4. Update classifiers to populate these fields from LLMResponse\n\n5. Update dashboard to show model_used in signal detail view\n\n6. Create Alembic migration for schema changes",
+        "testStrategy": "Unit tests:\n- Test Classification model accepts new optional fields\n- Test record_classification persists all fields\n- Test query_recent returns model_used, tokens, cost\n- Test migration applies cleanly to existing database\n- Test backward compatibility with existing classifications (null values ok)",
+        "priority": "medium",
+        "dependencies": [
+          "1",
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Update README with OpenRouter Documentation",
+        "description": "Update README.md with comprehensive setup instructions, OpenRouter configuration, and model selection guidance.",
+        "details": "Update `README.md` with:\n\n1. **Header/Badge section**\n   - Project description emphasizing OpenRouter flexibility\n   - Badges: Python version, license, etc.\n\n2. **Features**\n   - Multi-model support via OpenRouter (200+ models)\n   - Provider-agnostic architecture\n   - Two-stage filter→classify for cost optimization\n   - Per-stage model configuration\n\n3. **Quick Start**\n   ```bash\n   # Clone and install\n   git clone ...\n   cd resound\n   pip install -e .\n   \n   # Configure\n   cp .env.example .env\n   # Edit .env with OPENROUTER_API_KEY\n   \n   # Run\n   resound poll-once --brand liquiddeath\n   resound dashboard --brand liquiddeath\n   ```\n\n4. **Model Configuration**\n   - Explain models.yaml structure\n   - Show how to switch models\n   - Cost comparison table (Claude vs GPT vs Llama)\n\n5. **Architecture Overview**\n   - Diagram of 5 layers + gateway\n   - Configuration file reference\n\n6. **Brand Configuration**\n   - 7 files required\n   - Example snippets\n\n7. **Docker Deployment**\n   - `docker compose up` instructions\n\n8. **API Reference**\n   - CLI commands\n   - Environment variables",
+        "testStrategy": "Review testing:\n- Verify all code snippets in README work\n- Test quick start on fresh machine\n- Check all links are valid\n- Review for clarity and completeness",
+        "priority": "low",
+        "dependencies": [
+          "2",
+          "11"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "End-to-End Integration Testing",
+        "description": "Create comprehensive integration tests that verify the full pipeline from ingestion through classification and routing with the new gateway architecture.",
+        "details": "1. Create `tests/integration/test_full_pipeline.py`:\n```python\nimport pytest\nfrom unittest.mock import Mock, patch\nfrom resound.pipeline import Pipeline\nfrom resound.gateway import OpenRouterGateway, LLMResponse\nfrom resound.memory import SqlMemory\n\n@pytest.fixture\ndef mock_gateway():\n    gateway = Mock(spec=OpenRouterGateway)\n    gateway.complete.return_value = LLMResponse(\n        content='{\"is_about_brand\": true, ...}',\n        model_used='anthropic/claude-sonnet-4-5',\n        tokens_in=100,\n        tokens_out=50,\n        cost_usd=0.001,\n        latency_ms=500,\n    )\n    return gateway\n\ndef test_pipeline_with_two_stage_classification(mock_gateway, tmp_path):\n    '''Test full pipeline: ingest → filter → classify → route → memory'''\n    # Setup\n    memory = SqlMemory(f'sqlite:///{tmp_path}/test.db')\n    # ... configure test brand, mock source ...\n    \n    pipeline = Pipeline(brand_cfg, gateway=mock_gateway, memory=memory)\n    stats = pipeline.run_once()\n    \n    # Verify filter stage was called\n    assert mock_gateway.complete.call_args_list[0][1]['stage'] == 'filter'\n    # Verify classify stage was called for passed signals\n    assert mock_gateway.complete.call_args_list[1][1]['stage'] == 'classify'\n    # Verify llm_calls recorded\n    llm_calls = memory.query_llm_calls(brand_slug='test')\n    assert len(llm_calls) >= 2\n```\n\n2. Add tests for:\n   - Filter rejects off-brand signal (only 1 LLM call)\n   - Full classification path (2 LLM calls)\n   - Routing tiebreaker triggered (3 LLM calls)\n   - Gateway fallback on error\n   - Cost tracking accuracy\n\n3. Create `tests/integration/test_model_swap.py`:\n   - Test switching models.yaml and verifying new model is used\n\n4. Add smoke test that runs against real OpenRouter (skipped by default, enabled via env var)",
+        "testStrategy": "Run integration test suite:\n- All tests pass with mocked gateway\n- Optional smoke test passes with real OpenRouter API\n- Test coverage for gateway integration >80%\n- Performance: full test suite runs in <30 seconds",
+        "priority": "high",
+        "dependencies": [
+          "4",
+          "5",
+          "9"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "Create Ridge Brand Configuration Bundle",
+        "description": "Create the complete Ridge brand bundle (6 YAML/markdown config files) as the second demo brand to prove the extensibility story that onboarding a new D2C brand is a configuration task, not an engineering task.",
+        "details": "Create `brands/ridge/` directory with all 6 configuration files:\n\n1. **brand.yaml**\n```yaml\nname: \"Ridge\"\ndescription: \"Minimalist wallets, rings, and everyday carry. DTC-first with retail expansion.\"\nwebsite: \"https://ridge.com\"\nprimary_contacts:\n  - name: \"Operator\"\n    role: \"Resound admin\"\n    email: \"ops@ridge.com\"\n```\n\n2. **sources.yaml** - Enable Reddit only (G2/Twitter disabled per PRD §4.6):\n```yaml\nreddit:\n  enabled: true\n  subreddits:\n    - ridge\n    - EDC  # Everyday carry subreddit\n    - wallets\n  search_terms:\n    - \"ridge wallet\"\n    - \"ridge ring\"\n  limit: 25\n\ng2:\n  enabled: false\ntwitter:\n  enabled: false\n```\n\n3. **understanding.md** - Ridge-specific taxonomy:\n- Product areas: wallets, rings, accessories, build quality, durability, RFID blocking\n- Common complaints: card ejection issues, scratching, ring sizing\n- Glossary: \"The Ridge\" (wallet), \"Basecamp\" (knife accessory)\n- Include 4+ classification examples covering product complaint, shipping issue, positive review, false positive\n\n4. **routing.yaml** - Rules matching Ridge's team structure:\n- Critical → #exec\n- Product quality → @product-lead\n- Shipping/CS → #cs-team\n- Default → #triage\n- Low confidence → #review-queue\n\n5. **people.yaml** - Placeholder owner mappings:\n- @product-lead, @cs-lead, #exec, #cs-team, #triage, #review-queue\n\n6. **views.yaml** - Saved dashboard views:\n- \"Critical this week\"\n- \"Product defects\"\n- \"Shipping issues\"",
+        "testStrategy": "Verification:\n- `resound healthcheck --brand ridge` returns green with all config files loaded\n- Source counts show reddit enabled, g2/twitter disabled\n- Routing rules count matches routing.yaml\n- People entries count matches people.yaml\n- Understanding doc char count > 500 (substantive content)\n- No `# TODO` or placeholder text in any config file\n- Run `resound poll-once --brand ridge` and verify signals are ingested and classified",
+        "priority": "high",
+        "dependencies": [],
+        "status": "in-progress",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create brands/ridge/ directory and write 4 structural files (brand, sources, people, views)",
+            "description": "Create the Ridge bundle directory and write the four mechanical-mirror YAML files. brand.yaml + sources.yaml + people.yaml + views.yaml all per the locked spec. No models.yaml file (per #53 -- Ridge inherits global defaults).",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #45, #46, #47, #52, #53, #55).\n\nCreate the directory:\n  mkdir brands/ridge\n\nThen write these 4 files exactly as specified.\n\n==============================================================================\nFILE 1: brands/ridge/brand.yaml (per #52)\n==============================================================================\n\nname: Ridge\ndescription: Minimalist",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 16,
+            "updatedAt": "2026-05-07T08:48:56.782Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Write brands/ridge/understanding.md (6 sections, ~60 lines, 4 examples)",
+            "description": "Substantive Ridge-specific content for sections 1-6. Drives classification quality. Highest-leverage file in the bundle.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #48, #49, #50, #51, #52, #56).\n\nWrite the file at brands/ridge/understanding.md exactly as below. ~60 lines, 6 sections.\n\nCRITICAL: All subarea strings in section 3 and the Classification specs in\nsection 5 use snake_case (warranty_claims, card_ejection_mechanism, ring_returns,\nmaterial_variants, etc.) per #56 -- they MUST match views.yaml filter strings\nexactly. The classifier emits free-form subarea strings; if section 3 says\nwarranty",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 16,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-07T08:50:07.921Z"
+          },
+          {
+            "id": 3,
+            "title": "Write brands/ridge/routing.yaml with 8 rules (2 renames + 1 swap from Liquid Death pattern)",
+            "description": "8-rule routing config. Two renames (cs_damaged_shipment -> cs_warranty_or_damage; ops_retail_availability -> ops_distribution_gripes). One swap (product_roadmap_input -> product_durability_complaint). All route_to handles must exist in people.yaml.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #54).\n\nWrite brands/ridge/routing.yaml exactly as below. 8 rules. Verify all route_to\nhandles exist in people.yaml (subtask 16.1 created the required entries).\n\n==============================================================================\nFILE: brands/ridge/routing.yaml\n==============================================================================\n\ndefault_route: #triage\n\nrules:\n  - name: critical_pr_risk\n    when:\n      severity: critical\n    route_to: #exec\n    priority: immediate\n    notes: Anything",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 16,
+            "parentId": "undefined",
+            "updatedAt": "2026-05-07T08:50:42.581Z"
+          },
+          {
+            "id": 4,
+            "title": "Three-layer verification: static + healthcheck + functional poll-once run",
+            "description": "Verify the bundle works end-to-end. Static checks (files exist + parse). Healthcheck reports correct counts. Functional run ingests + classifies + routes at least one real Reddit signal. Fix any subarea string mismatches surfaced.",
+            "details": "DESIGN LOCKED via grilling on 2026-05-07 (see docs/design_decisions.md #56).\n\nRun all three verification layers in order. Each must pass before done.\n\n==============================================================================\nLAYER 1 -- Static verification\n==============================================================================\n\nRun these checks (manually or via a small shell loop):\n\n1. All 6 files exist:\n   ls brands/ridge/{brand,sources,routing,people,views}.yaml brands/ridge/understanding.md\n\n2. brands/ridge/models.yaml does NOT exist (per #53):\n   if (Test-Path brands/ridge/models.yaml) { Write-Error models.yaml\n<info added on 2026-05-07T09:01:43.499Z>\nLayer 1 static verification completed successfully:\n\nFile existence checks:\n- brands/ridge/brand.yaml: present\n- brands/ridge/sources.yaml: present\n- brands/ridge/routing.yaml: present\n- brands/ridge/people.yaml: present\n- brands/ridge/views.yaml: present\n- brands/ridge/understanding.md: present\n- brands/ridge/models.yaml: correctly absent per design decision #53\n\nYAML parsing and content validation:\n- All 5 YAML files parse without errors\n- understanding.md character count: 3509 (exceeds 500 minimum)\n- routing.yaml rule count: 8 rules\n- people.yaml: 3 people, 6 channels defined\n- Route handle resolution: all 8 handles (#exec, @billing-lead, #cs-team, @distribution-lead, @product-lead, #eng-bugs, #marketing-watch, #review-queue) resolve in people.yaml\n- views.yaml: 3 saved views defined\n- Subarea filter strings (warranty_claims, card_ejection_mechanism) appear verbatim in understanding.md per #56 contract\n- No leftover # TODO or # FIXME placeholders outside allowed header comments\n\nLayers 2 and 3 require user execution:\n- Layer 2 (healthcheck): resound healthcheck --brand ridge expected to show 8 routing rules, 3 people, 6 channels, ~3509 chars understanding, classify model source = 'config/models.yaml (global default)' per #44 and #53\n- Layer 3 (functional): resound poll-once --brand ridge expected to poll/classify/route at least 1 Reddit signal with errors=0\n</info added on 2026-05-07T09:01:43.499Z>",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 16,
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-05-07T08:50:42.581Z"
+      },
+      {
+        "id": 17,
+        "title": "Pre-seed Liquid Death Memory with 30+ Classified Signals",
+        "description": "Run the pipeline multiple times to accumulate at least 30 classified signals for Liquid Death, ensuring diversity in severity, action_class, and areas for a compelling demo walkthrough.",
+        "details": "Execute the pre-recording checklist item §6 to build a rich memory state:\n\n1. **Initial seeding:**\n```bash\nresound poll-once --brand liquiddeath\n# Wait 2-3 minutes for rate limits\nresound poll-once --brand liquiddeath\nresound poll-once --brand liquiddeath\n```\n\n2. **Verify signal diversity in memory:**\n- Check SQLite database: `sqlite3 data/resound.db \"SELECT severity, COUNT(*) FROM classifications GROUP BY severity;\"`\n- Must have at least 1 signal with `severity=high` or `severity=critical`\n- Must have at least 1 signal with `action_class=immediate` or `action_class=sprint`\n- Must have at least 1 signal with `root_cause_hypothesis` filled in\n\n3. **Curate walk-through signal:**\n- Query database for a signal that has:\n  - Non-trivial content (actual complaint, not just fandom)\n  - Clear routing decision (matched a specific rule)\n  - Interesting root_cause_hypothesis\n- Document the `signal_id` to use in the video walkthrough (Beat 2)\n\n4. **Verify dashboard renders:**\n```bash\nresound dashboard --brand liquiddeath\n# Navigate to each tab, confirm data displays\n```\n\n5. **Export backup:**\n- Copy `data/resound.db` to `data/resound-demo-backup.db` for recovery if needed",
+        "testStrategy": "Verification checklist:\n- [ ] `SELECT COUNT(*) FROM signals WHERE brand_slug='liquiddeath'` >= 30\n- [ ] At least one signal has severity=high or severity=critical\n- [ ] At least one signal has action_class=immediate\n- [ ] At least one signal has non-empty root_cause_hypothesis\n- [ ] Dashboard Live feed tab shows data\n- [ ] Dashboard Memory browser tab shows data\n- [ ] Dashboard Routing audit tab shows routed signals with owners\n- [ ] Backup database exists at data/resound-demo-backup.db",
+        "priority": "high",
+        "dependencies": [
+          "16"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Polish README for Demo Reviewer Experience",
+        "description": "Update README.md to meet the repo acceptance criteria: quickstart works in <5 minutes on fresh clone, explicitly frames this as a hiring-pitch artifact, and provides clear architecture pointers.",
+        "details": "Update README.md according to PRD §3.2 acceptance criteria:\n\n1. **Add explicit framing at top:**\n```markdown\n> **What is this?** A hiring-pitch artifact demonstrating a productizable voice-of-customer intelligence layer for Fulfil's D2C customers. This is a working proof-of-concept, not a v1 release.\n```\n\n2. **Simplify quickstart to 2-minute path:**\n```markdown\n## Quick start (2 minutes)\n\n1. Clone and install:\n   ```bash\n   git clone <repo-url> resound && cd resound\n   python -m venv .venv && source .venv/bin/activate  # or .venv\\Scripts\\activate on Windows\n   pip install -e .\n   ```\n\n2. Configure API keys:\n   ```bash\n   cp .env.example .env\n   # Edit .env: add OPENROUTER_API_KEY and REDDIT_* credentials\n   ```\n\n3. Verify:\n   ```bash\n   resound healthcheck --brand liquiddeath\n   ```\n   Should show green checks for API key and config.\n```\n\n3. **Add pointer to architecture:**\n```markdown\n## Architecture\n\nSee [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for Mermaid diagrams of:\n- System flow (5 layers + LLM gateway)\n- LLM Gateway internals\n- Data model\n```\n\n4. **Add \"Source coverage\" section:**\n```markdown\n## Source coverage\n\n- **Reddit**: Fully wired, tested, demo-ready.\n- **G2**: Scaffolded but rate-limit-fragile (Cloudflare). Disabled in shipped brand bundles.\n- **Twitter**: Scaffolded, requires paid API tier for useful volume. Disabled in shipped brand bundles.\n```\n\n5. **Reference PRDs:**\n```markdown\n## Product specs\n\n- [`docs/PRD.md`](docs/PRD.md) — Original product spec\n- [`docs/PRD-openrouter.md`](docs/PRD-openrouter.md) — OpenRouter refactor spec\n- [`docs/PRD-demo.md`](docs/PRD-demo.md) — Demo execution spec\n```\n\n6. **Clean up any stale content** that contradicts the demo state.",
+        "testStrategy": "Verification:\n- Fresh clone test: follow README quickstart on new machine/venv, complete in <5 min\n- All code snippets in README are copy-paste executable\n- All file links resolve (docs/ARCHITECTURE.md, docs/PRD.md, etc.)\n- No TODO/FIXME comments in README\n- Reviewer can find architecture diagram within 30 seconds of opening README",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Remove TODO/FIXME/Placeholder Comments from Customer-Visible Files",
+        "description": "Audit and clean all brand config files and customer-visible code to remove any TODO, FIXME, or placeholder comments that would undermine credibility during repo review.",
+        "details": "Per PRD §8 definition of demo-ready: \"No `# TODO`, `# FIXME`, or commented-out experimental code in customer-visible files.\"\n\n1. **Search for issues:**\n```bash\ngrep -rn \"TODO\\|FIXME\\|XXX\\|HACK\" brands/ src/resound/\ngrep -rn \"# placeholder\\|# stub\\|# temp\" brands/ src/resound/\n```\n\n2. **Customer-visible files to audit:**\n- `brands/liquiddeath/*.yaml`\n- `brands/liquiddeath/*.md`\n- `brands/ridge/*.yaml`\n- `brands/ridge/*.md`\n- `brands/fulfil/*.yaml` (stays in repo per PRD, just not on camera)\n- `brands/fulfil/*.md`\n- `src/resound/dashboard/app.py`\n- `README.md`\n- `docs/ARCHITECTURE.md`\n\n3. **For each TODO found:**\n- Either implement the feature (if trivial)\n- Or delete the comment entirely (if out of scope for demo)\n- Do NOT leave as-is\n\n4. **Check for commented-out code blocks:**\n- Remove any `# import foo` or `# def unused_function()` blocks\n- If code is not active, it should not be in the file\n\n5. **Verify G2/Twitter sources are cleanly disabled:**\n- In `brands/liquiddeath/sources.yaml` and `brands/ridge/sources.yaml`:\n  - `g2.enabled: false` with no explanation comment needed\n  - `twitter.enabled: false` same",
+        "testStrategy": "Verification:\n- `grep -rn \"TODO\\|FIXME\" brands/ src/resound/` returns no matches\n- `grep -rn \"# placeholder\" brands/` returns no matches\n- Visual review of all brand config files shows professional, complete content\n- No commented-out import statements in src/resound/*.py",
+        "priority": "high",
+        "dependencies": [
+          "16"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Add LICENSE File",
+        "description": "Add a LICENSE file to the repository as required by the demo-ready definition in PRD §8.",
+        "details": "Per PRD §8: \"License file present (MIT or 'all rights reserved' — pick one and own it).\"\n\nThe README currently states \"Proprietary\" for License. Create a LICENSE file to match:\n\n**Option A - Proprietary (recommended for hiring pitch):**\n```\nCopyright (c) 2024 [Your Name]\n\nAll rights reserved.\n\nThis software and associated documentation files (the \"Software\") are proprietary\nand confidential. Unauthorized copying, distribution, modification, public display,\nor public performance of this Software is strictly prohibited.\n\nThis Software is provided for evaluation purposes only in connection with employment\ndiscussions with Fulfil.io. No license to use, copy, modify, or distribute this\nSoftware is granted except as explicitly authorized in writing.\n```\n\n**Option B - MIT (if open-sourcing later):**\nStandard MIT license text.\n\nRecommendation: Use Option A (Proprietary) because:\n1. This is a hiring artifact, not an open-source project\n2. Protects the work while allowing Fulfil to evaluate\n3. Matches the \"Proprietary\" note already in README",
+        "testStrategy": "Verification:\n- LICENSE file exists in repo root\n- Content is coherent (not placeholder text)\n- README.md license note matches LICENSE file content\n- `git status` shows LICENSE as tracked",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Verify and Document Model Swap Demo Flow",
+        "description": "Test and document the model swap demonstration (Beat 4) where the classifier model is changed via environment variable to prove architecture flexibility.",
+        "details": "Prepare the model swap demonstration for Beat 4 (§4.4 Architecture credibility):\n\n1. **Test model swap flow:**\n```bash\n# Start with Claude (current default)\necho $RESOUND_CLASSIFIER_MODEL\n# Should show: anthropic/claude-sonnet-4-5\n\n# Run a classification and note model_used\nresound poll-once --brand liquiddeath\n# Check last classification model in DB\n\n# Change to GPT\nexport RESOUND_CLASSIFIER_MODEL=openai/gpt-4.1\n# Or edit .env file\n\n# Run again\nresound poll-once --brand liquiddeath\n# Verify new model appears in classification\n```\n\n2. **Verify model_used is visible in dashboard:**\n- Check if Classification model info surfaces in dashboard views\n- If not currently visible, note for potential enhancement (NOT blocking for demo)\n\n3. **Document tested model slugs that work:**\n- `anthropic/claude-sonnet-4-5` ✓\n- `openai/gpt-4.1` ✓ (or current equivalent)\n- `google/gemini-2.5-pro` (optional test)\n\n4. **Prepare .env.demo file:**\n```bash\n# Copy .env to .env.demo-claude and .env.demo-gpt\n# Pre-configure both for quick swap during recording\n```\n\n5. **Write recording script notes:**\n- Exact file to show (.env or which config)\n- Exact edit to make on camera\n- Expected output to verify model changed",
+        "testStrategy": "Verification:\n- Model swap from Claude to GPT works without code changes\n- Classification still succeeds with alternate model\n- Process restart picks up new model (no caching issues)\n- Recording script notes are clear enough to execute on camera in <30 seconds",
+        "priority": "medium",
+        "dependencies": [
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "Squash and Clean Git Commit History",
+        "description": "Clean the git commit history to present a professional, reviewable history without 'wip', 'fix', or 'ugh' commits as required by PRD §3.2.",
+        "details": "Per PRD §3.2: \"Commit history is presentable. Squash any 'wip', 'fix', 'ugh' commits before sharing.\"\n\n1. **Audit current history:**\n```bash\ngit log --oneline -50\n```\nIdentify commits to squash or rename.\n\n2. **Interactive rebase to clean history:**\n```bash\ngit rebase -i HEAD~N  # where N is number of commits to review\n```\n\nTargeted commit structure:\n- `feat: Initial Resound scaffold - pipeline, sources, classifier`\n- `feat: Add Liquid Death brand bundle`\n- `feat: Add Streamlit dashboard`\n- `feat: Add OpenRouter classifier support`\n- `feat: Add Ridge brand bundle`\n- `docs: Add architecture diagrams and PRDs`\n- `chore: Polish README for demo`\n\n3. **Commit message style:**\n- Use conventional commits: `feat:`, `fix:`, `docs:`, `chore:`\n- Keep subject line under 72 chars\n- No WIP, fix typo, or iterative commits visible\n\n4. **Verify no sensitive data:**\n```bash\ngit log -p | grep -i \"api_key\\|password\\|secret\"\n```\nIf found, use `git filter-branch` or BFG to remove.\n\n5. **Force push to private branch:**\n```bash\ngit push origin main --force-with-lease\n```\n\nNote: Only do this on a private repo with no collaborators.",
+        "testStrategy": "Verification:\n- `git log --oneline` shows clean, professional commit messages\n- No commits contain 'wip', 'fix typo', 'ugh', 'temp', 'asdf'\n- Commit subjects are descriptive of changes\n- No API keys or secrets in git history\n- Total commit count is reasonable (5-15 commits)",
+        "priority": "medium",
+        "dependencies": [
+          "16",
+          "18",
+          "19",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "Create Video Beat 1 Script and Assets",
+        "description": "Write the script and prepare visual assets for Beat 1 (The Hook, 0:00-0:20) including title card and fragmented signals collage.",
+        "details": "Prepare Beat 1 per PRD §4.1:\n\n1. **Write script (verbatim for teleprompter):**\n```\n[TITLE CARD: Resound logo, 3 seconds]\n\n\"Every D2C brand on Fulfil's platform — Liquid Death, Ridge, HexClad — \nhas the same blind spot. \n\nCustomer voice is scattered across Reddit, G2, Twitter. \nNo shared memory, no closed loop. \n\nThey lose deals over objections that product would have heard six months ago.\"\n\n[CUT TO: Fragmented signals collage]\n```\n\n2. **Create title card:**\n- Simple text or logo: \"Resound\"\n- Subtitle: \"Voice-of-customer intelligence for D2C brands\"\n- Format: 1920x1080 PNG or use Loom title feature\n\n3. **Create fragmented signals collage:**\n- Screenshot a Reddit thread about a brand\n- Screenshot a G2 review snippet\n- Screenshot a Twitter mention\n- Arrange in a visually fragmented layout (overlapping, scattered)\n- Export as static image or short video clip\n\n4. **Timing notes:**\n- Title card: 3 seconds\n- Voiceover: ~15 seconds\n- Total: 18-20 seconds (within 20s target)\n\n5. **Save assets:**\n- `docs/demo-assets/title-card.png`\n- `docs/demo-assets/signals-collage.png`\n- `docs/demo-assets/beat1-script.md`",
+        "testStrategy": "Verification:\n- Script reads aloud in 15-18 seconds\n- Title card is readable at 1080p\n- Fragmented signals image clearly shows Reddit/G2/Twitter sources\n- All assets saved in docs/demo-assets/\n- Script conveys problem and Fulfil-customer positioning (not Fulfil itself)",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "Create Video Beat 2 Script and Terminal Setup",
+        "description": "Write the script and prepare terminal/dashboard setup for Beat 2 (Liquid Death running live, 0:20-1:10) with curated signal walkthrough.",
+        "details": "Prepare Beat 2 per PRD §4.2:\n\n1. **Write script:**\n```\n\"Here's Resound configured for Liquid Death. Real public Reddit data, \nclassified by an LLM, routed to a plausible internal owner.\"\n\n[TERMINAL: resound run --brand liquiddeath]\n\"We're polling Reddit for mentions. Each signal gets classified and routed.\"\n\n[CUT TO: Dashboard]\n\"Here's the dashboard. Let me walk through one specific signal.\"\n\n[CLICK: Select the pre-curated signal]\n\"This customer complaint came from Reddit. The classifier identified it as \na [area] issue, severity [severity], action class [action_class].\n\nIt was routed to [owner] because [rule that matched].\n\nAnd here in the memory browser — every signal accumulates. This is the asset \nthat compounds.\"\n```\n\n2. **Terminal preparation:**\n- Set terminal font to 16pt+ minimum\n- Use dark theme for contrast\n- Pre-position terminal window for screen capture\n- Test `resound run --brand liquiddeath` streams signals visibly\n\n3. **Dashboard preparation:**\n- Pre-launch: `resound dashboard --brand liquiddeath`\n- Set browser zoom for readability\n- Pre-navigate to Live feed tab\n- Identify the curated signal row (from Task 17)\n\n4. **Curated signal selection:**\n- Must have: interesting content, clear classification, specific routing\n- Document: signal_id, expected area, severity, action_class, owner\n- Prepare what to say about each field\n\n5. **Timing notes:**\n- Terminal run: ~10 seconds\n- Dashboard overview: ~15 seconds\n- Signal walkthrough: ~20 seconds\n- Memory browser note: ~5 seconds\n- Total: ~50 seconds\n\n6. **Save:**\n- `docs/demo-assets/beat2-script.md`\n- `docs/demo-assets/curated-signal.md` (signal details)",
+        "testStrategy": "Verification:\n- Script reads aloud in 45-50 seconds\n- Terminal font is readable at 1080p\n- Dashboard columns are legible at recorded zoom\n- Curated signal exists in memory with expected classification\n- Can smoothly navigate to signal in dashboard",
+        "priority": "high",
+        "dependencies": [
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Create Video Beat 3 Script (The Money Shot)",
+        "description": "Write the script and prepare file-editing demo for Beat 3 (Extensibility move, 1:10-2:00) showing Ridge onboarding as config-only task.",
+        "details": "Prepare Beat 3 per PRD §4.3 — this is the critical beat:\n\n1. **Write script:**\n```\n\"Now watch. Onboarding a second brand — Ridge — is a configuration task, \nnot an engineering one.\"\n\n[SHOW: File tree of brands/liquiddeath/]\n\"Here's Liquid Death's config. Six files.\"\n\n[TERMINAL: cp -r brands/liquiddeath brands/ridge]\n\"Copy the bundle.\"\n\n[EDITOR: Show pre-prepared diffs]\n\"Edit brand.yaml — name and description.\nEdit sources.yaml — different subreddits.\nEdit understanding.md — Ridge's product taxonomy.\"\n\n[TERMINAL: resound healthcheck --brand ridge]\n\"Health check... green.\"\n\n[TERMINAL: resound run --brand ridge]\n\"And now signals are streaming for Ridge.\"\n\n[PAUSE]\n\n\"Three minutes of YAML. No Python. This is the productization story for Fulfil — \nevery D2C brand on the platform is a config bundle away.\"\n```\n\n2. **Pre-prepare the diffs:**\n- Ridge bundle already created (Task 16)\n- For recording, pretend to copy and edit:\n  - Actually show the file tree\n  - Actually run cp command (already done, but show it)\n  - Show pre-prepared diffs in editor, paste in (don't type live)\n\n3. **Editor setup:**\n- Use VS Code or similar with file tree visible\n- Pre-open brand.yaml, sources.yaml, understanding.md\n- Have diff snippets ready to paste\n\n4. **Timing:**\n- File tree intro: ~5 seconds\n- cp command: ~5 seconds\n- Editor diffs: ~25 seconds\n- healthcheck: ~5 seconds\n- run command: ~5 seconds\n- Closing statement: ~5 seconds\n- Total: ~50 seconds\n\n5. **Save:**\n- `docs/demo-assets/beat3-script.md`\n- `docs/demo-assets/ridge-diffs.md` (pre-prepared snippets)",
+        "testStrategy": "Verification:\n- Script reads aloud in 45-50 seconds\n- Ridge bundle exists and healthcheck passes\n- `resound run --brand ridge` streams signals\n- Editor shows clear visual diffs\n- Key message lands: config task, not engineering task",
+        "priority": "high",
+        "dependencies": [
+          "16",
+          "17"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 26,
+        "title": "Create Video Beat 4 Script (Architecture Credibility)",
+        "description": "Write the script and prepare model swap demonstration for Beat 4 (Architecture credibility, 2:00-2:30) showing LLM gateway flexibility.",
+        "details": "Prepare Beat 4 per PRD §4.4:\n\n1. **Write script:**\n```\n\"Five layers. Each one is an interface; concrete implementations are pluggable. \nThe LLM is a single gateway — switch from Claude to GPT to Gemini with one config edit.\"\n\n[SHOW: ARCHITECTURE.md diagram in browser]\n\"Here's the system flow. Sources, understanding, routing, memory, feedback.\"\n\n[ZOOM: LLM gateway box]\n\"All model calls go through this gateway.\"\n\n[EDITOR: Show .env or models config]\n\"Change the model here...\"\n\n[EDIT: RESOUND_CLASSIFIER_MODEL from claude to gpt]\n\n[TERMINAL: resound poll-once --brand liquiddeath]\n\"Next classification uses the new model.\"\n```\n\n2. **Browser preparation:**\n- Open docs/ARCHITECTURE.md on GitHub (rendered Mermaid)\n- Or use VS Code Markdown preview\n- Pre-zoom to appropriate level\n\n3. **Model swap demonstration:**\n- From Task 21, know the exact edit to make\n- Pre-stage .env file with cursor on the model line\n- Make edit: `anthropic/claude-sonnet-4-5` → `openai/gpt-4.1`\n- Show poll-once output (or cut to avoid wait time)\n\n4. **Timing:**\n- Architecture statement: ~8 seconds\n- Diagram view: ~10 seconds\n- Config edit: ~8 seconds\n- Verification: ~4 seconds\n- Total: ~30 seconds\n\n5. **Save:**\n- `docs/demo-assets/beat4-script.md`",
+        "testStrategy": "Verification:\n- Script reads aloud in 28-32 seconds\n- Architecture diagram renders correctly in browser/preview\n- Model swap edit is visible and clear\n- Post-edit classification works (tested in Task 21)",
+        "priority": "medium",
+        "dependencies": [
+          "21"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 27,
+        "title": "Create Video Beat 5 Script (Strategic Close)",
+        "description": "Write the script and prepare final dashboard view and closing title card for Beat 5 (Strategic close, 2:30-3:00).",
+        "details": "Prepare Beat 5 per PRD §4.5:\n\n1. **Write script:**\n```\n\"I built this because Fulfil's customer base is the most interesting \nD2C portfolio in the market, and they all have this problem.\n\nThis is a product line for Fulfil — a Fulfil-platform extension your \ncustomers can opt into.\n\nNew brand onboarded in an afternoon. Append-only memory layer they own forever.\"\n\n[SHOW: Dashboard with brand picker showing both Liquid Death and Ridge]\n\n\"Repo's linked below — happy to walk through the architecture.\"\n\n[TITLE CARD: Name, email, repo URL - hold 5 seconds]\n```\n\n2. **Dashboard preparation:**\n- Both brands loaded in dashboard selector (if implemented)\n- Or show evidence of both brands in file tree\n- Final view should feel complete, not rushed\n\n3. **Closing title card:**\n- Your name\n- Contact email\n- Private repo URL\n- Simple, clean design\n- Hold for 5 seconds\n\n4. **Create title card:**\n- `docs/demo-assets/closing-card.png`\n- 1920x1080, clean design\n- No clutter, just contact info\n\n5. **Timing:**\n- Strategic statement: ~20 seconds\n- Dashboard view: ~5 seconds\n- Closing card: ~5 seconds\n- Total: ~30 seconds\n\n6. **Save:**\n- `docs/demo-assets/beat5-script.md`\n- `docs/demo-assets/closing-card.png`",
+        "testStrategy": "Verification:\n- Script reads aloud in 25-30 seconds\n- Closing card is readable and professional\n- Contact info is correct\n- Repo URL is accurate\n- Total video runtime: 2:45-3:15",
+        "priority": "medium",
+        "dependencies": [
+          "23",
+          "24",
+          "25",
+          "26"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 28,
+        "title": "Execute Pre-Recording Checklist",
+        "description": "Run through the complete pre-recording checklist from PRD §6 immediately before recording to verify all systems are operational.",
+        "details": "Execute PRD §6 checklist items sequentially:\n\n```\nPRE-RECORDING CHECKLIST\n========================\n\n[ ] data/ directory exists in repo root\n    $ ls data/\n\n[ ] .env has working OPENROUTER_API_KEY\n    $ grep OPENROUTER_API_KEY .env | head -c 30\n\n[ ] RESOUND_CLASSIFIER_MODEL is set to a verified slug\n    $ echo $RESOUND_CLASSIFIER_MODEL\n    Test: resound poll-once returned success within last hour\n\n[ ] Reddit credentials valid\n    $ resound healthcheck --brand liquiddeath\n    Shows: \"✓ REDDIT_CLIENT_ID set\" (green)\n\n[ ] Memory pre-seeded with 30+ signals\n    $ sqlite3 data/resound.db \"SELECT COUNT(*) FROM signals WHERE brand_slug='liquiddeath';\"\n    Should be >= 30\n\n[ ] Interesting signals exist:\n    $ sqlite3 data/resound.db \"SELECT COUNT(*) FROM classifications WHERE severity IN ('high','critical');\"\n    Should be >= 1\n    $ sqlite3 data/resound.db \"SELECT COUNT(*) FROM classifications WHERE action_class='immediate';\"\n    Should be >= 1\n    $ sqlite3 data/resound.db \"SELECT COUNT(*) FROM classifications WHERE root_cause_hypothesis IS NOT NULL AND root_cause_hypothesis != '';\"\n    Should be >= 1\n\n[ ] Ridge bundle complete, healthcheck green\n    $ resound healthcheck --brand ridge\n\n[ ] Streamlit dashboard renders\n    $ resound dashboard --brand liquiddeath\n    Navigate to all 3 tabs, confirm no errors\n\n[ ] G2/Twitter disabled in sources.yaml\n    $ grep -A1 \"g2:\" brands/liquiddeath/sources.yaml\n    $ grep -A1 \"twitter:\" brands/liquiddeath/sources.yaml\n    Both should show enabled: false\n\n[ ] Terminal font >= 16pt\n    Visually verify\n\n[ ] Browser zoom adequate for dashboard\n    Visually verify columns are legible\n\n[ ] Notifications silenced\n    macOS: Do Not Disturb on\n    Windows: Focus Assist on\n\n[ ] Microphone tested\n    Record 10 seconds, play back, verify clarity\n```\n\nRun each item, document pass/fail.",
+        "testStrategy": "All checklist items pass. If any fail:\n- Fix the issue before proceeding\n- Re-run failed item to confirm fix\n- Do not proceed to recording until 100% pass",
+        "priority": "high",
+        "dependencies": [
+          "16",
+          "17",
+          "19"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 29,
+        "title": "Record and Edit Demo Video",
+        "description": "Record the 3-minute demo video using the prepared scripts, execute all 5 beats, and edit to final cut within 2:45-3:15 runtime.",
+        "details": "Recording execution per PRD §4 and Appendix A:\n\n1. **Setup:**\n- Recording tool: Loom or OBS\n- Resolution: 1920x1080, 30fps\n- Audio: External mic preferred, -16 LUFS target\n- Script on second monitor or teleprompter app\n\n2. **Recording flow:**\n- Beat 1: Hook (0:00-0:20)\n  - Title card display\n  - Voiceover + fragmented signals image\n- Beat 2: Liquid Death live (0:20-1:10)\n  - Terminal + dashboard\n  - Signal walkthrough\n- Beat 3: Extensibility (1:10-2:00)\n  - File tree + cp + editor diffs\n  - Ridge healthcheck + run\n- Beat 4: Architecture (2:00-2:30)\n  - Diagram + model swap\n- Beat 5: Close (2:30-3:00)\n  - Dashboard both brands + closing card\n\n3. **Recording rules (PRD §3.1):**\n- One re-take max per beat\n- If beat requires more, script is wrong — fix script first\n- Pre-cache all slow operations\n- No silent screen movement — every click has narration\n\n4. **Editing:**\n- Cut dead air > 1.5 seconds\n- Smooth transitions between beats\n- Add subtitles (Loom auto-generate, manually correct)\n- Verify runtime: 2:45-3:15\n\n5. **Export:**\n- MP4, 1080p, 30fps\n- Stereo audio, -16 LUFS\n- Upload to Loom (private share)\n\n6. **Deliverable:**\n- Loom share link\n- Repo URL in video description",
+        "testStrategy": "Video acceptance criteria:\n- Runtime between 2:45 and 3:15\n- All 5 beats executed per scripts\n- Audio is clear, no background noise\n- Terminal/dashboard text is legible\n- No waiting/loading visible (edited out)\n- Subtitles are accurate for product names\n- Video is private/password-protected",
+        "priority": "high",
+        "dependencies": [
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28"
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-05-07T08:50:42.591Z",
+      "taskCount": 29,
+      "completedCount": 4,
+      "tags": [
+        "master"
+      ],
+      "created": "2026-05-07T09:00:49.290Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

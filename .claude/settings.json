@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($content = Get-Content -Raw '.taskmaster/scripts/apply-task9-grilling.ps1'; $pattern = '\\(?s\\)\\\\$details_9_7 = @''\\(.+?\\)''@'; $m = [regex]::Match\\($content, $pattern\\); $body = $m.Groups[1].Value; $atSign = \\([regex]::Matches\\($body, \"@\"\\)\\).Count; $singleQuote = \\([regex]::Matches\\($body, \"'\"\\)\\).Count; Write-Output \\(\"@ count: $atSign, single-quote count: $singleQuote\"\\))",
+      "PowerShell(task-master add-subtask --help 2>&1)",
+      "PowerShell(python -c \"import ast; [ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\) for f in ['src/resound/classifiers/__init__.py','src/resound/classifiers/openrouter.py','src/resound/gateway/__init__.py','src/resound/prompts/__init__.py','src/resound/prompts/classify.py']]; Write-Host 'OK'\")",
+      "PowerShell(python -c \"import ast; files=['src/resound/classifiers/__init__.py','src/resound/classifiers/openrouter.py','src/resound/gateway/__init__.py','src/resound/prompts/__init__.py','src/resound/prompts/classify.py']; [ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\) for f in files]; print\\('OK'\\)\")",
+      "PowerShell(python -c \"import ast; ast.parse\\(open\\('src/resound/cli.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(python -m pytest tests/test_classifier.py tests/test_pipeline.py -x --tb=short 2>&1)",
+      "PowerShell(.\\\\.venv\\\\Scripts\\\\python.exe -m pytest tests/test_classifier.py tests/test_pipeline.py -x --tb=short 2>&1)",
+      "PowerShell(.\\\\.venv\\\\Scripts\\\\python.exe -m pytest --tb=short 2>&1)",
+      "Bash(task-master update-subtask --id=16.4 '--prompt=Layer 1 \\(static verification\\) passed locally: *)",
+      "Bash(claude mcp *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Ananthapadmanabha\\Desktop\\resound\\src\\resound\\classifiers",
+      "C:\\Users\\Ananthapadmanabha\\Desktop\\resound\\brands"
+    ]
+  }
+}

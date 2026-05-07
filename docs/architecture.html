@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Resound — Architecture Diagrams</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #111;
+    --muted: #555;
+    --card: #fff;
+    --border: #e5e5e5;
+    --accent: #1e6fbf;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 24px 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header { margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  header p { color: var(--muted); margin: 0; }
+  h2 { font-size: 22px; margin: 0 0 4px; }
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 24px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .section-header { margin-bottom: 16px; }
+  .section-header .lede { color: var(--muted); margin-top: 4px; }
+  .diagram { overflow-x: auto; padding: 8px; }
+  .legend {
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .legend strong { color: var(--fg); }
+  ul.bullets { margin: 8px 0; padding-left: 20px; }
+  ul.bullets li { margin: 4px 0; }
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    background: #eef3fb; color: var(--accent);
+    border-radius: 4px; font-size: 12px; font-weight: 600;
+    margin-right: 6px;
+  }
+  code {
+    background: #f1f1f1; padding: 1px 5px; border-radius: 3px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Resound — Architecture Diagrams</h1>
+    <p>Rendered from <code>docs/ARCHITECTURE.md</code>. Three views: system flow, LLM gateway internals, data model.</p>
+  </header>
+
+  <section class="section">
+    <div class="section-header">
+      <span class="badge">1</span><h2 style="display:inline">System flow</h2>
+      <p class="lede">End-to-end view of one signal's journey from external source to routed notification, with config inputs and dashboard outputs.</p>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TB
+    subgraph EXT["External surfaces"]
+        direction LR
+        REDDIT[Reddit]
+        G2[G2]
+        TWITTER[Twitter / X]
+    end
+
+    subgraph CFG["Brand config bundle (brands/&lt;brand&gt;/)"]
+        direction TB
+        BRAND_YAML[brand.yaml]
+        SOURCES_YAML[sources.yaml]
+        UNDERSTANDING_MD[understanding.md]
+        ROUTING_YAML[routing.yaml]
+        PEOPLE_YAML[people.yaml]
+        VIEWS_YAML[views.yaml]
+        MODELS_YAML[models.yaml]
+    end
+
+    subgraph PIPE["Resound pipeline"]
+        direction TB
+
+        subgraph L1["Layer 1 - Ingestion"]
+            REDDIT_ADAPTER[RedditSource]
+            G2_ADAPTER[G2Source]
+            TWITTER_ADAPTER[TwitterSource]
+        end
+
+        ORCH{{Pipeline orchestrator}}
+
+        subgraph L2["Layer 2 - Understanding"]
+            FILTER[Filter stage<br/>cheap model]
+            CLASSIFY[Full classify stage<br/>premium model]
+            FILTER -->|is_about_brand=true| CLASSIFY
+            FILTER -->|is_about_brand=false| DROP[discard]
+        end
+
+        subgraph L3["Layer 3 - Routing"]
+            RULES[RulesRouter<br/>YAML DSL]
+            TIEBREAK[LLM tiebreaker<br/>when confidence&lt;0.6]
+            RESOLVE[Owner resolver<br/>via people.yaml]
+            RULES -->|ambiguous| TIEBREAK
+            RULES -->|matched| RESOLVE
+            TIEBREAK --> RESOLVE
+        end
+
+        subgraph L5["Layer 5 - Feedback"]
+            FILE_FEEDBACK[FileFeedback<br/>data/routes/&lt;brand&gt;/routes.jsonl]
+        end
+    end
+
+    subgraph GW["Cross-cutting: LLM Gateway"]
+        direction TB
+        OPENROUTER_GW[OpenRouterGateway<br/>OpenAI-compatible client]
+        PROMPTS[Prompt templates<br/>src/resound/prompts/]
+        MODELS_CONFIG[Models config loader]
+        PROMPTS --> OPENROUTER_GW
+        MODELS_CONFIG --> OPENROUTER_GW
+    end
+
+    OPENROUTER[("OpenRouter API<br/>openrouter.ai/api/v1")]
+
+    subgraph PROVIDERS["Underlying providers (selected per stage)"]
+        direction LR
+        ANTHROPIC[Anthropic<br/>Claude]
+        OPENAI[OpenAI<br/>GPT]
+        GOOGLE[Google<br/>Gemini]
+        META[Meta<br/>Llama]
+        OTHERS[...200+ models]
+    end
+
+    subgraph MEM["Layer 4 - Memory (append-only)"]
+        direction LR
+        DB[(Postgres / Supabase<br/>or SQLite dev)]
+        TABLES["signals<br/>classifications<br/>routes<br/>feedback_events<br/>outcomes<br/>llm_calls"]
+        DB --- TABLES
+    end
+
+    subgraph DASH["Dashboard (Streamlit)"]
+        direction LR
+        LIVE[Live feed]
+        BROWSER[Memory browser]
+        AUDIT[Routing audit]
+        TELEMETRY[LLM telemetry<br/>cost / latency / fallbacks]
+    end
+
+    OPERATOR((Operator))
+    RECIPIENT((Recipient<br/>PM/CS/Eng))
+
+    REDDIT --> REDDIT_ADAPTER
+    G2 --> G2_ADAPTER
+    TWITTER --> TWITTER_ADAPTER
+
+    SOURCES_YAML -.config.-> L1
+    UNDERSTANDING_MD -.context.-> L2
+    ROUTING_YAML -.rules.-> RULES
+    PEOPLE_YAML -.lookup.-> RESOLVE
+    MODELS_YAML -.per-stage model.-> MODELS_CONFIG
+    VIEWS_YAML -.dashboards.-> DASH
+
+    REDDIT_ADAPTER --> ORCH
+    G2_ADAPTER --> ORCH
+    TWITTER_ADAPTER --> ORCH
+
+    ORCH --> FILTER
+    CLASSIFY --> RULES
+
+    FILTER -.LLM call.-> GW
+    CLASSIFY -.LLM call.-> GW
+    TIEBREAK -.LLM call.-> GW
+    BROWSER -.NL query.-> GW
+
+    GW <--> OPENROUTER
+    OPENROUTER <--> ANTHROPIC
+    OPENROUTER <--> OPENAI
+    OPENROUTER <--> GOOGLE
+    OPENROUTER <--> META
+    OPENROUTER <--> OTHERS
+
+    ORCH ==>|record_signal| DB
+    CLASSIFY ==>|record_classification| DB
+    GW ==>|log llm_calls| DB
+    RESOLVE ==>|record_route| DB
+    RESOLVE --> FILE_FEEDBACK
+
+    FILE_FEEDBACK --> RECIPIENT
+    RECIPIENT -.marks correct=true/false.-> FILE_FEEDBACK
+    FILE_FEEDBACK ==>|record_feedback| DB
+
+    DB --> DASH
+    OPERATOR -.edits.-> CFG
+    OPERATOR -.views.-> DASH
+
+    classDef ext fill:#fde7e7,stroke:#c33,stroke-width:1px,color:#000
+    classDef cfg fill:#fff4d6,stroke:#b8860b,stroke-width:1px,color:#000
+    classDef pipe fill:#e7f3ff,stroke:#1e6fbf,stroke-width:1px,color:#000
+    classDef gw fill:#f0e7ff,stroke:#6b3fa0,stroke-width:1px,color:#000
+    classDef mem fill:#e7ffe7,stroke:#2a7a2a,stroke-width:1px,color:#000
+    classDef dash fill:#ffe7f7,stroke:#a02a7a,stroke-width:1px,color:#000
+    classDef human fill:#f5f5f5,stroke:#444,stroke-width:2px,color:#000
+
+    class REDDIT,G2,TWITTER,ANTHROPIC,OPENAI,GOOGLE,META,OTHERS,OPENROUTER ext
+    class BRAND_YAML,SOURCES_YAML,UNDERSTANDING_MD,ROUTING_YAML,PEOPLE_YAML,VIEWS_YAML,MODELS_YAML cfg
+    class REDDIT_ADAPTER,G2_ADAPTER,TWITTER_ADAPTER,ORCH,FILTER,CLASSIFY,DROP,RULES,TIEBREAK,RESOLVE,FILE_FEEDBACK pipe
+    class OPENROUTER_GW,PROMPTS,MODELS_CONFIG gw
+    class DB,TABLES mem
+    class LIVE,BROWSER,AUDIT,TELEMETRY dash
+    class OPERATOR,RECIPIENT human
+</pre>
+    </div>
+    <div class="legend">
+      <strong>How to read it</strong>
+      <ul class="bullets">
+        <li><strong>Red</strong> = external systems (sources + providers behind OpenRouter).</li>
+        <li><strong>Yellow</strong> = config files the operator edits.</li>
+        <li><strong>Blue</strong> = pipeline layers (1, 2, 3, 5).</li>
+        <li><strong>Purple</strong> = LLM gateway — every dotted "LLM call" terminates here.</li>
+        <li><strong>Green</strong> = memory layer.</li>
+        <li><strong>Pink</strong> = dashboard.</li>
+        <li>Solid arrows = data flow. Dotted = config / prompts / observability. Thick (==&gt;) = writes to memory.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-header">
+      <span class="badge">2</span><h2 style="display:inline">LLM Gateway internals — one classify call</h2>
+      <p class="lede">What happens inside the gateway for a single classification, including the retry/fallback chain.</p>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as OpenRouterClassifier
+    participant GW as OpenRouterGateway
+    participant CFG as models.yaml
+    participant OR as OpenRouter API
+    participant P1 as Primary model<br/>(claude-sonnet-4-6)
+    participant P2 as Fallback 1<br/>(gpt-4.1)
+    participant P3 as Fallback 2<br/>(gemini-2.5-pro)
+    participant DB as llm_calls table
+
+    C->>GW: complete(stage="classify", prompt, schema)
+    GW->>CFG: lookup classify stage
+    CFG-->>GW: model=claude-sonnet-4-6,<br/>fallbacks=[gpt-4.1, gemini-2.5-pro]
+
+    GW->>OR: POST /chat/completions<br/>model=claude-sonnet-4-6<br/>response_format=json_object
+    OR->>P1: route request
+    P1--xOR: 503 Service Unavailable
+    OR-->>GW: 503
+
+    Note over GW: Transient error,<br/>retry with backoff (1s)
+    GW->>OR: retry (attempt 2)
+    OR->>P1: route request
+    P1--xOR: 503
+    OR-->>GW: 503
+
+    Note over GW: Retry exhausted,<br/>move to fallback chain
+    GW->>OR: POST /chat/completions<br/>model=gpt-4.1
+    OR->>P2: route request
+    P2-->>OR: 200 OK + JSON
+    OR-->>GW: response<br/>usage={tokens, cost}
+
+    Note over GW: Validate JSON<br/>against schema
+    GW->>DB: INSERT llm_calls<br/>stage=classify<br/>model=gpt-4.1<br/>tokens, cost, latency<br/>fallback_used=true
+    GW-->>C: LLMResponse(content,<br/>model_used=gpt-4.1,<br/>cost_usd, latency_ms)
+</pre>
+    </div>
+    <div class="legend">
+      <strong>Key behaviors</strong>
+      <ul class="bullets">
+        <li>Single chokepoint — classifier never sees model slugs.</li>
+        <li>Config-driven — model resolved from <code>models.yaml</code> at call time.</li>
+        <li>Transient (5xx, 429) retries on same model; other 4xx skip to fallback.</li>
+        <li>Every attempt logged, including failed primary, for fallback-rate telemetry.</li>
+        <li>If full chain fails, <code>LLMGatewayError</code> raised; signal recorded unclassified.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-header">
+      <span class="badge">3</span><h2 style="display:inline">Data model</h2>
+      <p class="lede">Append-only memory schema. Nothing mutates except feedback acknowledgement flags.</p>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+    SIGNALS ||--|| CLASSIFICATIONS : "1:1 (when classified)"
+    SIGNALS ||--o| ROUTES : "0:1 (after routing)"
+    CLASSIFICATIONS ||--o| ROUTES : "0:1"
+    ROUTES ||--o{ FEEDBACK_EVENTS : "many"
+    ROUTES }o--o| OUTCOMES : "many:one"
+    CLASSIFICATIONS ||--|{ LLM_CALLS : "1+ per classification"
+
+    SIGNALS {
+        uuid id PK
+        string source
+        string external_id
+        string url
+        string author_handle
+        text content
+        timestamp posted_at
+        timestamp ingested_at
+        jsonb raw_metadata
+    }
+
+    CLASSIFICATIONS {
+        uuid id PK
+        uuid signal_id FK
+        bool is_about_brand
+        string area
+        string subarea
+        string sentiment
+        string severity
+        string action_class
+        text root_cause_hypothesis
+        text summary
+        float confidence
+        string model_used
+        int tokens_in
+        int tokens_out
+        decimal cost_usd
+        timestamp created_at
+    }
+
+    ROUTES {
+        uuid id PK
+        uuid signal_id FK
+        uuid classification_id FK
+        string owner_id
+        string destination
+        jsonb rule_trace
+        bool tiebreaker_used
+        timestamp routed_at
+    }
+
+    FEEDBACK_EVENTS {
+        uuid id PK
+        uuid route_id FK
+        bool correct
+        bool acted_on
+        text note
+        timestamp recorded_at
+    }
+
+    OUTCOMES {
+        uuid id PK
+        text resolution_summary
+        timestamp resolved_at
+    }
+
+    LLM_CALLS {
+        uuid id PK
+        string stage
+        string model_requested
+        string model_used
+        string prompt_hash
+        string response_hash
+        int tokens_in
+        int tokens_out
+        decimal cost_usd
+        int latency_ms
+        bool fallback_used
+        bool success
+        timestamp called_at
+    }
+</pre>
+    </div>
+    <div class="legend">
+      <strong>Why this shape</strong>
+      <ul class="bullets">
+        <li><code>signals</code> is the immutable root — every later table FKs to it.</li>
+        <li><code>classifications</code> carries model audit fields inline so the dashboard avoids joins for cost/quality views.</li>
+        <li><code>llm_calls</code> is the granular ledger — one row per invocation, including failed primaries that triggered fallbacks.</li>
+        <li><code>outcomes</code> is many-to-one with routes — one ship/fix can resolve many signals.</li>
+        <li>No mutation paths in v1 except feedback acknowledgement.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true, showSequenceNumbers: false },
+    er: { useMaxWidth: true }
+  });
+</script>
+</body>
+</html>
