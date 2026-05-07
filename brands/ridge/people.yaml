@@ -1,0 +1,36 @@
+# Placeholder owner identities. Replace slack handles + emails with real
+# Ridge org mappings before live use.
+
+people:
+  "@billing-lead":
+    name: "Billing Lead"
+    slack: "@U01BILLING"
+    email: "billing@example.com"
+  "@distribution-lead":
+    name: "Distribution Lead"
+    slack: "@U01DIST"
+    email: "distribution@example.com"
+  "@product-lead":
+    name: "Product Lead"
+    slack: "@U01PRODUCT"
+    email: "product@example.com"
+
+channels:
+  "#triage":
+    slack_channel: "#resound-triage"
+    description: "Default landing zone for routed signals."
+  "#exec":
+    slack_channel: "#exec"
+    description: "Exec + comms team. Critical / PR-sensitive only — counterfeit-product mass exposure, knife-product safety incidents, mass warranty failure clusters."
+  "#cs-team":
+    slack_channel: "#cs-incoming"
+    description: "Customer service queue. Lifetime warranty claims and damaged-shipment escalations land here first."
+  "#eng-bugs":
+    slack_channel: "#eng-bugs"
+    description: "Engineering bug triage."
+  "#marketing-watch":
+    slack_channel: "#marketing-watch"
+    description: "Marketing FYI feed."
+  "#review-queue":
+    slack_channel: "#resound-review"
+    description: "Low-confidence signals for human review before routing."

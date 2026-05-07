@@ -1,0 +1,53 @@
+default_route: "#triage"
+
+rules:
+  - name: "critical_pr_risk"
+    when:
+      severity: "critical"
+    route_to: "#exec"
+    priority: "immediate"
+    notes: "Anything critical — exec + comms triage first. Ridge analogue of Liquid Death's critical_pr_risk."
+
+  - name: "billing_high"
+    when:
+      area: "billing"
+      severity: ">=high"
+    route_to: "@billing-lead"
+    priority: "immediate"
+
+  - name: "cs_warranty_or_damage"
+    when:
+      area: "cs"
+      action_class: "sprint"
+    route_to: "#cs-team"
+    notes: "Renamed from cs_damaged_shipment — Ridge's lifetime-warranty claims share this lane with damaged-shipment complaints."
+
+  - name: "ops_distribution_gripes"
+    when:
+      area: "ops"
+    route_to: "@distribution-lead"
+    notes: "Renamed from ops_retail_availability — Ridge is DTC-first; ops volume is mostly distribution gripes, not retail-stockout complaints."
+
+  - name: "product_durability_complaint"
+    when:
+      area: "product"
+      severity: ">=medium"
+    route_to: "@product-lead"
+    notes: "Swapped from product_roadmap_input — for Ridge, durability complaints are the highest-volume product signal (lifetime-warranty brand claim). Roadmap input is rare in r/EDC / r/wallets."
+
+  - name: "engineering_bugs"
+    when:
+      area: "engineering"
+      severity: ">=medium"
+    route_to: "#eng-bugs"
+
+  - name: "marketing_fyi"
+    when:
+      area: "marketing"
+    route_to: "#marketing-watch"
+
+  - name: "low_confidence_review_queue"
+    when:
+      confidence: "<0.5"
+    route_to: "#review-queue"
+    notes: "Classifier was unsure — human reviews before routing."

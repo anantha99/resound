@@ -1,0 +1,19 @@
+saved_views:
+  - name: "Critical this week"
+    filters:
+      severity: ["critical"]
+    period_days: 7
+  - name: "Warranty escalations"
+    filters:
+      area: ["cs"]
+      subarea: ["warranty_claims"]
+    period_days: 30
+  - name: "Durability complaints"
+    filters:
+      area: ["product"]
+      subarea: ["card_ejection_mechanism"]
+    period_days: 14
+
+alert_thresholds:
+  critical_per_day: 3        # if more than 3 critical signals in 24h, page exec
+  area_spike_factor: 3.0     # if any area is 3x its 7-day average, alert

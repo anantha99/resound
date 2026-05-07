@@ -1,0 +1,23 @@
+reddit:
+  enabled: true
+  subreddits:
+    - ridge
+    - EDC          # Everyday-carry sub; volume insurance on slow days
+    - wallets      # Comparison threads — useful signal density
+  search_terms:
+    - "ridge wallet"
+    - "the ridge"  # Brands flagship product as "The Ridge"; quote-bounded to disambiguate
+    - "ridge ring"
+  limit: 25
+
+g2:
+  enabled: false  # not relevant for a consumer accessories brand
+  product_slug: ""
+
+twitter:
+  enabled: false  # turn on once TWITTER_BEARER_TOKEN is set
+  handles:
+    - "@ridge"
+  search_terms:
+    - "ridge wallet"
+  limit: 50
