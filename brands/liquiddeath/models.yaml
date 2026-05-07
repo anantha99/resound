@@ -1,0 +1,15 @@
+# Brand-specific model overrides for Liquid Death.
+#
+# Field-level merge over config/models.yaml: only fields listed here
+# override the global default; everything else (fallbacks, temperature,
+# max_tokens, timeout_s) inherits.
+#
+# Why we override classify here: Liquid Death's brand voice is
+# deliberately loud and sarcastic. The default classify model
+# misreads ironic praise as genuine and snark as outage-level negative.
+# Routing this brand to a stronger model materially improves precision
+# on the action_class field. (Demo-provisional model name; revisit
+# closer to demo per docs/design_decisions.md #17.)
+
+classify:
+  model: anthropic/claude-opus-4-7

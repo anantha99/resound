@@ -15,7 +15,31 @@ load_dotenv()
 
 @dataclass
 class BrandConfig:
-    """A complete brand configuration bundle."""
+    """A complete brand configuration bundle.
+
+    Holds the brand-scoped YAML files that callers actually consume:
+    ``brand``, ``sources``, ``routing``, ``people``, ``views``, plus the
+    free-form ``understanding.md``. Each is a raw dict / string — the
+    pipeline reads them directly without an intervening typed model.
+
+    Model selection (``brands/<slug>/models.yaml``) is deliberately *not*
+    a field on this class. It is loaded lazily by
+    ``resound.gateway.load_models_config(slug)``, which merges it
+    field-by-field over ``config/models.yaml``. Reasons:
+
+    * No current caller (``Pipeline`` post-Task-9, CLI testing in Task 10)
+      reads brand-side model config off ``BrandConfig`` — they read it
+      from the gateway. Adding a field here would be loaded-but-unread
+      dead weight.
+    * Exposing it as a typed ``ModelsConfig`` would create a
+      ``resound.config → resound.gateway`` import edge that does not
+      otherwise exist. Exposing it as a raw dict would diverge from the
+      merged shape callers actually want.
+    * Either choice would be inconsistent with the raw-dict shape of
+      ``routing`` / ``people`` / ``views``.
+
+    See ``docs/design_decisions.md`` #24.
+    """
 
     slug: str  # directory name, e.g., "liquiddeath"
     brand: dict[str, Any] = field(default_factory=dict)
