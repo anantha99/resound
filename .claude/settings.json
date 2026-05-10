@@ -12,7 +12,14 @@
       "Bash(task-master update-subtask --id=16.4 '--prompt=Layer 1 \\(static verification\\) passed locally: *)",
       "Bash(claude mcp *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "WebSearch",
+      "WebFetch(domain:support.reddithelp.com)",
+      "WebFetch(domain:docs.composio.dev)",
+      "WebFetch(domain:app.composio.dev)",
+      "PowerShell(uv run python scripts/inspect_ignored.py 2>&1)",
+      "PowerShell(uv run python scripts/inspect_ignored.py --since-id 50 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Ananthapadmanabha\\Desktop\\resound\\src\\resound\\classifiers",

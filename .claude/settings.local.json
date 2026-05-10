@@ -1,7 +1,38 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git --no-pager status)"
+      "Bash(git --no-pager status)",
+      "Bash(task-master list *)",
+      "mcp__task-master-ai__get_tasks",
+      "mcp__task-master-ai__expand_task",
+      "mcp__task-master-ai__update_subtask",
+      "mcp__task-master-ai__get_task",
+      "mcp__task-master-ai__set_task_status",
+      "Bash(node *)",
+      "Bash(python -c \"from resound.gateway import \\(LLMGateway, LLMResponse, OpenRouterGateway, load_models_config, StageConfig, ModelsConfig, build_gateway, LLMGatewayError, LLMGatewayConfigError, LLMGatewayAuthError, LLMGatewayExhaustedError, LLMGatewayTimeoutError, LLMGatewayParseError\\); from resound.gateway import __all__; print\\('OK', len\\(__all__\\), 'exports'\\); print\\(sorted\\(__all__\\)\\)\")",
+      "Bash(python -m py_compile src/resound/gateway/__init__.py)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(.venv/Scripts/python -m pip list)",
+      "Bash(uv run python -c ' *)",
+      "Bash(uv run *)",
+      "Bash(git config *)",
+      "Bash(task-master show *)",
+      "Bash(python -c \"import yaml; print\\(yaml.safe_load\\(open\\('brands/liquiddeath/models.yaml'\\)\\)\\)\")",
+      "Bash(python -c \"from src.resound.config import load_brand_config, BrandConfig; print\\('docstring head:', \\(BrandConfig.__doc__ or ''\\).splitlines\\(\\)[0]\\); cfg = load_brand_config\\('liquiddeath'\\); print\\('loaded brand:', cfg.slug\\)\")",
+      "Bash(task-master set-status *)",
+      "Bash(python -m pytest tests/test_gateway.py -x -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_gateway.py -x -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest -x -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/memory/test_llm_calls.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "PowerShell($content = Get-Content -Raw '.taskmaster/scripts/apply-task9-grilling.ps1'; $matches = [regex]::Matches\\($content, \"\\(?s\\)\\\\$details_9_\\(\\\\d\\) = @'\\(.+?\\)'@\"\\); foreach \\($m in $matches\\) { Write-Output \\(\"details_9_\" + $m.Groups[1].Value + \": \" + $m.Groups[2].Value.Length + \" chars\"\\) })",
+      "PowerShell($content = Get-Content -Raw '.taskmaster/scripts/apply-task9-grilling.ps1'; $pattern = '\\(?s\\)\\\\$details_9_\\(\\\\d\\) = @''\\(.+?\\)''@'; $matches = [regex]::Matches\\($content, $pattern\\); foreach \\($m in $matches\\) { Write-Output \\(\"details_9_\" + $m.Groups[1].Value + \": \" + $m.Groups[2].Value.Length + \" chars\"\\) })",
+      "PowerShell($content = Get-Content -Raw '.taskmaster/scripts/apply-task9-grilling.ps1'; $pattern = '\\(?s\\)\\\\$details_9_7 = @''\\(.+?\\)''@'; $m = [regex]::Match\\($content, $pattern\\); $body = $m.Groups[1].Value; $dq = \\($body.ToCharArray\\(\\) | Where-Object { $_ -eq '\"' }\\).Count; $bs = \\($body.ToCharArray\\(\\) | Where-Object { $_ -eq '\\\\' }\\).Count; $nl = \\([regex]::Matches\\($body, \"`n\"\\)\\).Count; Write-Output \\(\"double-quotes: $dq, backslashes: $bs, newlines: $nl\"\\))",
+      "PowerShell(Get-Command task-master)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "task-master-ai"
+  ]
 }

@@ -3,6 +3,9 @@
 .env.local
 *.env.local
 
+# Claude Code runtime artifacts
+.claude/scheduled_tasks.lock
+
 # Python
 __pycache__/
 *.py[cod]
