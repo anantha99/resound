@@ -5,11 +5,15 @@
 # max_tokens, timeout_s) inherits.
 #
 # Why we override classify here: Liquid Death's brand voice is
-# deliberately loud and sarcastic. The default classify model
-# misreads ironic praise as genuine and snark as outage-level negative.
+# deliberately loud and sarcastic. The default classify model can
+# misread ironic praise as genuine and snark as outage-level negative.
 # Routing this brand to a stronger model materially improves precision
-# on the action_class field. (Demo-provisional model name; revisit
-# closer to demo per docs/design_decisions.md #17.)
+# on the action_class field.
+#
+# TESTING (May 2026): override disabled — global default
+# (anthropic/claude-haiku-4-5) is cheap enough to iterate freely. Before
+# recording the actual demo, uncomment the Opus override below to get the
+# best read on sarcasm.
 
-classify:
-  model: anthropic/claude-opus-4-7
+# classify:
+#   model: anthropic/claude-opus-4-7

@@ -38,6 +38,14 @@ rules:
       severity: ">=medium"
     route_to: "#eng-bugs"
 
+  - name: "product_positive_ugc"
+    when:
+      area: "product"
+      sentiment: "positive"
+      action_class: "fyi"
+    route_to: "#marketing-watch"
+    notes: "Positive product UGC (flavor reviews, fan praise) is amplification-worthy."
+
   - name: "marketing_fyi"
     when:
       area: "marketing"
