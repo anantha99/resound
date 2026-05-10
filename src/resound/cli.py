@@ -106,6 +106,25 @@ def healthcheck(
     else:
         console.print("[green]✓ OPENROUTER_API_KEY set[/]")
 
+    reddit_cfg = cfg.sources.get("reddit", {})
+    if reddit_cfg.get("enabled"):
+        backend = (env("REDDIT_BACKEND") or "composio").strip().lower()
+        console.print(f"  reddit backend: {backend}")
+        if backend == "composio":
+            for key in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID"):
+                if not env(key):
+                    console.print(f"[red]✗ {key} not set[/]")
+                else:
+                    console.print(f"[green]✓ {key} set[/]")
+        elif backend == "praw":
+            for key in ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"):
+                if not env(key):
+                    console.print(f"[red]✗ {key} not set[/]")
+                else:
+                    console.print(f"[green]✓ {key} set[/]")
+        else:
+            console.print(f"[red]✗ unknown REDDIT_BACKEND={backend!r} (use composio or praw)[/]")
+
 
 @app.command()
 def dashboard(
