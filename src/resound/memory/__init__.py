@@ -183,6 +183,10 @@ class SqlMemory(Memory):
 
     def __init__(self, database_url: str | None = None):
         url = database_url or env("RESOUND_DATABASE_URL", "sqlite:///./data/resound.db")
+        if url.startswith("sqlite:///"):
+            from pathlib import Path
+            db_path = Path(url.removeprefix("sqlite:///"))
+            db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_engine(url, echo=False, future=True)
         Base.metadata.create_all(self.engine)
 
