@@ -173,6 +173,92 @@ differentiator — the brand-owned, closed-loop memory layer.
 
 ---
 
+## 7. Sprinklr, Qualtrics XM, and Gorgias
+
+These three are useful additions because they sit at three *different* distances from
+Resound — one is almost a direct competitor, one is a partial overlap, one is clearly not.
+
+### 7a. Sprinklr — the closest thing to a true competitor on this list
+
+Sprinklr is a unified-CXM platform (four modules: Service, Insights, Marketing, Social).
+Crucially, **Sprinklr Insights does social listening** — it ingests public chatter, runs
+sentiment/emotion/anomaly detection at huge scale (claims 10B+ predictions/day, >80%
+accuracy), and was named a Leader in the 2026 Gartner Magic Quadrant for Voice-of-Customer
+Platforms.
+
+This is the **only competitor in the report that shares Resound's core intake** — public,
+un-owned signal. So the comparison has to be sharper:
+
+| | **Sprinklr** | **Resound** |
+|---|---|---|
+| Public-signal listening | ✓ (enterprise scale) | ✓ (core) |
+| Primary output | Dashboards, brand-health analytics, social engagement | A routed signal to one named internal owner + memory |
+| Routing | Routes *social conversations* to *agents/care teams* | Routes *diagnosed signals* to PM/Eng/Finance decision-makers |
+| Closed outcome loop | Weak — ends at "responded on social" | ✓ (did the owner act? did the issue stop?) |
+| Data ownership | Vendor-hosted enterprise platform | Brand-owned append-only memory |
+| Buyer / footprint | Enterprise; large multi-module commitment; long rollout | Single operator; config-file onboarding in hours |
+| Per-signal LLM diagnosis (root-cause hypothesis) | Aggregate AI analytics | ✓ per-signal `root_cause_hypothesis` |
+
+**How Resound differs:** Sprinklr tells a large brand "negative sentiment spiked on X" and
+helps the social team reply. Resound takes the *individual* signal, diagnoses a root cause,
+and routes it to the one person who can fix the underlying product/billing/eng issue — then
+tracks whether they did. Sprinklr is breadth + scale + analytics for an enterprise social
+org; Resound is depth + routing + a closed loop for a product/CX leader. Sprinklr is also a
+heavyweight enterprise purchase — Resound's wedge is being the small, fast, config-only tool.
+
+### 7b. Qualtrics XM — adjacent, survey-led, not a signal listener
+
+Qualtrics XM is the leading experience-management platform: survey creation/distribution,
+real-time dashboards, AI-driven text analysis, predictive intelligence, 300+ benchmarkable
+engagement items. Its intake is fundamentally **solicited** — surveys, NPS/CSAT, employee
+engagement — not the open web. Integrations are deep into systems of record (Workday, SAP
+SuccessFactors, CRMs, Slack/Teams).
+
+**How Resound differs:** Qualtrics asks customers questions and analyzes the answers;
+Resound listens to what customers say *unprompted* in public and never issues a survey.
+Qualtrics is structured-feedback + experience management at enterprise scale; it does not
+route an individual complaint to a single internal owner or close an action loop the way
+Resound's PRD defines it. They could even be complementary — Qualtrics covers solicited
+voice, Resound covers unsolicited public voice. On integrations, Qualtrics clearly wins
+(HRIS/CRM/SAP SuccessFactors); Resound has none.
+
+### 7c. Gorgias — not a competitor at all (e-commerce helpdesk)
+
+Gorgias is an e-commerce-specific helpdesk (the Shopify/BigCommerce/Magento equivalent of
+Zendesk). Unified inbox across email/chat/social/voice/SMS, AI Agent that autonomously
+resolves Tier-1 tickets (WISMO, returns — claims up to 60%), AI Shopping Assistant.
+
+Its standout strength is a **deep bi-directional Shopify integration** — agents modify
+orders, issue partial refunds, cancel subscriptions, duplicate carts without leaving the
+helpdesk. That is effectively Gorgias's "ERP-like" layer: it is wired into the e-commerce
+*system of record* (Shopify/BigCommerce/Magento), though it has no traditional NetSuite/SAP
+ERP story in the results reviewed.
+
+**How Resound differs:** same boundary as Zendesk, sharper. Gorgias is an owned-channel
+inbox tool — it resolves *your customers' tickets*. Resound never touches a ticket; it
+listens to public web signal, diagnoses it, and routes it internally. Gorgias and Resound
+solve non-overlapping jobs. The only thing worth borrowing from Gorgias is the lesson that
+**deep integration with the commerce system of record is a real moat** — which is exactly
+the v2 argument for an ERP/commerce `SourceAdapter` in section 6.
+
+### 7d. Updated placement
+
+| Competitor | Category | Overlap with Resound | Public-signal intake | ERP / system-of-record integration |
+|---|---|---|---|---|
+| **Sprinklr** | Unified CXM / social listening | **High** — shares public-signal intake | ✓ | CRM/BI/DAM; no deep ERP |
+| **Qualtrics XM** | Experience management (survey-led) | Low–medium — solicited feedback | ✗ (surveys) | ✓ (Workday, SAP SuccessFactors, CRM) |
+| **Gorgias** | E-commerce helpdesk | Low — owned-channel ticketing | ✗ | ✓ deep Shopify/BigCommerce/Magento; no NetSuite/SAP |
+| **Resound** | Customer-signal intelligence | — | **✓ (core)** | ✗ (v2 opportunity) |
+
+**Bottom line:** Of every competitor reviewed, **Sprinklr is the one to watch** — it's the
+only one that also listens to the public web. Resound's defense against Sprinklr is not
+breadth (it will lose that) but the routing-to-an-owner + closed-loop + brand-owned-memory
+combination, plus being lightweight enough to onboard in an afternoon. Qualtrics and Gorgias
+are adjacent tools solving different jobs (solicited feedback; e-commerce ticketing) and are
+better thought of as potential *complements* than as threats.
+
+---
+
 ## Sources
 
 - [Zendesk NetSuite Integration: 3 Key Methods in 2026 — Skyvia](https://blog.skyvia.com/zendesk-netsuite-ingegration/)
@@ -190,3 +276,10 @@ differentiator — the brand-owned, closed-loop memory layer.
 - [Enterpret vs Anecdote — Enterpret](https://www.enterpret.com/lp2-c/enterpret-vs-anecdote)
 - [Anecdote — AI Customer Support and Voice of Customer](https://www.anecdoteai.com/)
 - [Best Slack apps for customer support 2026 — Plain](https://www.plain.com/blog/best-slack-apps-b2b-support-customer-satisfaction-2025)
+- [Unified Customer Experience Management (CXM) Platform — Sprinklr](https://www.sprinklr.com/products/platform/)
+- [Social Listening: A Complete Guide for 2026 — Sprinklr](https://www.sprinklr.com/blog/social-listening/)
+- [Sprinklr Unified-CXM Platform — Gartner Peer Insights](https://www.gartner.com/reviews/market/social-monitoring-and-analytics/vendor/sprinklr/product/sprinklr-unified-cxm-platform)
+- [Qualtrics XM — AI-Driven Experience Management Platform](https://www.qualtrics.com/platform/)
+- [Qualtrics XM Platform Reviews & Ratings 2026 — Gartner Peer Insights](https://www.gartner.com/reviews/product/qualtrics-xm-platform)
+- [Gorgias — Conversational AI platform for Ecommerce](https://www.gorgias.com/v/home)
+- [A 2026 guide to the Gorgias ecommerce helpdesk — eesel AI](https://www.eesel.ai/blog/gorgias-ecommerce-helpdesk)
