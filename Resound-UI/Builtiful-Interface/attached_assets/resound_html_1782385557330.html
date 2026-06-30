@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Resound — Liquid Death</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f4f1ec;
+    --paper-2: #ebe7df;
+    --paper-3: #e3ddd1;
+    --ink: #1a1815;
+    --ink-soft: #4a4640;
+    --ink-mute: #8b857a;
+    --rule: #d9d3c7;
+    --rule-soft: #e3ddd1;
+    --accent: #b8431f;
+    --positive: #4a6b3f;
+    --warn: #c97a30;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Geist', system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  .app {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 56px;
+  }
+
+  /* ─── Masthead ─────────────────────────────── */
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 36px 0 28px;
+  }
+
+  .wordmark {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .wordmark .dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-left: 3px;
+    vertical-align: super;
+    transform: translateY(-1px);
+  }
+
+  .masthead-meta {
+    display: flex;
+    gap: 28px;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .masthead-meta strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .live-pulse {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    background: var(--positive);
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ─── Brand bar ────────────────────────────── */
+  .brand-bar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 24px 0 40px;
+    border-top: 1px solid var(--ink);
+    margin-top: 8px;
+  }
+
+  .brand-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 56px;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+    line-height: 0.95;
+    padding-top: 28px;
+  }
+
+  .brand-title em {
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+
+  .brand-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    margin-top: 14px;
+  }
+
+  .period-toggle {
+    display: flex;
+    gap: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .period-toggle button {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
+    padding: 6px 12px;
+    cursor: pointer;
+    border-right: none;
+    transition: all 0.15s ease;
+  }
+
+  .period-toggle button:last-child { border-right: 1px solid var(--rule); }
+
+  .period-toggle button.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .period-toggle button:hover:not(.active) {
+    color: var(--ink);
+    border-color: var(--ink-soft);
+  }
+
+  /* ─── KPI cards ────────────────────────────── */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .kpi {
+    background: var(--paper);
+    padding: 28px 24px 24px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    position: relative;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .kpi:hover { background: var(--paper-2); }
+
+  .kpi.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .kpi.active .kpi-label,
+  .kpi.active .kpi-trend,
+  .kpi.active .kpi-foot,
+  .kpi.active .kpi-sub {
+    color: var(--paper-2);
+  }
+
+  .kpi.active .spark path.bar { fill: var(--paper); }
+  .kpi.active .spark path.line { stroke: var(--paper); }
+  .kpi.active .dist-pos { background: #b8d6a9; }
+  .kpi.active .dist-neu { background: var(--ink-mute); }
+  .kpi.active .dist-neg { background: #f4a890; }
+
+  .kpi-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 24px;
+  }
+
+  .kpi-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .kpi-value {
+    font-family: 'Instrument Serif', serif;
+    font-size: 52px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  .kpi-value small {
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+
+  .kpi.active .kpi-value small { color: var(--paper-2); }
+
+  .kpi-value.italic {
+    font-style: italic;
+    font-size: 28px;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+  }
+
+  .kpi-trend {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+    letter-spacing: 0.02em;
+  }
+
+  .kpi-trend.down { color: var(--accent); }
+  .kpi-trend.up { color: var(--positive); }
+  .kpi-trend.up-bad { color: var(--accent); }
+  .kpi.active .kpi-trend.down { color: #f4a890; }
+  .kpi.active .kpi-trend.up { color: #b8d6a9; }
+  .kpi.active .kpi-trend.up-bad { color: #f4a890; }
+
+  .kpi-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-mute);
+    margin-top: auto;
+    padding-top: 16px;
+    text-transform: uppercase;
+  }
+
+  .kpi-foot {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+  }
+
+  .spark {
+    width: 70px;
+    height: 18px;
+    display: block;
+  }
+
+  .spark .bar { fill: var(--ink); opacity: 0.4; }
+  .spark .line { stroke: var(--ink); fill: none; stroke-width: 1.2; }
+
+  /* Sentiment distribution bar */
+  .dist {
+    display: flex;
+    width: 100%;
+    height: 6px;
+    margin: 8px 0 4px;
+    overflow: hidden;
+  }
+
+  .dist > div {
+    height: 100%;
+  }
+
+  .dist-pos { background: var(--positive); }
+  .dist-neu { background: var(--rule); }
+  .dist-neg { background: var(--accent); }
+
+  .dist-legend {
+    display: flex;
+    gap: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 6px;
+  }
+
+  /* Source mix mini-bars */
+  .source-mix {
+    display: flex;
+    gap: 2px;
+    height: 6px;
+    margin: 8px 0 4px;
+  }
+  .source-mix div { height: 100%; }
+  .source-mix .src-r { background: var(--ink); }
+  .source-mix .src-t { background: var(--ink-soft); opacity: 0.7; }
+  .source-mix .src-g { background: var(--ink-mute); }
+  .kpi.active .source-mix .src-r { background: var(--paper); }
+  .kpi.active .source-mix .src-t { background: var(--paper); opacity: 0.6; }
+  .kpi.active .source-mix .src-g { background: var(--paper); opacity: 0.35; }
+
+  /* ─── Section ──────────────────────────────── */
+  .section {
+    padding: 48px 0 24px;
+  }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 28px;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1;
+  }
+
+  .section-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .section-blurb {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink-soft);
+    margin-bottom: 24px;
+    max-width: 640px;
+    line-height: 1.4;
+  }
+
+  /* ─── Signal row ───────────────────────────── */
+  .signal {
+    display: grid;
+    grid-template-columns: 96px 1fr 220px;
+    gap: 32px;
+    padding: 24px 0;
+    border-top: 1px solid var(--rule-soft);
+    align-items: flex-start;
+  }
+
+  .signal:last-child { border-bottom: 1px solid var(--rule-soft); }
+
+  .signal-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    line-height: 1.7;
+  }
+
+  .signal-meta .source {
+    color: var(--ink);
+    font-weight: 500;
+    display: block;
+  }
+
+  .signal-meta .time {
+    display: block;
+    margin-top: 2px;
+  }
+
+  .signal-meta .reach {
+    display: block;
+    margin-top: 6px;
+    color: var(--ink-mute);
+  }
+
+  .signal-body .author {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .signal-body .content {
+    font-family: 'Instrument Serif', serif;
+    font-size: 18px;
+    line-height: 1.45;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    margin-bottom: 14px;
+  }
+
+  .signal-tags {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .signal-tags .area {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .signal-tags .sev-critical { color: var(--accent); font-weight: 500; }
+  .signal-tags .sev-high { color: var(--warn); font-weight: 500; }
+  .signal-tags .sev-medium { color: var(--ink-soft); }
+  .signal-tags .sev-low { color: var(--ink-mute); }
+  .signal-tags .sent-neg { color: var(--accent); }
+  .signal-tags .sent-pos { color: var(--positive); }
+
+  /* ─── Routing block ────────────────────────── */
+  .routing {
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+    line-height: 1.6;
+    position: relative;
+  }
+
+  .routing-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 4px;
+  }
+
+  .routing-owner {
+    color: var(--ink);
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0;
+  }
+
+  .routing-conf {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-mute);
+    margin-top: 4px;
+  }
+
+  .routing-conf.low { color: var(--accent); }
+
+  .reroute-btn {
+    margin-top: 12px;
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    font-family: 'Geist', sans-serif;
+    font-size: 11px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 0;
+  }
+
+  .reroute-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  /* Reroute popover */
+  .reroute-pop {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 8px;
+    min-width: 220px;
+    z-index: 20;
+    display: none;
+    text-align: left;
+    box-shadow: 0 8px 24px rgba(26,24,21,0.18);
+  }
+
+  .reroute-pop.open { display: block; }
+
+  .reroute-pop .pop-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    padding: 6px 10px 8px;
+  }
+
+  .reroute-pop .opt {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--paper);
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+
+  .reroute-pop .opt:hover {
+    background: var(--ink-soft);
+  }
+
+  .reroute-pop .opt .hint {
+    font-size: 9px;
+    color: var(--ink-mute);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ─── Pattern detail card (emerging pane) ─── */
+  .pattern-hero {
+    padding: 32px;
+    background: var(--paper-2);
+    margin-bottom: 32px;
+    display: grid;
+    grid-template-columns: 1fr 240px;
+    gap: 32px;
+    align-items: center;
+  }
+
+  .pattern-hero .name {
+    font-family: 'Instrument Serif', serif;
+    font-size: 32px;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin-bottom: 12px;
+  }
+
+  .pattern-hero .blurb {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 16px;
+    line-height: 1.4;
+    margin-bottom: 16px;
+  }
+
+  .pattern-hero .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .pattern-hero .accel {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .pattern-hero .accel .num {
+    font-family: 'Instrument Serif', serif;
+    font-size: 56px;
+    color: var(--accent);
+    display: block;
+    line-height: 1;
+    margin-bottom: 8px;
+    letter-spacing: -0.025em;
+  }
+
+  /* ─── Source row ──────────────────────────── */
+  .source-stat-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    margin-bottom: 24px;
+  }
+
+  .source-stat-cell {
+    background: var(--paper);
+    padding: 20px 24px;
+  }
+
+  .source-stat-cell .num {
+    font-family: 'Instrument Serif', serif;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+
+  .source-stat-cell .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .source-stat-cell .pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-left: 8px;
+  }
+
+  /* ─── Hide / show panes ───────────────────── */
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ─── Footer (system status) ──────────────── */
+  .footer {
+    margin-top: 64px;
+    padding: 24px 0 48px;
+    border-top: 1px solid var(--ink);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .footer .status {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+
+  .footer .status strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .footer .status .dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--positive);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+  @media (max-width: 1100px) {
+    .app { padding: 0 32px; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .brand-title { font-size: 40px; }
+    .signal { grid-template-columns: 1fr; gap: 12px; }
+    .routing { text-align: left; }
+    .pattern-hero { grid-template-columns: 1fr; }
+    .source-stat-bar { grid-template-columns: 1fr; }
+    .footer { flex-direction: column; gap: 16px; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Masthead -->
+  <header class="masthead">
+    <div class="wordmark">Resound<span class="dot"></span></div>
+    <div class="masthead-meta">
+      <span><span class="live-pulse"></span>LIVE</span>
+      <span>BRAND <strong>liquiddeath</strong></span>
+      <span>OPERATOR <strong>ak@</strong></span>
+    </div>
+  </header>
+
+  <!-- Brand bar -->
+  <section class="brand-bar">
+    <div>
+      <h1 class="brand-title">Liquid Death<em>.</em></h1>
+      <div class="brand-caption">Brand health · 7-day window</div>
+    </div>
+    <div class="period-toggle">
+      <button>24h</button>
+      <button class="active">7d</button>
+      <button>30d</button>
+      <button>QTD</button>
+    </div>
+  </section>
+
+  <!-- KPI cards: BRAND HEALTH -->
+  <div class="kpis">
+
+    <!-- 1. Net sentiment -->
+    <div class="kpi" data-pane="sentiment">
+      <div class="kpi-label">Net sentiment</div>
+      <div class="kpi-row">
+        <div class="kpi-value">+14</div>
+        <div class="kpi-trend down">↓ 8pt vs prev</div>
+      </div>
+      <div class="dist">
+        <div class="dist-pos" style="width:62%"></div>
+        <div class="dist-neu" style="width:18%"></div>
+        <div class="dist-neg" style="width:20%"></div>
+      </div>
+      <div class="dist-legend">
+        <span>62% POS</span>
+        <span>18% NEU</span>
+        <span>20% NEG</span>
+      </div>
+      <div class="kpi-foot">
+        <span>7d trend</span>
+        <svg class="spark" viewBox="0 0 70 18">
+          <path class="line" d="M0,4 L8,5 L16,3 L24,6 L32,8 L40,10 L48,12 L56,11 L64,13 L70,14"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- 2. Critical signals -->
+    <div class="kpi active" data-pane="critical">
+      <div class="kpi-label">Critical & high · 7d</div>
+      <div class="kpi-row">
+        <div class="kpi-value">8</div>
+        <div class="kpi-trend up-bad">↑ +3 vs prev</div>
+      </div>
+      <div class="kpi-sub">Across BILLING · OPS · PRODUCT</div>
+      <div class="kpi-foot">
+        <span>weekly</span>
+        <svg class="spark" viewBox="0 0 70 18">
+          <path class="bar" d="M2,14 h6 v4 h-6z M14,12 h6 v6 h-6z M26,13 h6 v5 h-6z M38,11 h6 v7 h-6z M50,10 h6 v8 h-6z M62,4 h6 v14 h-6z"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- 3. Top emerging issue -->
+    <div class="kpi" data-pane="emerging">
+      <div class="kpi-label">Top emerging issue</div>
+      <div class="kpi-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+        <div class="kpi-value italic">"Packaging<br/>damage"</div>
+        <div class="kpi-trend up-bad">3× WoW · accelerating</div>
+      </div>
+      <div class="kpi-sub">OPS · 11 signals to date · started Q1</div>
+    </div>
+
+    <!-- 4. Volume + source mix -->
+    <div class="kpi" data-pane="volume">
+      <div class="kpi-label">Conversation volume · 7d</div>
+      <div class="kpi-row">
+        <div class="kpi-value">2,847</div>
+        <div class="kpi-trend up">↑ +12%</div>
+      </div>
+      <div class="source-mix">
+        <div class="src-r" style="width:60%"></div>
+        <div class="src-t" style="width:28%"></div>
+        <div class="src-g" style="width:12%"></div>
+      </div>
+      <div class="dist-legend">
+        <span>60% REDDIT</span>
+        <span>28% TWITTER</span>
+        <span>12% G2</span>
+      </div>
+      <div class="kpi-foot">
+        <span>vs prev 7d</span>
+        <svg class="spark" viewBox="0 0 70 18">
+          <path class="line" d="M0,12 L8,10 L16,11 L24,9 L32,7 L40,8 L48,6 L56,5 L64,4 L70,3"/>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ───── Pane: Sentiment ───── -->
+  <section class="pane" id="pane-sentiment">
+    <div class="section">
+      <div class="section-head">
+        <h2 class="section-title">Dragging sentiment down</h2>
+        <div class="section-sub">Negative-sentiment signals · sorted by reach</div>
+      </div>
+      <p class="section-blurb">Net sentiment fell 8 points this week. These are the loudest voices behind the drop — the ones with the most reach and severity. Each is already routed; reroute if the system got it wrong.</p>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Twitter</span>
+          <span class="time">3h ago</span>
+          <span class="reach">~84k reach</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">@hydrationhater · 12.4k followers · 6 retweets, 184 likes</div>
+          <div class="content">"third liquid death pack in a row arrived crushed. brand is all marketing no operations. paying premium for dented cans is wild"</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-high">HIGH</span>
+            <span class="sent-neg">NEGATIVE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@maya.ops</div>
+          <div class="routing-conf">CONF 0.84</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>#supply-chain</span><span class="hint">Ops</span></div>
+            <div class="opt"><span>#pr-watch</span><span class="hint">Reach &gt; 50k</span></div>
+            <div class="opt"><span>@dana.cx</span><span class="hint">CS</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">G2</span>
+          <span class="time">42m ago</span>
+          <span class="reach">★★ 2 stars</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">verified buyer · subscription customer · 2yr</div>
+          <div class="content">"Subscription canceled itself after billing change and I got double-charged on the next cycle. Took 4 emails to resolve. Will not be renewing."</div>
+          <div class="signal-tags">
+            <span class="area">BILLING</span>
+            <span class="sev-critical">CRITICAL</span>
+            <span class="sent-neg">NEGATIVE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">#finance-urgent</div>
+          <div class="routing-conf">CONF 0.91</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@finance-lead</span><span class="hint">Billing</span></div>
+            <div class="opt"><span>#churn-watch</span><span class="hint">Retention</span></div>
+            <div class="opt"><span>#triage</span><span class="hint">Default</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Reddit</span>
+          <span class="time">5h ago</span>
+          <span class="reach">847 upvotes</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">u/cleanwaterclub · r/hydrohomies · 132 comments</div>
+          <div class="content">"Anyone else feel like the new formula tastes off? Started two weeks ago. Reached out to support, got a copy-paste reply about 'consistent quality.' Done buying."</div>
+          <div class="signal-tags">
+            <span class="area">PRODUCT</span>
+            <span class="sev-high">HIGH</span>
+            <span class="sent-neg">NEGATIVE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@formulation</div>
+          <div class="routing-conf">CONF 0.79</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@product-pm</span><span class="hint">Product</span></div>
+            <div class="opt"><span>@dana.cx</span><span class="hint">CS escalation</span></div>
+            <div class="opt"><span>#qa-team</span><span class="hint">Quality</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Pane: Critical (default active) ───── -->
+  <section class="pane active" id="pane-critical">
+    <div class="section">
+      <div class="section-head">
+        <h2 class="section-title">Critical &amp; high · need attention now</h2>
+        <div class="section-sub">8 signals · 7d · sorted by recency</div>
+      </div>
+      <p class="section-blurb">3 more than last week. Heaviest concentration in BILLING and OPS — both up materially. Each signal is already routed; verify or reroute below.</p>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">G2</span>
+          <span class="time">42m ago</span>
+          <span class="reach">★★ 2 stars</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">verified buyer · subscription customer · 2yr</div>
+          <div class="content">"Subscription canceled itself after billing change and I got double-charged on the next cycle. Took 4 emails to resolve. Will not be renewing."</div>
+          <div class="signal-tags">
+            <span class="area">BILLING</span>
+            <span class="sev-critical">CRITICAL</span>
+            <span>IMMEDIATE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">#finance-urgent</div>
+          <div class="routing-conf">CONF 0.91</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@finance-lead</span><span class="hint">Billing</span></div>
+            <div class="opt"><span>#churn-watch</span><span class="hint">Retention</span></div>
+            <div class="opt"><span>#triage</span><span class="hint">Default</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Reddit</span>
+          <span class="time">12m ago</span>
+          <span class="reach">1.2k upvotes</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">u/coldbrewchaos · r/hydrohomies · 287 comments</div>
+          <div class="content">"Got my variety pack and three of the mango chainsaw cans were dented to hell. Third time this happened. The packaging is straight up not protecting the cans during shipping."</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-high">HIGH</span>
+            <span>SPRINT</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@maya.ops</div>
+          <div class="routing-conf low">CONF 0.61 · LOW</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>#supply-chain</span><span class="hint">Ops</span></div>
+            <div class="opt"><span>@product-pm</span><span class="hint">Product</span></div>
+            <div class="opt"><span>#triage</span><span class="hint">Default</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Twitter</span>
+          <span class="time">3h ago</span>
+          <span class="reach">~84k reach</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">@hydrationhater · 12.4k followers · 6 retweets, 184 likes</div>
+          <div class="content">"third liquid death pack in a row arrived crushed. brand is all marketing no operations. paying premium for dented cans is wild"</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-high">HIGH</span>
+            <span>IMMEDIATE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">#pr-watch</div>
+          <div class="routing-conf">CONF 0.84</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@maya.ops</span><span class="hint">Ops</span></div>
+            <div class="opt"><span>#brand-pulse</span><span class="hint">Marketing</span></div>
+            <div class="opt"><span>@founder</span><span class="hint">Escalate</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Reddit</span>
+          <span class="time">5h ago</span>
+          <span class="reach">847 upvotes</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">u/cleanwaterclub · r/hydrohomies · 132 comments</div>
+          <div class="content">"Anyone else feel like the new formula tastes off? Started two weeks ago. Reached out to support, got a copy-paste reply about 'consistent quality.' Done buying."</div>
+          <div class="signal-tags">
+            <span class="area">PRODUCT</span>
+            <span class="sev-high">HIGH</span>
+            <span>SPRINT</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@formulation</div>
+          <div class="routing-conf">CONF 0.79</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@product-pm</span><span class="hint">Product</span></div>
+            <div class="opt"><span>@dana.cx</span><span class="hint">CS escalation</span></div>
+            <div class="opt"><span>#qa-team</span><span class="hint">Quality</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Pane: Emerging ───── -->
+  <section class="pane" id="pane-emerging">
+    <div class="section">
+      <div class="section-head">
+        <h2 class="section-title">Emerging — packaging damage</h2>
+        <div class="section-sub">Auto-clustered from memory · 11 signals over 14 weeks</div>
+      </div>
+
+      <div class="pattern-hero">
+        <div>
+          <div class="name">Packaging damage in shipping</div>
+          <div class="blurb">"Outer shipping carton appears under-spec'd for can-column compression. Pattern observed across 3PL fulfillment, not retail. Started Q1; this week's volume is 3× the rolling 4-week average."</div>
+          <div class="meta">OPS · STARTED Q1 · 11 SIGNALS TOTAL · 3 THIS WEEK</div>
+        </div>
+        <div class="accel">
+          <span class="num">3×</span>
+          weekly volume<br/>vs prev 4-week avg
+        </div>
+      </div>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Reddit</span>
+          <span class="time">12m ago</span>
+          <span class="reach">1.2k upvotes</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">u/coldbrewchaos · r/hydrohomies</div>
+          <div class="content">"Got my variety pack and three of the mango chainsaw cans were dented to hell. Third time this happened."</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-high">HIGH</span>
+            <span>CLUSTER · 11/11</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@maya.ops</div>
+          <div class="routing-conf low">CONF 0.61 · LOW</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>#supply-chain</span><span class="hint">Ops</span></div>
+            <div class="opt"><span>@product-pm</span><span class="hint">Product</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Twitter</span>
+          <span class="time">3h ago</span>
+          <span class="reach">~84k reach</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">@hydrationhater · 12.4k followers</div>
+          <div class="content">"third liquid death pack in a row arrived crushed. brand is all marketing no operations."</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-high">HIGH</span>
+            <span>CLUSTER · 10/11</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">#pr-watch</div>
+          <div class="routing-conf">CONF 0.84</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@maya.ops</span><span class="hint">Ops</span></div>
+            <div class="opt"><span>#supply-chain</span><span class="hint">Cluster home</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">G2</span>
+          <span class="time">2d ago</span>
+          <span class="reach">★★ 2 stars</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">verified buyer</div>
+          <div class="content">"Case arrived with 4 of 12 cans crushed. Refund process was easy but the damage rate is unacceptable for a premium brand."</div>
+          <div class="signal-tags">
+            <span class="area">OPS</span>
+            <span class="sev-medium">MEDIUM</span>
+            <span>CLUSTER · 9/11</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@maya.ops</div>
+          <div class="routing-conf">CONF 0.88</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>#supply-chain</span><span class="hint">Cluster home</span></div>
+            <div class="opt"><span>@dana.cx</span><span class="hint">CS</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Pane: Volume ───── -->
+  <section class="pane" id="pane-volume">
+    <div class="section">
+      <div class="section-head">
+        <h2 class="section-title">Conversation volume by source</h2>
+        <div class="section-sub">2,847 signals · 7d · ↑ 12% vs prev</div>
+      </div>
+      <p class="section-blurb">Reddit-heavy mix this week — community discussion is the dominant mode. Twitter spike correlates with the @hydrationhater thread. G2 cadence is steady.</p>
+
+      <div class="source-stat-bar">
+        <div class="source-stat-cell">
+          <div class="num">1,708 <span class="pct">60%</span></div>
+          <div class="label">Reddit · 142 today</div>
+        </div>
+        <div class="source-stat-cell">
+          <div class="num">797 <span class="pct">28%</span></div>
+          <div class="label">Twitter · 89 today</div>
+        </div>
+        <div class="source-stat-cell">
+          <div class="num">342 <span class="pct">12%</span></div>
+          <div class="label">G2 · 23 today</div>
+        </div>
+      </div>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Twitter</span>
+          <span class="time">1h 14m ago</span>
+          <span class="reach">3.4k followers</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">@dadbod_dietitian</div>
+          <div class="content">"the new aluminum bottle resealable cap is genuinely game-changing for hikes, please keep that and don't go back to the pull-tabs"</div>
+          <div class="signal-tags">
+            <span class="area">PRODUCT</span>
+            <span class="sev-medium">MEDIUM</span>
+            <span class="sent-pos">POSITIVE</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">@product-pm</div>
+          <div class="routing-conf">CONF 0.83</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>#brand-pulse</span><span class="hint">Marketing</span></div>
+            <div class="opt"><span>@design-lead</span><span class="hint">Packaging</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="signal">
+        <div class="signal-meta">
+          <span class="source">Reddit</span>
+          <span class="time">2h ago</span>
+          <span class="reach">r/hydrohomies</span>
+        </div>
+        <div class="signal-body">
+          <div class="author">u/canvasclimber</div>
+          <div class="content">"Wait does liquid death come in 6-packs anymore? I only see 8s and 12s on the site."</div>
+          <div class="signal-tags">
+            <span class="area">CS</span>
+            <span class="sev-low">LOW</span>
+            <span>FYI</span>
+          </div>
+        </div>
+        <div class="routing">
+          <div class="routing-label">Routed to</div>
+          <div class="routing-owner">#triage</div>
+          <div class="routing-conf low">CONF 0.54 · LOW</div>
+          <button class="reroute-btn" onclick="togglePop(event, this)">Reroute →</button>
+          <div class="reroute-pop">
+            <div class="pop-label">Send instead to</div>
+            <div class="opt"><span>@dana.cx</span><span class="hint">CS</span></div>
+            <div class="opt"><span>@product-pm</span><span class="hint">Catalog</span></div>
+            <div class="opt"><span>IGNORE</span><span class="hint">Mark noise</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- Footer · system status (demoted from heroes) -->
+  <footer class="footer">
+    <div class="status">
+      <span><span class="dot"></span>SYSTEM <strong>HEALTHY</strong></span>
+      <span>SOURCES <strong>3/3</strong></span>
+      <span>ROUTING <strong>73%</strong> right-person</span>
+      <span>LATENCY <strong>41s</strong> median</span>
+      <span>LAST POLL <strong>2m</strong> ago</span>
+    </div>
+    <div>v1 · BUILD 0.3.2 · ⌘K MEMORY</div>
+  </footer>
+
+</div>
+
+<script>
+  // KPI → pane switching
+  document.querySelectorAll('.kpi').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.kpi').forEach(k => k.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+      card.classList.add('active');
+      const target = card.dataset.pane;
+      document.getElementById('pane-' + target).classList.add('active');
+    });
+  });
+
+  // Period toggle (visual only)
+  document.querySelectorAll('.period-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Reroute popover
+  function togglePop(evt, btn) {
+    evt.stopPropagation();
+    const pop = btn.nextElementSibling;
+    const wasOpen = pop.classList.contains('open');
+    document.querySelectorAll('.reroute-pop').forEach(p => p.classList.remove('open'));
+    if (!wasOpen) pop.classList.add('open');
+  }
+
+  // Reroute selection
+  document.querySelectorAll('.reroute-pop .opt').forEach(opt => {
+    opt.addEventListener('click', e => {
+      e.stopPropagation();
+      const pop = opt.closest('.reroute-pop');
+      const routing = pop.closest('.routing');
+      const ownerEl = routing.querySelector('.routing-owner');
+      const newOwner = opt.querySelector('span').textContent;
+      ownerEl.style.color = 'var(--ink)';
+      ownerEl.textContent = newOwner;
+      const conf = routing.querySelector('.routing-conf');
+      conf.textContent = 'REROUTED · feedback recorded';
+      conf.style.color = 'var(--positive)';
+      conf.classList.remove('low');
+      pop.classList.remove('open');
+    });
+  });
+
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.reroute-pop').forEach(p => p.classList.remove('open'));
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,88 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=Cormorant+SC:wght@300;400;500&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-border: var(--rule);
+  --color-input: var(--rule);
+  --color-ring: var(--ink-mute);
+
+  --color-card: var(--paper-2);
+  --color-card-foreground: var(--ink);
+  --color-card-border: var(--rule);
+
+  --color-popover: var(--ink);
+  --color-popover-foreground: var(--paper);
+  --color-popover-border: var(--ink-soft);
+
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--paper);
+  --color-primary-border: var(--ink);
+
+  --color-secondary: var(--paper-2);
+  --color-secondary-foreground: var(--ink);
+  --color-secondary-border: var(--rule);
+
+  --color-muted: var(--paper-3);
+  --color-muted-foreground: var(--ink-mute);
+  --color-muted-border: var(--rule);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--paper);
+  --color-accent-border: var(--accent);
+
+  --color-destructive: var(--accent);
+  --color-destructive-foreground: var(--paper);
+  --color-destructive-border: var(--accent);
+
+  --color-sidebar: var(--paper);
+  --color-sidebar-foreground: var(--ink);
+  --color-sidebar-border: var(--rule);
+  --color-sidebar-primary: var(--ink);
+  --color-sidebar-primary-foreground: var(--paper);
+  --color-sidebar-primary-border: var(--ink);
+  --color-sidebar-accent: var(--paper-2);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-accent-border: var(--rule);
+  --color-sidebar-ring: var(--ink-mute);
+
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-serif: 'Cormorant Garamond', 'Georgia', serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --paper: #f4f1ec;
+  --paper-2: #ebe7df;
+  --paper-3: #e3ddd1;
+  --ink: #1a1815;
+  --ink-soft: #4a4640;
+  --ink-mute: #8b857a;
+  --rule: #d9d3c7;
+  --rule-soft: #e3ddd1;
+  --accent: #b8431f;
+  --positive: #4a6b3f;
+  --warn: #c97a30;
+
+  --radius: .5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}

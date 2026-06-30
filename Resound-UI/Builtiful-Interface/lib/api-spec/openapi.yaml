@@ -1,0 +1,1044 @@
+openapi: 3.1.0
+info:
+  title: Api
+  description: Resound customer signal intelligence API
+  version: 0.1.0
+paths:
+  /healthz:
+    get:
+      tags:
+      - health
+      summary: Health Check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /brands:
+    get:
+      tags:
+      - brands
+      summary: List Brands
+      operationId: listBrands
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Brand'
+                type: array
+                title: Response Listbrands
+  /brands/{brandId}/stats/{period}:
+    get:
+      tags:
+      - brands
+      summary: Get Brand Stats
+      operationId: getBrandStats
+      parameters:
+      - name: brandId
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Brandid
+      - name: period
+        in: path
+        required: true
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          title: Period
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandStats'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /signals:
+    get:
+      tags:
+      - signals
+      summary: List Signals
+      operationId: listSignals
+      parameters:
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brandid
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+      - name: area
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Area
+      - name: severity
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+      - name: sentiment
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sentiment
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          default: 7d
+          title: Period
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalList'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /signals/critical:
+    get:
+      tags:
+      - signals
+      summary: Get Critical Signals
+      operationId: getCriticalSignals
+      parameters:
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brandid
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          default: 7d
+          title: Period
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SignalDetail'
+                title: Response Getcriticalsignals
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /signals/{signalId}:
+    get:
+      tags:
+      - signals
+      summary: Get Signal
+      operationId: getSignal
+      parameters:
+      - name: signalId
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Signalid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /routes:
+    get:
+      tags:
+      - routes
+      - feedback
+      summary: List Routes
+      operationId: listRoutes
+      parameters:
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brandid
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          default: 7d
+          title: Period
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RouteAudit'
+                title: Response Listroutes
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /routes/{routeId}/reroute:
+    patch:
+      tags:
+      - routes
+      - feedback
+      summary: Reroute Signal
+      operationId: rerouteSignal
+      parameters:
+      - name: routeId
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Routeid
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerouteInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteAudit'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /routes/{routeId}/feedback:
+    post:
+      tags:
+      - routes
+      - feedback
+      summary: Submit Feedback
+      operationId: submitFeedback
+      parameters:
+      - name: routeId
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Routeid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /patterns:
+    get:
+      tags:
+      - patterns
+      summary: List Patterns
+      operationId: listPatterns
+      parameters:
+      - name: brandId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brandid
+      - name: area
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Area
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pattern'
+                title: Response Listpatterns
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /patterns/{patternId}:
+    get:
+      tags:
+      - patterns
+      summary: Get Pattern
+      operationId: getPattern
+      parameters:
+      - name: patternId
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Patternid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    Brand:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        slug:
+          type: string
+          title: Slug
+        description:
+          type: string
+          title: Description
+        primaryContact:
+          type: string
+          title: Primarycontact
+        sourcesActive:
+          items:
+            type: string
+          type: array
+          title: Sourcesactive
+        lastIngested:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lastingested
+        tagline:
+          type: string
+          title: Tagline
+        ownerOptions:
+          items:
+            $ref: '#/components/schemas/OwnerOption'
+          type: array
+          title: Owneroptions
+      type: object
+      required:
+      - id
+      - name
+      - slug
+      - description
+      - primaryContact
+      - sourcesActive
+      - lastIngested
+      - tagline
+      title: Brand
+    BrandStats:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+        period:
+          type: string
+          title: Period
+        netSentiment:
+          type: integer
+          title: Netsentiment
+        netSentimentDelta:
+          type: integer
+          title: Netsentimentdelta
+        criticalCount:
+          type: integer
+          title: Criticalcount
+        criticalDelta:
+          type: integer
+          title: Criticaldelta
+        totalVolume:
+          type: integer
+          title: Totalvolume
+        volumeDelta:
+          type: number
+          title: Volumedelta
+        sourceMix:
+          items:
+            $ref: '#/components/schemas/SourceStat'
+          type: array
+          title: Sourcemix
+        sentimentBreakdown:
+          $ref: '#/components/schemas/SentimentBreakdown'
+        topEmergingIssue:
+          $ref: '#/components/schemas/PatternSummary'
+        lastIngested:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lastingested
+      type: object
+      required:
+      - brandId
+      - period
+      - netSentiment
+      - netSentimentDelta
+      - criticalCount
+      - criticalDelta
+      - totalVolume
+      - volumeDelta
+      - sourceMix
+      - sentimentBreakdown
+      - topEmergingIssue
+      title: BrandStats
+    Classification:
+      properties:
+        id:
+          type: integer
+          title: Id
+        signalId:
+          type: integer
+          title: Signalid
+        isAboutBrand:
+          type: boolean
+          title: Isaboutbrand
+        area:
+          type: string
+          title: Area
+        subarea:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Subarea
+        sentiment:
+          type: string
+          enum:
+          - negative
+          - neutral
+          - positive
+          - mixed
+          title: Sentiment
+        severity:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+          - critical
+          title: Severity
+        actionClass:
+          type: string
+          enum:
+          - immediate
+          - sprint
+          - roadmap
+          - fyi
+          - ignore
+          title: Actionclass
+        rootCauseHypothesis:
+          type: string
+          title: Rootcausehypothesis
+        summary:
+          type: string
+          title: Summary
+        confidence:
+          type: number
+          title: Confidence
+      type: object
+      required:
+      - id
+      - signalId
+      - isAboutBrand
+      - area
+      - sentiment
+      - severity
+      - actionClass
+      - rootCauseHypothesis
+      - summary
+      - confidence
+      title: Classification
+    FeedbackEvent:
+      properties:
+        id:
+          type: integer
+          title: Id
+        routeId:
+          type: integer
+          title: Routeid
+        correct:
+          type: boolean
+          title: Correct
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - routeId
+      - correct
+      - createdAt
+      title: FeedbackEvent
+    FeedbackInput:
+      properties:
+        correct:
+          type: boolean
+          title: Correct
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+        actioned:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Actioned
+        submittedBy:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Submittedby
+      type: object
+      required:
+      - correct
+      title: FeedbackInput
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthStatus:
+      properties:
+        status:
+          type: string
+          title: Status
+        version:
+          type: string
+          title: Version
+        database:
+          type: string
+          title: Database
+        brandsCount:
+          type: integer
+          title: Brandscount
+      type: object
+      required:
+      - status
+      - version
+      - database
+      - brandsCount
+      title: HealthStatus
+    OwnerOption:
+      properties:
+        owner:
+          type: string
+          title: Owner
+        label:
+          type: string
+          title: Label
+        hint:
+          type: string
+          title: Hint
+      type: object
+      required:
+      - owner
+      - label
+      - hint
+      title: OwnerOption
+    Pattern:
+      properties:
+        id:
+          type: integer
+          title: Id
+        brandId:
+          type: string
+          title: Brandid
+        name:
+          type: string
+          title: Name
+        area:
+          type: string
+          title: Area
+        blurb:
+          type: string
+          title: Blurb
+        signalCount:
+          type: integer
+          title: Signalcount
+        weeklyVelocity:
+          type: integer
+          title: Weeklyvelocity
+        velocityMultiple:
+          type: number
+          title: Velocitymultiple
+        startedAt:
+          type: string
+          title: Startedat
+      type: object
+      required:
+      - id
+      - brandId
+      - name
+      - area
+      - blurb
+      - signalCount
+      - weeklyVelocity
+      - velocityMultiple
+      - startedAt
+      title: Pattern
+    PatternDetail:
+      properties:
+        pattern:
+          $ref: '#/components/schemas/Pattern'
+        signals:
+          items:
+            $ref: '#/components/schemas/SignalDetail'
+          type: array
+          title: Signals
+      type: object
+      required:
+      - pattern
+      - signals
+      title: PatternDetail
+    PatternSummary:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        area:
+          type: string
+          title: Area
+        signalCount:
+          type: integer
+          title: Signalcount
+        weeklyVelocity:
+          type: integer
+          title: Weeklyvelocity
+        velocityMultiple:
+          type: number
+          title: Velocitymultiple
+      type: object
+      required:
+      - id
+      - name
+      - area
+      - signalCount
+      - weeklyVelocity
+      - velocityMultiple
+      title: PatternSummary
+    RerouteInput:
+      properties:
+        owner:
+          type: string
+          title: Owner
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+        submittedBy:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Submittedby
+      type: object
+      required:
+      - owner
+      title: RerouteInput
+    Route:
+      properties:
+        id:
+          type: integer
+          title: Id
+        signalId:
+          type: integer
+          title: Signalid
+        classificationId:
+          type: integer
+          title: Classificationid
+        owner:
+          type: string
+          title: Owner
+        ruleMatched:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rulematched
+        confidence:
+          type: number
+          title: Confidence
+        reroutedFrom:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reroutedfrom
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - signalId
+      - classificationId
+      - owner
+      - ruleMatched
+      - confidence
+      - createdAt
+      title: Route
+    RouteAudit:
+      properties:
+        id:
+          type: integer
+          title: Id
+        signalId:
+          type: integer
+          title: Signalid
+        owner:
+          type: string
+          title: Owner
+        area:
+          type: string
+          title: Area
+        severity:
+          type: string
+          title: Severity
+        sentiment:
+          type: string
+          title: Sentiment
+        source:
+          type: string
+          title: Source
+        content:
+          type: string
+          title: Content
+        summary:
+          type: string
+          title: Summary
+        confidence:
+          type: number
+          title: Confidence
+        ruleMatched:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rulematched
+        reroutedFrom:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reroutedfrom
+        createdAt:
+          type: string
+          title: Createdat
+        feedbackCorrect:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Feedbackcorrect
+      type: object
+      required:
+      - id
+      - signalId
+      - owner
+      - area
+      - severity
+      - sentiment
+      - source
+      - content
+      - summary
+      - confidence
+      - ruleMatched
+      - createdAt
+      - feedbackCorrect
+      title: RouteAudit
+    SentimentBreakdown:
+      properties:
+        positive:
+          type: number
+          title: Positive
+        neutral:
+          type: number
+          title: Neutral
+        negative:
+          type: number
+          title: Negative
+      type: object
+      required:
+      - positive
+      - neutral
+      - negative
+      title: SentimentBreakdown
+    Signal:
+      properties:
+        id:
+          type: integer
+          title: Id
+        brandId:
+          type: string
+          title: Brandid
+        source:
+          type: string
+          title: Source
+        externalId:
+          type: string
+          title: Externalid
+        url:
+          type: string
+          title: Url
+        authorHandle:
+          type: string
+          title: Authorhandle
+        authorMeta:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authormeta
+        reach:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reach
+        content:
+          type: string
+          title: Content
+        postedAt:
+          type: string
+          title: Postedat
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - brandId
+      - source
+      - externalId
+      - url
+      - authorHandle
+      - content
+      - postedAt
+      - createdAt
+      title: Signal
+    SignalDetail:
+      properties:
+        signal:
+          $ref: '#/components/schemas/Signal'
+        classification:
+          $ref: '#/components/schemas/Classification'
+        route:
+          $ref: '#/components/schemas/Route'
+        patternId:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Patternid
+        patternName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Patternname
+      type: object
+      required:
+      - signal
+      - classification
+      - route
+      title: SignalDetail
+    SignalList:
+      properties:
+        signals:
+          items:
+            $ref: '#/components/schemas/SignalDetail'
+          type: array
+          title: Signals
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - signals
+      - total
+      title: SignalList
+    SourceStat:
+      properties:
+        source:
+          type: string
+          title: Source
+        count:
+          type: integer
+          title: Count
+        pct:
+          type: number
+          title: Pct
+      type: object
+      required:
+      - source
+      - count
+      - pct
+      title: SourceStat
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+servers:
+- url: /api
+  description: Base API path

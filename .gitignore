@@ -32,8 +32,7 @@ data/
 *.sqlite
 *.sqlite3
 
-# Local UI export artifacts
-Resound-UI/
+# Local UI export archive
 Resound-UI.zip
 
 # Logs
