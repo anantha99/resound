@@ -1,0 +1,36 @@
+default_route: "#triage"
+
+rules:
+  - name: "critical_incident"
+    when:
+      severity: "critical"
+    route_to: "#incident-comms"
+    priority: "immediate"
+
+  - name: "engineering_reliability"
+    when:
+      area: "engineering"
+      severity: ">=medium"
+    route_to: "@eng-on-call"
+
+  - name: "pricing_or_billing"
+    when:
+      area: "billing"
+    route_to: "@revenue-ops"
+
+  - name: "product_roadmap"
+    when:
+      area: "product"
+      action_class: "roadmap"
+    route_to: "@product-lead"
+
+  - name: "positive_product_love"
+    when:
+      sentiment: "positive"
+      action_class: "fyi"
+    route_to: "#content-team"
+
+  - name: "low_confidence_review_queue"
+    when:
+      confidence: "<0.5"
+    route_to: "#review-queue"

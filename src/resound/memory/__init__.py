@@ -30,15 +30,7 @@ from sqlalchemy.orm import (
 from resound.config import env
 from resound.core.memory import Memory
 from resound.gateway import LLMGatewayError, LLMResponse
-from resound.models import (
-    ActionClass,
-    Classification,
-    FeedbackEvent,
-    RawSignal,
-    Route,
-    Sentiment,
-    Severity,
-)
+from resound.models import Classification, FeedbackEvent, RawSignal, Route
 
 
 def _sha256(text: str) -> str:
@@ -85,8 +77,10 @@ class SignalRow(Base):
     raw_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    classification: Mapped["ClassificationRow"] = relationship(back_populates="signal", uselist=False)
-    route: Mapped["RouteRow"] = relationship(back_populates="signal", uselist=False)
+    classification: Mapped[ClassificationRow] = relationship(
+        back_populates="signal", uselist=False,
+    )
+    route: Mapped[RouteRow] = relationship(back_populates="signal", uselist=False)
 
 
 class ClassificationRow(Base):
@@ -123,6 +117,28 @@ class RouteRow(Base):
     routed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     signal: Mapped[SignalRow] = relationship(back_populates="route")
+
+
+class RouteHandoffRow(Base):
+    """Append-only record of a routed signal moving between owners.
+
+    The original ``routes`` row remains the router's first decision. Handoffs
+    capture human team movement after that decision so the current owner can be
+    projected without erasing routing history.
+    """
+
+    __tablename__ = "route_handoffs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    route_id: Mapped[int] = mapped_column(ForeignKey("routes.id"), index=True)
+    from_owner: Mapped[str] = mapped_column(String(128), index=True)
+    to_owner: Mapped[str] = mapped_column(String(128), index=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class FeedbackRow(Base):
@@ -262,6 +278,43 @@ class SqlMemory(Memory):
             s.commit()
             return row.id
 
+    def record_route_handoff(
+        self,
+        *,
+        route_id: int,
+        from_owner: str,
+        to_owner: str,
+        note: str | None = None,
+        submitted_by: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> int:
+        """Append a human handoff for a route and return the event id.
+
+        ``idempotency_key`` is optional for local/dev use, but API callers should
+        provide it so mobile retries don't create duplicate handoffs.
+        """
+        with Session(self.engine) as s:
+            if idempotency_key:
+                existing = s.execute(
+                    select(RouteHandoffRow.id).where(
+                        RouteHandoffRow.idempotency_key == idempotency_key,
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return existing
+
+            row = RouteHandoffRow(
+                route_id=route_id,
+                from_owner=from_owner,
+                to_owner=to_owner,
+                note=note,
+                submitted_by=submitted_by,
+                idempotency_key=idempotency_key,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
     def record_llm_call(
         self,
         *,
@@ -369,7 +422,9 @@ class SqlMemory(Memory):
                         "area": sig.classification.area if sig.classification else None,
                         "sentiment": sig.classification.sentiment if sig.classification else None,
                         "severity": sig.classification.severity if sig.classification else None,
-                        "action_class": sig.classification.action_class if sig.classification else None,
+                        "action_class": (
+                            sig.classification.action_class if sig.classification else None
+                        ),
                         "summary": sig.classification.summary if sig.classification else None,
                         "owner": sig.route.owner_id if sig.route else None,
                         "destination": sig.route.destination if sig.route else None,

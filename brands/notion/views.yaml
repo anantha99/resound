@@ -1,0 +1,18 @@
+saved_views:
+  - name: "Critical this week"
+    filters:
+      severity: ["critical"]
+    period_days: 7
+  - name: "Reliability incidents"
+    filters:
+      area: ["engineering"]
+      subarea: ["reliability"]
+    period_days: 30
+  - name: "Pricing sensitivity"
+    filters:
+      area: ["billing"]
+    period_days: 30
+
+alert_thresholds:
+  critical_per_day: 3
+  area_spike_factor: 3.0

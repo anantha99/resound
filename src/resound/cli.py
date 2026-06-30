@@ -143,6 +143,43 @@ def dashboard(
     subprocess.run(cmd)
 
 
+@app.command()
+def api(
+    host: str = typer.Option("127.0.0.1", help="API host"),
+    port: int = typer.Option(8000, help="API port"),
+    reload: bool = typer.Option(False, help="Enable uvicorn reload"),
+) -> None:
+    """Launch the FastAPI backend used by the web and mobile clients."""
+    _setup_logging()
+    import uvicorn
+
+    console.print(f"[bold cyan]Launching Resound API[/] on http://{host}:{port}...")
+    uvicorn.run("resound.api.app:app", host=host, port=port, reload=reload)
+
+
+@app.command("export-openapi")
+def export_openapi(
+    output: Path = typer.Option(
+        Path("Resound-UI/Builtiful-Interface/lib/api-spec/openapi.yaml"),
+        "--output",
+        "-o",
+        help="File to write the frontend-facing OpenAPI schema to.",
+    ),
+) -> None:
+    """Export the FastAPI contract for React client generation."""
+    _setup_logging()
+    import yaml
+
+    from resound.api.openapi import client_openapi_schema
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(client_openapi_schema(), sort_keys=False, allow_unicode=False),
+        encoding="utf-8",
+    )
+    console.print(f"[green]Wrote OpenAPI schema[/] to {output}")
+
+
 def _print_stats(stats) -> None:
     table = Table(show_header=False, box=None, pad_edge=False)
     table.add_column(style="dim")

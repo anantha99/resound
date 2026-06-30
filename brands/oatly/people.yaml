@@ -1,0 +1,23 @@
+people:
+  "@supply-lead":
+    name: "Supply Lead"
+    slack: "@supply-lead"
+    email: "supply@example.com"
+  "@product-lead":
+    name: "Product Lead"
+    slack: "@product-lead"
+    email: "product@example.com"
+
+channels:
+  "#triage":
+    slack_channel: "#resound-triage"
+    description: "Default landing zone for routed signals."
+  "#exec-pr":
+    slack_channel: "#exec-pr"
+    description: "Exec and comms escalation for critical or viral risks."
+  "#brand-comms":
+    slack_channel: "#brand-comms"
+    description: "Brand, marketing, and sustainability messaging watch."
+  "#review-queue":
+    slack_channel: "#resound-review"
+    description: "Low-confidence signals for human review before routing."

@@ -1,0 +1,36 @@
+default_route: "#triage"
+
+rules:
+  - name: "critical_pr_risk"
+    when:
+      severity: "critical"
+    route_to: "#exec-pr"
+    priority: "immediate"
+
+  - name: "ops_stockouts"
+    when:
+      area: "ops"
+      severity: ">=medium"
+    route_to: "@supply-lead"
+
+  - name: "product_quality"
+    when:
+      area: "product"
+      sentiment: "negative"
+    route_to: "@product-lead"
+
+  - name: "marketing_sustainability"
+    when:
+      area: "marketing"
+    route_to: "#brand-comms"
+
+  - name: "positive_product_love"
+    when:
+      sentiment: "positive"
+      action_class: "fyi"
+    route_to: "#brand-comms"
+
+  - name: "low_confidence_review_queue"
+    when:
+      confidence: "<0.5"
+    route_to: "#review-queue"

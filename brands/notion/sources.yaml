@@ -1,0 +1,26 @@
+reddit:
+  enabled: true
+  subreddits:
+    - Notion
+    - productivity
+    - startups
+  search_terms:
+    - "Notion"
+    - "Notion AI"
+    - "Notion outage"
+  limit: 25
+
+g2:
+  enabled: true
+  product_slug: "notion"
+  max_pages: 2
+  throttle_seconds: 2
+
+twitter:
+  enabled: false
+  handles:
+    - "@NotionHQ"
+  search_terms:
+    - "Notion"
+    - "Notion AI"
+  limit: 50

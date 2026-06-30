@@ -1,0 +1,27 @@
+people:
+  "@eng-on-call":
+    name: "Engineering On-call"
+    slack: "@eng-on-call"
+    email: "eng@example.com"
+  "@revenue-ops":
+    name: "Revenue Ops"
+    slack: "@revenue-ops"
+    email: "revenue@example.com"
+  "@product-lead":
+    name: "Product Lead"
+    slack: "@product-lead"
+    email: "product@example.com"
+
+channels:
+  "#triage":
+    slack_channel: "#resound-triage"
+    description: "Default landing zone for routed signals."
+  "#incident-comms":
+    slack_channel: "#incident-comms"
+    description: "Incident response and comms for reliability escalations."
+  "#content-team":
+    slack_channel: "#content-team"
+    description: "Marketing/content team for positive product advocacy."
+  "#review-queue":
+    slack_channel: "#resound-review"
+    description: "Low-confidence signals for human review before routing."

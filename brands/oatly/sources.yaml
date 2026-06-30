@@ -1,0 +1,24 @@
+reddit:
+  enabled: true
+  subreddits:
+    - vegan
+    - Coffee
+    - plantbaseddiet
+  search_terms:
+    - "Oatly"
+    - "Oatly barista"
+    - "oat milk stockout"
+  limit: 25
+
+g2:
+  enabled: false
+  product_slug: ""
+
+twitter:
+  enabled: false
+  handles:
+    - "@oatly"
+  search_terms:
+    - "Oatly"
+    - "Oatly barista"
+  limit: 50

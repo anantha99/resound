@@ -1,0 +1,18 @@
+saved_views:
+  - name: "Critical this week"
+    filters:
+      severity: ["critical"]
+    period_days: 7
+  - name: "Barista stockouts"
+    filters:
+      area: ["ops"]
+      subarea: ["barista_stockouts"]
+    period_days: 30
+  - name: "Sustainability scrutiny"
+    filters:
+      area: ["marketing"]
+    period_days: 30
+
+alert_thresholds:
+  critical_per_day: 3
+  area_spike_factor: 3.0
