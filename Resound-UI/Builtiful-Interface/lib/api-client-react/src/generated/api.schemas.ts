@@ -5,6 +5,14 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+export interface AgentSession {
+  id: number;
+  agentType: string;
+  userGoal: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface OwnerOption {
   owner: string;
   label: string;
@@ -104,6 +112,15 @@ export interface Classification {
   confidence: number;
 }
 
+export type EvaluationSummaryReportRunsByStatus = {[key: string]: number};
+
+export interface EvaluationSummary {
+  brandId: string;
+  reportRunsByStatus: EvaluationSummaryReportRunsByStatus;
+  sourceFailureCount: number;
+  totalLlmCostUsd: number;
+}
+
 export interface FeedbackEvent {
   id: number;
   routeId: number;
@@ -138,6 +155,66 @@ export interface HealthStatus {
   version: string;
   database: string;
   brandsCount: number;
+}
+
+export type LLMTelemetryPeriod = typeof LLMTelemetryPeriod[keyof typeof LLMTelemetryPeriod];
+
+
+export const LLMTelemetryPeriod = {
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  qtd: 'qtd',
+} as const;
+
+export type LLMTelemetryCostsItem = { [key: string]: unknown };
+
+export type LLMTelemetryLatency = {[key: string]: {[key: string]: number}};
+
+export type LLMTelemetryFallbackRate = {[key: string]: {[key: string]: number}};
+
+export interface LLMTelemetry {
+  brandId: string;
+  period: LLMTelemetryPeriod;
+  costs: LLMTelemetryCostsItem[];
+  latency: LLMTelemetryLatency;
+  fallbackRate: LLMTelemetryFallbackRate;
+}
+
+export interface ListeningProfileSetupInput {
+  brandId: string;
+  brandNames: string[];
+  productNames?: string[];
+  competitorNames?: string[];
+  excludedTerms?: string[];
+  locale?: string | null;
+  language?: string;
+  setupNotes?: string | null;
+}
+
+export interface ListeningProfileSuggestion {
+  id: number;
+  profileId: number;
+  suggestionType: string;
+  value: string;
+  reason?: string | null;
+  status: string;
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
+export type ListeningProfileSuggestionDecisionDecision = typeof ListeningProfileSuggestionDecisionDecision[keyof typeof ListeningProfileSuggestionDecisionDecision];
+
+
+export const ListeningProfileSuggestionDecisionDecision = {
+  accept: 'accept',
+  edit: 'edit',
+  reject: 'reject',
+} as const;
+
+export interface ListeningProfileSuggestionDecision {
+  decision: ListeningProfileSuggestionDecisionDecision;
+  editedValue?: string | null;
 }
 
 export interface Pattern {
@@ -190,6 +267,97 @@ export interface PatternDetail {
   signals: SignalDetail[];
 }
 
+export interface PublicFeedItem {
+  id: number;
+  brandId: string;
+  source: string;
+  content: string;
+  postedAt: string;
+  sourceUrl?: string | null;
+}
+
+export interface PublicFeed {
+  items: PublicFeedItem[];
+  capped?: boolean;
+  exportAvailable?: boolean;
+}
+
+export interface PublicFeedModerationEvent {
+  id: number;
+  signalId: number;
+  action: string;
+  reason?: string | null;
+  actor?: string | null;
+  createdAt: string;
+}
+
+export type PublicFeedModerationInputAction = typeof PublicFeedModerationInputAction[keyof typeof PublicFeedModerationInputAction];
+
+
+export const PublicFeedModerationInputAction = {
+  show: 'show',
+  hide: 'hide',
+  takedown: 'takedown',
+  no_export: 'no_export',
+} as const;
+
+export interface PublicFeedModerationInput {
+  action: PublicFeedModerationInputAction;
+  reason?: string | null;
+  actor?: string | null;
+}
+
+export type ReadinessCheckStatus = typeof ReadinessCheckStatus[keyof typeof ReadinessCheckStatus];
+
+
+export const ReadinessCheckStatus = {
+  ok: 'ok',
+  warning: 'warning',
+  error: 'error',
+} as const;
+
+export interface ReadinessCheck {
+  name: string;
+  status: ReadinessCheckStatus;
+  detail?: string | null;
+}
+
+export type ReadinessStatusStatus = typeof ReadinessStatusStatus[keyof typeof ReadinessStatusStatus];
+
+
+export const ReadinessStatusStatus = {
+  ok: 'ok',
+  degraded: 'degraded',
+} as const;
+
+export interface ReadinessStatus {
+  status: ReadinessStatusStatus;
+  checks: ReadinessCheck[];
+}
+
+export interface ReportRun {
+  id: number;
+  reportConfigId: number | null;
+  role: string;
+  timeframe: string;
+  status: string;
+  markdown: string;
+  generatedAt: string;
+}
+
+export interface ReportRunCreateInput {
+  brandId: string;
+  role: string;
+  timeframe?: string;
+  reportConfigId?: number | null;
+}
+
+export interface ReportTemplate {
+  role: string;
+  displayName: string;
+  sections: string[];
+}
+
 export interface RerouteInput {
   owner: string;
   note?: string | null;
@@ -216,6 +384,31 @@ export interface RouteAudit {
 export interface SignalList {
   signals: SignalDetail[];
   total: number;
+}
+
+export interface SourceHealth {
+  sourceType: string;
+  provider: string;
+  status: string;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  lastRunId?: string | null;
+  itemCount: number;
+  errorMessage?: string | null;
+}
+
+export interface SourceSyncInput {
+  brandId: string;
+}
+
+export interface WorkflowJob {
+  id: number;
+  workflowId: string;
+  runId?: string | null;
+  workflowType: string;
+  status: string;
+  taskQueue?: string | null;
+  createdAt: string;
 }
 
 export type ListSignalsParams = {
@@ -259,7 +452,6 @@ brandId?: string | null;
 period?: ListRoutesPeriod;
 limit?: number;
 };
-
 export type ListRoutesPeriod = typeof ListRoutesPeriod[keyof typeof ListRoutesPeriod];
 
 
@@ -273,4 +465,47 @@ export const ListRoutesPeriod = {
 export type ListPatternsParams = {
 brandId?: string | null;
 area?: string | null;
+};
+
+export type ListSourceHealthParams = {
+brandId: string;
+};
+
+export type GetLlmTelemetryParams = {
+brandId: string;
+period?: GetLlmTelemetryPeriod;
+};
+
+export type GetLlmTelemetryPeriod = typeof GetLlmTelemetryPeriod[keyof typeof GetLlmTelemetryPeriod];
+
+
+export const GetLlmTelemetryPeriod = {
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  qtd: 'qtd',
+} as const;
+
+export type GetEvaluationSummaryParams = {
+brandId: string;
+period?: GetEvaluationSummaryPeriod;
+};
+
+export type GetEvaluationSummaryPeriod = typeof GetEvaluationSummaryPeriod[keyof typeof GetEvaluationSummaryPeriod];
+
+
+export const GetEvaluationSummaryPeriod = {
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  qtd: 'qtd',
+} as const;
+
+export type GetPublicBrandFeedParams = {
+brandId: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -40,7 +39,6 @@ from resound.gateway import (
     build_gateway,
     load_models_config,
 )
-
 
 # =============================================================================
 # Helpers — fake OpenAI client + exception factories
@@ -223,8 +221,8 @@ class TestModelsConfig:
         cfg = load_models_config(
             config_dir=tmp_path / "missing", brands_dir=tmp_path / "missing"
         )
-        # Built-ins cover the four core stages.
-        assert {"filter", "classify", "routing_tiebreaker", "memory_query"} <= set(
+        # Built-ins cover the core stages.
+        assert {"filter", "classify", "routing_tiebreaker", "route", "memory_query"} <= set(
             cfg.stages
         )
         assert cfg.stages["classify"].model == "anthropic/claude-sonnet-4-6"
@@ -316,7 +314,7 @@ class TestModelsConfig:
     def test_repo_config_loads_clean(self):
         # Locks the actual config/models.yaml into the test surface (subtask 1.6).
         cfg = load_models_config()
-        for stage in ("filter", "classify", "routing_tiebreaker", "memory_query"):
+        for stage in ("filter", "classify", "routing_tiebreaker", "route", "memory_query"):
             sc = cfg.stages[stage]
             assert sc.model
             assert sc.timeout_s > 0

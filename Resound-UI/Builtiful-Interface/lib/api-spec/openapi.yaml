@@ -17,22 +17,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthStatus'
-  /brands:
+  /readiness:
     get:
       tags:
-      - brands
-      summary: List Brands
-      operationId: listBrands
+      - health
+      summary: Readiness Check
+      operationId: readinessCheck
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+  /brands:
+    get:
+      tags:
+      - brands
+      summary: List Brands
+      operationId: listBrands
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
                 items:
                   $ref: '#/components/schemas/Brand'
-                type: array
                 title: Response Listbrands
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /brands/{brandId}/stats/{period}:
     get:
       tags:
@@ -57,6 +101,30 @@ paths:
           - qtd
           type: string
           title: Period
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -143,6 +211,30 @@ paths:
           type: integer
           default: 0
           title: Offset
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -183,6 +275,30 @@ paths:
           type: string
           default: 7d
           title: Period
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -212,6 +328,30 @@ paths:
         schema:
           type: integer
           title: Signalid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -260,6 +400,30 @@ paths:
           type: integer
           default: 50
           title: Limit
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -298,6 +462,30 @@ paths:
           - type: string
           - type: 'null'
           title: Idempotency-Key
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       requestBody:
         required: true
         content:
@@ -331,6 +519,30 @@ paths:
         schema:
           type: integer
           title: Routeid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       requestBody:
         required: true
         content:
@@ -373,6 +585,30 @@ paths:
           - type: string
           - type: 'null'
           title: Area
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -402,6 +638,30 @@ paths:
         schema:
           type: integer
           title: Patternid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
       responses:
         '200':
           description: Successful Response
@@ -415,8 +675,628 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /workflows/source-sync:
+    post:
+      tags:
+      - workflows
+      summary: Start Source Sync
+      operationId: startSourceSync
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceSyncInput'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowJob'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /listening-profiles/setup:
+    post:
+      tags:
+      - listening-profiles
+      summary: Start Listening Profile Setup
+      operationId: startListeningProfileSetup
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListeningProfileSetupInput'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowJob'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /listening-profiles/suggestions/{suggestion_id}:
+    patch:
+      tags:
+      - listening-profiles
+      summary: Decide Listening Profile Suggestion
+      operationId: decideListeningProfileSuggestion
+      parameters:
+      - name: suggestion_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Suggestion Id
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListeningProfileSuggestionDecision'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListeningProfileSuggestion'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /source-health:
+    get:
+      tags:
+      - operations
+      summary: List Source Health
+      operationId: listSourceHealth
+      parameters:
+      - name: brandId
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Brandid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SourceHealth'
+                title: Response Listsourcehealth
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /telemetry/llm:
+    get:
+      tags:
+      - operations
+      summary: Get Llm Telemetry
+      operationId: getLlmTelemetry
+      parameters:
+      - name: brandId
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Brandid
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          default: 7d
+          title: Period
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMTelemetry'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /evaluations/summary:
+    get:
+      tags:
+      - operations
+      summary: Get Evaluation Summary
+      operationId: getEvaluationSummary
+      parameters:
+      - name: brandId
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Brandid
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          type: string
+          default: 7d
+          title: Period
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /reports/templates:
+    get:
+      tags:
+      - reports
+      summary: List Report Templates
+      operationId: listReportTemplates
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ReportTemplate'
+                type: array
+                title: Response Listreporttemplates
+  /reports/runs:
+    get:
+      tags:
+      - reports
+      summary: List Report Runs
+      operationId: listReportRuns
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReportRun'
+                title: Response Listreportruns
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - reports
+      summary: Start Report Generation
+      operationId: startReportGeneration
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportRunCreateInput'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowJob'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /agents/sessions:
+    get:
+      tags:
+      - agents
+      summary: List Agent Sessions
+      operationId: listAgentSessions
+      parameters:
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentSession'
+                title: Response Listagentsessions
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /public/feed:
+    get:
+      tags:
+      - public
+      summary: Public Brand Feed
+      operationId: getPublicBrandFeed
+      parameters:
+      - name: brandId
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Brandid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicFeed'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /public/feed/items/{signalId}/moderation:
+    patch:
+      tags:
+      - public
+      summary: Moderate Public Feed Item
+      operationId: moderatePublicFeedItem
+      parameters:
+      - name: signalId
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Signalid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicFeedModerationInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicFeedModerationEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /events:
+    get:
+      tags:
+      - events
+      summary: Stream Events
+      operationId: streamEvents
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
 components:
   schemas:
+    AgentSession:
+      properties:
+        id:
+          type: integer
+          title: Id
+        agentType:
+          type: string
+          title: Agenttype
+        userGoal:
+          type: string
+          title: Usergoal
+        status:
+          type: string
+          title: Status
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - agentType
+      - userGoal
+      - status
+      - createdAt
+      title: AgentSession
     Brand:
       properties:
         id:
@@ -583,6 +1463,29 @@ components:
       - summary
       - confidence
       title: Classification
+    EvaluationSummary:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+        reportRunsByStatus:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Reportrunsbystatus
+        sourceFailureCount:
+          type: integer
+          title: Sourcefailurecount
+        totalLlmCostUsd:
+          type: number
+          title: Totalllmcostusd
+      type: object
+      required:
+      - brandId
+      - reportRunsByStatus
+      - sourceFailureCount
+      - totalLlmCostUsd
+      title: EvaluationSummary
     FeedbackEvent:
       properties:
         id:
@@ -663,6 +1566,148 @@ components:
       - database
       - brandsCount
       title: HealthStatus
+    LLMTelemetry:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+        period:
+          type: string
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - qtd
+          title: Period
+        costs:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Costs
+        latency:
+          additionalProperties:
+            additionalProperties:
+              type: number
+            type: object
+          type: object
+          title: Latency
+        fallbackRate:
+          additionalProperties:
+            additionalProperties:
+              type: number
+            type: object
+          type: object
+          title: Fallbackrate
+      type: object
+      required:
+      - brandId
+      - period
+      - costs
+      - latency
+      - fallbackRate
+      title: LLMTelemetry
+    ListeningProfileSetupInput:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+        brandNames:
+          items:
+            type: string
+          type: array
+          title: Brandnames
+        productNames:
+          items:
+            type: string
+          type: array
+          title: Productnames
+        competitorNames:
+          items:
+            type: string
+          type: array
+          title: Competitornames
+        excludedTerms:
+          items:
+            type: string
+          type: array
+          title: Excludedterms
+        locale:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Locale
+        language:
+          type: string
+          title: Language
+          default: en
+        setupNotes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Setupnotes
+      type: object
+      required:
+      - brandId
+      - brandNames
+      title: ListeningProfileSetupInput
+    ListeningProfileSuggestion:
+      properties:
+        id:
+          type: integer
+          title: Id
+        profileId:
+          type: integer
+          title: Profileid
+        suggestionType:
+          type: string
+          title: Suggestiontype
+        value:
+          type: string
+          title: Value
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        status:
+          type: string
+          title: Status
+        createdAt:
+          type: string
+          title: Createdat
+        resolvedAt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolvedat
+      type: object
+      required:
+      - id
+      - profileId
+      - suggestionType
+      - value
+      - status
+      - createdAt
+      title: ListeningProfileSuggestion
+    ListeningProfileSuggestionDecision:
+      properties:
+        decision:
+          type: string
+          enum:
+          - accept
+          - edit
+          - reject
+          title: Decision
+        editedValue:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Editedvalue
+      type: object
+      required:
+      - decision
+      title: ListeningProfileSuggestionDecision
     OwnerOption:
       properties:
         owner:
@@ -764,6 +1809,226 @@ components:
       - weeklyVelocity
       - velocityMultiple
       title: PatternSummary
+    PublicFeed:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PublicFeedItem'
+          type: array
+          title: Items
+        capped:
+          type: boolean
+          title: Capped
+          default: true
+        exportAvailable:
+          type: boolean
+          title: Exportavailable
+          default: false
+      type: object
+      required:
+      - items
+      title: PublicFeed
+    PublicFeedItem:
+      properties:
+        id:
+          type: integer
+          title: Id
+        brandId:
+          type: string
+          title: Brandid
+        source:
+          type: string
+          title: Source
+        content:
+          type: string
+          title: Content
+        postedAt:
+          type: string
+          title: Postedat
+        sourceUrl:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sourceurl
+      type: object
+      required:
+      - id
+      - brandId
+      - source
+      - content
+      - postedAt
+      title: PublicFeedItem
+    PublicFeedModerationEvent:
+      properties:
+        id:
+          type: integer
+          title: Id
+        signalId:
+          type: integer
+          title: Signalid
+        action:
+          type: string
+          title: Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        actor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - signalId
+      - action
+      - createdAt
+      title: PublicFeedModerationEvent
+    PublicFeedModerationInput:
+      properties:
+        action:
+          type: string
+          enum:
+          - show
+          - hide
+          - takedown
+          - no_export
+          title: Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        actor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor
+      type: object
+      required:
+      - action
+      title: PublicFeedModerationInput
+    ReadinessCheck:
+      properties:
+        name:
+          type: string
+          title: Name
+        status:
+          type: string
+          enum:
+          - ok
+          - warning
+          - error
+          title: Status
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+      type: object
+      required:
+      - name
+      - status
+      title: ReadinessCheck
+    ReadinessStatus:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+          title: Status
+        checks:
+          items:
+            $ref: '#/components/schemas/ReadinessCheck'
+          type: array
+          title: Checks
+      type: object
+      required:
+      - status
+      - checks
+      title: ReadinessStatus
+    ReportRun:
+      properties:
+        id:
+          type: integer
+          title: Id
+        reportConfigId:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reportconfigid
+        role:
+          type: string
+          title: Role
+        timeframe:
+          type: string
+          title: Timeframe
+        status:
+          type: string
+          title: Status
+        markdown:
+          type: string
+          title: Markdown
+        generatedAt:
+          type: string
+          title: Generatedat
+      type: object
+      required:
+      - id
+      - reportConfigId
+      - role
+      - timeframe
+      - status
+      - markdown
+      - generatedAt
+      title: ReportRun
+    ReportRunCreateInput:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+        role:
+          type: string
+          title: Role
+        timeframe:
+          type: string
+          title: Timeframe
+          default: 7d
+        reportConfigId:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reportconfigid
+      type: object
+      required:
+      - brandId
+      - role
+      title: ReportRunCreateInput
+    ReportTemplate:
+      properties:
+        role:
+          type: string
+          title: Role
+        displayName:
+          type: string
+          title: Displayname
+        sections:
+          items:
+            type: string
+          type: array
+          title: Sections
+      type: object
+      required:
+      - role
+      - displayName
+      - sections
+      title: ReportTemplate
     RerouteInput:
       properties:
         owner:
@@ -996,6 +2261,47 @@ components:
       - signals
       - total
       title: SignalList
+    SourceHealth:
+      properties:
+        sourceType:
+          type: string
+          title: Sourcetype
+        provider:
+          type: string
+          title: Provider
+        status:
+          type: string
+          title: Status
+        lastSuccessAt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lastsuccessat
+        lastFailureAt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lastfailureat
+        lastRunId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lastrunid
+        itemCount:
+          type: integer
+          title: Itemcount
+        errorMessage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Errormessage
+      type: object
+      required:
+      - sourceType
+      - provider
+      - status
+      - itemCount
+      title: SourceHealth
     SourceStat:
       properties:
         source:
@@ -1013,6 +2319,15 @@ components:
       - count
       - pct
       title: SourceStat
+    SourceSyncInput:
+      properties:
+        brandId:
+          type: string
+          title: Brandid
+      type: object
+      required:
+      - brandId
+      title: SourceSyncInput
     ValidationError:
       properties:
         loc:
@@ -1039,6 +2354,41 @@ components:
       - msg
       - type
       title: ValidationError
+    WorkflowJob:
+      properties:
+        id:
+          type: integer
+          title: Id
+        workflowId:
+          type: string
+          title: Workflowid
+        runId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runid
+        workflowType:
+          type: string
+          title: Workflowtype
+        status:
+          type: string
+          title: Status
+        taskQueue:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Taskqueue
+        createdAt:
+          type: string
+          title: Createdat
+      type: object
+      required:
+      - id
+      - workflowId
+      - workflowType
+      - status
+      - createdAt
+      title: WorkflowJob
 servers:
 - url: /api
   description: Base API path

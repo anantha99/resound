@@ -37,6 +37,17 @@ class HealthStatus(ApiModel):
     brands_count: int
 
 
+class ReadinessCheck(ApiModel):
+    name: str
+    status: Literal["ok", "warning", "error"]
+    detail: str | None = None
+
+
+class ReadinessStatus(ApiModel):
+    status: Literal["ok", "degraded"]
+    checks: list[ReadinessCheck]
+
+
 class OwnerOption(ApiModel):
     owner: str
     label: str
@@ -196,3 +207,131 @@ class Pattern(ApiModel):
 class PatternDetail(ApiModel):
     pattern: Pattern
     signals: list[SignalDetail]
+
+
+class SourceSyncInput(ApiModel):
+    brand_id: str
+
+
+class ReportRunCreateInput(ApiModel):
+    brand_id: str
+    role: str
+    timeframe: str = "7d"
+    report_config_id: int | None = None
+
+
+class WorkflowJob(ApiModel):
+    id: int
+    workflow_id: str
+    run_id: str | None = None
+    workflow_type: str
+    status: str
+    task_queue: str | None = None
+    created_at: str
+
+
+class ListeningProfileSetupInput(ApiModel):
+    brand_id: str
+    brand_names: list[str]
+    product_names: list[str] = Field(default_factory=list)
+    competitor_names: list[str] = Field(default_factory=list)
+    excluded_terms: list[str] = Field(default_factory=list)
+    locale: str | None = None
+    language: str = "en"
+    setup_notes: str | None = None
+
+
+class ListeningProfileSuggestionDecision(ApiModel):
+    decision: Literal["accept", "edit", "reject"]
+    edited_value: str | None = None
+
+
+class ListeningProfileSuggestion(ApiModel):
+    id: int
+    profile_id: int
+    suggestion_type: str
+    value: str
+    reason: str | None = None
+    status: str
+    created_at: str
+    resolved_at: str | None = None
+
+
+class ReportTemplate(ApiModel):
+    role: str
+    display_name: str
+    sections: list[str]
+
+
+class ReportRun(ApiModel):
+    id: int
+    report_config_id: int | None
+    role: str
+    timeframe: str
+    status: str
+    markdown: str
+    generated_at: str
+
+
+class AgentSession(ApiModel):
+    id: int
+    agent_type: str
+    user_goal: str
+    status: str
+    created_at: str
+
+
+class PublicFeedItem(ApiModel):
+    id: int
+    brand_id: str
+    source: str
+    content: str
+    posted_at: str
+    source_url: str | None = None
+
+
+class PublicFeed(ApiModel):
+    items: list[PublicFeedItem]
+    capped: bool = True
+    export_available: bool = False
+
+
+class PublicFeedModerationInput(ApiModel):
+    action: Literal["show", "hide", "takedown", "no_export"]
+    reason: str | None = None
+    actor: str | None = None
+
+
+class PublicFeedModerationEvent(ApiModel):
+    id: int
+    signal_id: int
+    action: str
+    reason: str | None = None
+    actor: str | None = None
+    created_at: str
+
+
+class SourceHealth(ApiModel):
+    source_type: str
+    provider: str
+    status: str
+    last_success_at: str | None = None
+    last_failure_at: str | None = None
+    last_run_id: str | None = None
+    item_count: int
+    error_message: str | None = None
+
+
+class LLMTelemetry(ApiModel):
+    brand_id: str
+    period: Period
+    costs: list[dict]
+    latency: dict[str, dict[str, float]]
+    fallback_rate: dict[str, dict[str, float]]
+
+
+class EvaluationSummary(ApiModel):
+    brand_id: str
+    report_runs_by_status: dict[str, int]
+    source_failure_count: int
+    total_llm_cost_usd: float

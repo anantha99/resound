@@ -11,6 +11,7 @@ dependencies = [
     "openai>=1.40.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
+    "psycopg[binary]>=3.2.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "praw>=7.7.0",
@@ -26,6 +27,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "fastapi>=0.138.1",
     "uvicorn>=0.46.0",
+    "temporalio>=1.8.0",
+    "langgraph>=0.2.0",
 ]
 
 [project.optional-dependencies]

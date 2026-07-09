@@ -20,8 +20,27 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Readiness Check
+ */
+export const ReadinessCheckResponse = zod.object({
+  "status": zod.enum(['ok', 'degraded']),
+  "checks": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.enum(['ok', 'warning', 'error']),
+  "detail": zod.union([zod.string(),zod.null()]).optional()
+}))
+})
+
+
+/**
  * @summary List Brands
  */
+export const ListBrandsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
 export const ListBrandsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -46,6 +65,12 @@ export const ListBrandsResponse = zod.array(ListBrandsResponseItem)
 export const GetBrandStatsParams = zod.object({
   "brandId": zod.coerce.string(),
   "period": zod.enum(['24h', '7d', '30d', 'qtd'])
+})
+
+export const GetBrandStatsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
 export const GetBrandStatsResponse = zod.object({
@@ -95,6 +120,12 @@ export const ListSignalsQueryParams = zod.object({
   "period": zod.enum(['24h', '7d', '30d', 'qtd']).default(listSignalsQueryPeriodDefault),
   "limit": zod.coerce.number().default(listSignalsQueryLimitDefault),
   "offset": zod.coerce.number().default(listSignalsQueryOffsetDefault)
+})
+
+export const ListSignalsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
 export const ListSignalsResponse = zod.object({
@@ -152,6 +183,12 @@ export const GetCriticalSignalsQueryParams = zod.object({
   "period": zod.enum(['24h', '7d', '30d', 'qtd']).default(getCriticalSignalsQueryPeriodDefault)
 })
 
+export const GetCriticalSignalsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
 export const GetCriticalSignalsResponseItem = zod.object({
   "signal": zod.object({
   "id": zod.number(),
@@ -200,6 +237,12 @@ export const GetCriticalSignalsResponse = zod.array(GetCriticalSignalsResponseIt
  */
 export const GetSignalParams = zod.object({
   "signalId": zod.coerce.number()
+})
+
+export const GetSignalHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
 export const GetSignalResponse = zod.object({
@@ -256,6 +299,12 @@ export const ListRoutesQueryParams = zod.object({
   "limit": zod.coerce.number().default(listRoutesQueryLimitDefault)
 })
 
+export const ListRoutesHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
 export const ListRoutesResponseItem = zod.object({
   "id": zod.number(),
   "signalId": zod.number(),
@@ -283,7 +332,10 @@ export const RerouteSignalParams = zod.object({
 })
 
 export const RerouteSignalHeader = zod.object({
-  "Idempotency-Key": zod.union([zod.string(),zod.null()]).optional()
+  "Idempotency-Key": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
 export const RerouteSignalBody = zod.object({
@@ -317,6 +369,12 @@ export const SubmitFeedbackParams = zod.object({
   "routeId": zod.coerce.number()
 })
 
+export const SubmitFeedbackHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
 export const SubmitFeedbackBody = zod.object({
   "correct": zod.boolean(),
   "note": zod.union([zod.string(),zod.null()]).optional(),
@@ -341,6 +399,12 @@ export const ListPatternsQueryParams = zod.object({
   "area": zod.union([zod.coerce.string(),zod.null()]).optional()
 })
 
+export const ListPatternsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
 export const ListPatternsResponseItem = zod.object({
   "id": zod.number(),
   "brandId": zod.string(),
@@ -360,6 +424,12 @@ export const ListPatternsResponse = zod.array(ListPatternsResponseItem)
  */
 export const GetPatternParams = zod.object({
   "patternId": zod.coerce.number()
+})
+
+export const GetPatternHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
 export const GetPatternResponse = zod.object({
@@ -415,3 +485,310 @@ export const GetPatternResponse = zod.object({
   "patternName": zod.union([zod.string(),zod.null()]).optional()
 }))
 })
+
+
+/**
+ * @summary Start Source Sync
+ */
+export const StartSourceSyncHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const StartSourceSyncBody = zod.object({
+  "brandId": zod.string()
+})
+
+export const StartSourceSyncResponse = zod.object({
+  "id": zod.number(),
+  "workflowId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "workflowType": zod.string(),
+  "status": zod.string(),
+  "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Start Listening Profile Setup
+ */
+export const StartListeningProfileSetupHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const startListeningProfileSetupBodyLanguageDefault = `en`;
+
+export const StartListeningProfileSetupBody = zod.object({
+  "brandId": zod.string(),
+  "brandNames": zod.array(zod.string()),
+  "productNames": zod.array(zod.string()).optional(),
+  "competitorNames": zod.array(zod.string()).optional(),
+  "excludedTerms": zod.array(zod.string()).optional(),
+  "locale": zod.union([zod.string(),zod.null()]).optional(),
+  "language": zod.string().default(startListeningProfileSetupBodyLanguageDefault),
+  "setupNotes": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const StartListeningProfileSetupResponse = zod.object({
+  "id": zod.number(),
+  "workflowId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "workflowType": zod.string(),
+  "status": zod.string(),
+  "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Decide Listening Profile Suggestion
+ */
+export const DecideListeningProfileSuggestionParams = zod.object({
+  "suggestion_id": zod.coerce.number()
+})
+
+export const DecideListeningProfileSuggestionHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const DecideListeningProfileSuggestionBody = zod.object({
+  "decision": zod.enum(['accept', 'edit', 'reject']),
+  "editedValue": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const DecideListeningProfileSuggestionResponse = zod.object({
+  "id": zod.number(),
+  "profileId": zod.number(),
+  "suggestionType": zod.string(),
+  "value": zod.string(),
+  "reason": zod.union([zod.string(),zod.null()]).optional(),
+  "status": zod.string(),
+  "createdAt": zod.string(),
+  "resolvedAt": zod.union([zod.string(),zod.null()]).optional()
+})
+
+
+/**
+ * @summary List Source Health
+ */
+export const ListSourceHealthQueryParams = zod.object({
+  "brandId": zod.coerce.string()
+})
+
+export const ListSourceHealthHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const ListSourceHealthResponseItem = zod.object({
+  "sourceType": zod.string(),
+  "provider": zod.string(),
+  "status": zod.string(),
+  "lastSuccessAt": zod.union([zod.string(),zod.null()]).optional(),
+  "lastFailureAt": zod.union([zod.string(),zod.null()]).optional(),
+  "lastRunId": zod.union([zod.string(),zod.null()]).optional(),
+  "itemCount": zod.number(),
+  "errorMessage": zod.union([zod.string(),zod.null()]).optional()
+})
+export const ListSourceHealthResponse = zod.array(ListSourceHealthResponseItem)
+
+
+/**
+ * @summary Get Llm Telemetry
+ */
+export const getLlmTelemetryQueryPeriodDefault = `7d`;
+
+export const GetLlmTelemetryQueryParams = zod.object({
+  "brandId": zod.coerce.string(),
+  "period": zod.enum(['24h', '7d', '30d', 'qtd']).default(getLlmTelemetryQueryPeriodDefault)
+})
+
+export const GetLlmTelemetryHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const GetLlmTelemetryResponse = zod.object({
+  "brandId": zod.string(),
+  "period": zod.enum(['24h', '7d', '30d', 'qtd']),
+  "costs": zod.array(zod.record(zod.string(), zod.unknown())),
+  "latency": zod.record(zod.string(), zod.record(zod.string(), zod.number())),
+  "fallbackRate": zod.record(zod.string(), zod.record(zod.string(), zod.number()))
+})
+
+
+/**
+ * @summary Get Evaluation Summary
+ */
+export const getEvaluationSummaryQueryPeriodDefault = `7d`;
+
+export const GetEvaluationSummaryQueryParams = zod.object({
+  "brandId": zod.coerce.string(),
+  "period": zod.enum(['24h', '7d', '30d', 'qtd']).default(getEvaluationSummaryQueryPeriodDefault)
+})
+
+export const GetEvaluationSummaryHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const GetEvaluationSummaryResponse = zod.object({
+  "brandId": zod.string(),
+  "reportRunsByStatus": zod.record(zod.string(), zod.number()),
+  "sourceFailureCount": zod.number(),
+  "totalLlmCostUsd": zod.number()
+})
+
+
+/**
+ * @summary List Report Templates
+ */
+export const ListReportTemplatesResponseItem = zod.object({
+  "role": zod.string(),
+  "displayName": zod.string(),
+  "sections": zod.array(zod.string())
+})
+export const ListReportTemplatesResponse = zod.array(ListReportTemplatesResponseItem)
+
+
+/**
+ * @summary List Report Runs
+ */
+export const ListReportRunsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const ListReportRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "reportConfigId": zod.union([zod.number(),zod.null()]),
+  "role": zod.string(),
+  "timeframe": zod.string(),
+  "status": zod.string(),
+  "markdown": zod.string(),
+  "generatedAt": zod.string()
+})
+export const ListReportRunsResponse = zod.array(ListReportRunsResponseItem)
+
+
+/**
+ * @summary Start Report Generation
+ */
+export const StartReportGenerationHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const startReportGenerationBodyTimeframeDefault = `7d`;
+
+export const StartReportGenerationBody = zod.object({
+  "brandId": zod.string(),
+  "role": zod.string(),
+  "timeframe": zod.string().default(startReportGenerationBodyTimeframeDefault),
+  "reportConfigId": zod.union([zod.number(),zod.null()]).optional()
+})
+
+export const StartReportGenerationResponse = zod.object({
+  "id": zod.number(),
+  "workflowId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "workflowType": zod.string(),
+  "status": zod.string(),
+  "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary List Agent Sessions
+ */
+export const ListAgentSessionsHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const ListAgentSessionsResponseItem = zod.object({
+  "id": zod.number(),
+  "agentType": zod.string(),
+  "userGoal": zod.string(),
+  "status": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListAgentSessionsResponse = zod.array(ListAgentSessionsResponseItem)
+
+
+/**
+ * @summary Public Brand Feed
+ */
+export const getPublicBrandFeedQueryLimitDefault = 20;
+export const getPublicBrandFeedQueryLimitMax = 50;
+
+
+
+export const GetPublicBrandFeedQueryParams = zod.object({
+  "brandId": zod.coerce.string(),
+  "limit": zod.coerce.number().min(1).max(getPublicBrandFeedQueryLimitMax).default(getPublicBrandFeedQueryLimitDefault)
+})
+
+export const getPublicBrandFeedResponseCappedDefault = true;
+export const getPublicBrandFeedResponseExportAvailableDefault = false;
+
+export const GetPublicBrandFeedResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "brandId": zod.string(),
+  "source": zod.string(),
+  "content": zod.string(),
+  "postedAt": zod.string(),
+  "sourceUrl": zod.union([zod.string(),zod.null()]).optional()
+})),
+  "capped": zod.boolean().default(getPublicBrandFeedResponseCappedDefault),
+  "exportAvailable": zod.boolean().default(getPublicBrandFeedResponseExportAvailableDefault)
+})
+
+
+/**
+ * @summary Moderate Public Feed Item
+ */
+export const ModeratePublicFeedItemParams = zod.object({
+  "signalId": zod.coerce.number()
+})
+
+export const ModeratePublicFeedItemHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const ModeratePublicFeedItemBody = zod.object({
+  "action": zod.enum(['show', 'hide', 'takedown', 'no_export']),
+  "reason": zod.union([zod.string(),zod.null()]).optional(),
+  "actor": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const ModeratePublicFeedItemResponse = zod.object({
+  "id": zod.number(),
+  "signalId": zod.number(),
+  "action": zod.string(),
+  "reason": zod.union([zod.string(),zod.null()]).optional(),
+  "actor": zod.union([zod.string(),zod.null()]).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Stream Events
+ */
+export const StreamEventsResponse = zod.unknown()

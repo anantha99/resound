@@ -15,7 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    create_engine,
+    UniqueConstraint,
     func,
     select,
 )
@@ -27,10 +27,17 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from resound.config import env
 from resound.core.memory import Memory
+from resound.db import (
+    configured_database_url,
+    create_database_engine,
+    create_session_factory,
+    is_sqlite_database_url,
+)
 from resound.gateway import LLMGatewayError, LLMResponse
 from resound.models import Classification, FeedbackEvent, RawSignal, Route
+from resound.social import ListeningProfile
+from resound.tenancy import TenantContext
 
 
 def _sha256(text: str) -> str:
@@ -38,6 +45,26 @@ def _sha256(text: str) -> str:
     operators can run "are we sending the same prompt twice" dedup analysis
     without storing prompt text (per design decision #30)."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _normalize_slug(value: str) -> str:
+    return value.strip().lower().replace(" ", "-")
+
+
+def _listening_profile_payload(row: ListeningProfileRow) -> dict[str, Any]:
+    return {
+        "brand_names": list(row.brand_names or []),
+        "product_names": list(row.product_names or []),
+        "competitor_names": list(row.competitor_names or []),
+        "keywords": list(row.keywords or []),
+        "excluded_terms": list(row.excluded_terms or []),
+        "enabled_sources": list(row.enabled_sources or []),
+        "cadence_minutes": row.cadence_minutes,
+        "locale": row.locale,
+        "language": row.language,
+        "setup_notes": row.setup_notes,
+        "confidence": row.confidence,
+    }
 
 
 def _percentile_summary(values: list[float]) -> dict[str, float]:
@@ -62,12 +89,296 @@ class Base(DeclarativeBase):
     pass
 
 
+class OrganizationRow(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TeamRow(Base):
+    __tablename__ = "teams"
+    __table_args__ = (UniqueConstraint("organization_id", "slug", name="uq_teams_org_slug"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(64), index=True)
+    display_name: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class MembershipRow(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "team_id", "user_id", name="uq_memberships_scope"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(32), default="member")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class BrandRow(Base):
+    __tablename__ = "brands"
+    __table_args__ = (UniqueConstraint("organization_id", "slug", name="uq_brands_org_slug"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(64), index=True)
+    display_name: Mapped[str] = mapped_column(String(256))
+    description: Mapped[str] = mapped_column(Text, default="")
+    source_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class ListeningProfileRow(Base):
+    __tablename__ = "listening_profiles"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "brand_id", name="uq_listening_profiles_brand"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    brand_names: Mapped[list] = mapped_column(JSON, default=list)
+    product_names: Mapped[list] = mapped_column(JSON, default=list)
+    competitor_names: Mapped[list] = mapped_column(JSON, default=list)
+    keywords: Mapped[list] = mapped_column(JSON, default=list)
+    excluded_terms: Mapped[list] = mapped_column(JSON, default=list)
+    enabled_sources: Mapped[list] = mapped_column(JSON, default=list)
+    cadence_minutes: Mapped[int] = mapped_column(Integer, default=15)
+    locale: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    language: Mapped[str] = mapped_column(String(16), default="en")
+    setup_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class ListeningProfileSuggestionRow(Base):
+    __tablename__ = "listening_profile_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("listening_profiles.id"), index=True)
+    suggestion_type: Mapped[str] = mapped_column(String(64), index=True)
+    value: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class ListeningProfileRevisionRow(Base):
+    __tablename__ = "listening_profile_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("listening_profiles.id"), index=True)
+    field_name: Mapped[str] = mapped_column(String(64), index=True)
+    old_value: Mapped[dict | list | str | int | float | None] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[dict | list | str | int | float | None] = mapped_column(JSON, nullable=True)
+    authored_by: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SourceHealthRow(Base):
+    __tablename__ = "source_health"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "brand_id",
+            "source_type",
+            name="uq_source_health_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    source_type: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="apify", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_run_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class AgentSessionRow(Base):
+    __tablename__ = "agent_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
+    agent_type: Mapped[str] = mapped_column(String(64), index=True)
+    user_goal: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class AgentStepRow(Base):
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_session_id: Mapped[int] = mapped_column(ForeignKey("agent_sessions.id"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(128), index=True)
+    input_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="succeeded", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ReportConfigRow(Base):
+    __tablename__ = "report_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    role: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(256))
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)
+    timeframe: Mapped[str] = mapped_column(String(32), default="7d")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class ReportRunRow(Base):
+    __tablename__ = "report_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_config_id: Mapped[int | None] = mapped_column(
+        ForeignKey("report_configs.id"), nullable=True, index=True,
+    )
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    role: Mapped[str] = mapped_column(String(32), index=True)
+    timeframe: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    source_freshness: Mapped[dict] = mapped_column(JSON, default=dict)
+    sections: Mapped[list] = mapped_column(JSON, default=list)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    markdown: Mapped[str] = mapped_column(Text, default="")
+    internal_usefulness_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ReportCitationRow(Base):
+    __tablename__ = "report_citations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_run_id: Mapped[int] = mapped_column(ForeignKey("report_runs.id"), index=True)
+    signal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("signals.id"), nullable=True, index=True,
+    )
+    section_title: Mapped[str] = mapped_column(String(128), index=True)
+    quote: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    full_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class WorkflowJobRow(Base):
+    __tablename__ = "workflow_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    workflow_type: Mapped[str] = mapped_column(String(128), index=True)
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True, index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    task_queue: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class WorkflowEventRow(Base):
+    __tablename__ = "workflow_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_job_id: Mapped[int] = mapped_column(ForeignKey("workflow_jobs.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PublicFeedModerationEventRow(Base):
+    __tablename__ = "public_feed_moderation_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True, index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
+    signal_id: Mapped[int] = mapped_column(ForeignKey("signals.id"), index=True)
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class SignalRow(Base):
     __tablename__ = "signals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True, index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
     brand_slug: Mapped[str] = mapped_column(String(64), index=True)
     source: Mapped[str] = mapped_column(String(32), index=True)
+    source_mode: Mapped[str] = mapped_column(String(32), default="public_listening", index=True)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     external_id: Mapped[str] = mapped_column(String(256), index=True)
     dedupe_key: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -167,6 +478,10 @@ class LLMCallRow(Base):
     __tablename__ = "llm_calls"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True, index=True,
+    )
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
     brand_slug: Mapped[str] = mapped_column(String(64), index=True)
     signal_id: Mapped[int | None] = mapped_column(
         ForeignKey("signals.id"), nullable=True, index=True,
@@ -197,29 +512,834 @@ class LLMCallRow(Base):
 class SqlMemory(Memory):
     """SQL-backed Memory. Default URL: sqlite:///./data/resound.db."""
 
-    def __init__(self, database_url: str | None = None):
-        url = database_url or env("RESOUND_DATABASE_URL", "sqlite:///./data/resound.db")
-        if url.startswith("sqlite:///"):
-            from pathlib import Path
-            db_path = Path(url.removeprefix("sqlite:///"))
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(url, echo=False, future=True)
-        Base.metadata.create_all(self.engine)
+    def __init__(self, database_url: str | None = None, *, create_schema: bool | None = None):
+        url = database_url or configured_database_url()
+        self.engine = create_database_engine(url)
+        self._session_factory = create_session_factory(self.engine)
+        should_create_schema = (
+            is_sqlite_database_url(url) if create_schema is None else create_schema
+        )
+        if should_create_schema:
+            Base.metadata.create_all(self.engine)
+
+    def session(self):
+        return self._session_factory()
+
+    # ---- tenant setup ----
+
+    def ensure_organization(self, slug: str, display_name: str | None = None) -> int:
+        normalized = _normalize_slug(slug)
+        with self.session() as s:
+            row = s.execute(
+                select(OrganizationRow).where(OrganizationRow.slug == normalized),
+            ).scalar_one_or_none()
+            if row is None:
+                row = OrganizationRow(slug=normalized, display_name=display_name or slug)
+                s.add(row)
+                s.commit()
+                return row.id
+            if display_name and row.display_name != display_name:
+                row.display_name = display_name
+                s.commit()
+            return row.id
+
+    def ensure_team(self, organization_id: int, slug: str, display_name: str | None = None) -> int:
+        normalized = _normalize_slug(slug)
+        with self.session() as s:
+            row = s.execute(
+                select(TeamRow).where(
+                    TeamRow.organization_id == organization_id,
+                    TeamRow.slug == normalized,
+                ),
+            ).scalar_one_or_none()
+            if row is None:
+                row = TeamRow(
+                    organization_id=organization_id,
+                    slug=normalized,
+                    display_name=display_name or slug,
+                )
+                s.add(row)
+                s.commit()
+                return row.id
+            if display_name and row.display_name != display_name:
+                row.display_name = display_name
+                s.commit()
+            return row.id
+
+    def ensure_user(
+        self,
+        external_id: str,
+        display_name: str | None = None,
+        email: str | None = None,
+    ) -> int:
+        with self.session() as s:
+            row = s.execute(
+                select(UserRow).where(UserRow.external_id == external_id),
+            ).scalar_one_or_none()
+            if row is None:
+                row = UserRow(external_id=external_id, display_name=display_name, email=email)
+                s.add(row)
+                s.commit()
+                return row.id
+            if display_name:
+                row.display_name = display_name
+            if email:
+                row.email = email
+            s.commit()
+            return row.id
+
+    def ensure_membership(
+        self,
+        *,
+        organization_id: int,
+        user_id: int,
+        team_id: int | None = None,
+        role: str = "member",
+    ) -> int:
+        with self.session() as s:
+            row = s.execute(
+                select(MembershipRow).where(
+                    MembershipRow.organization_id == organization_id,
+                    MembershipRow.team_id == team_id,
+                    MembershipRow.user_id == user_id,
+                ),
+            ).scalar_one_or_none()
+            if row is None:
+                row = MembershipRow(
+                    organization_id=organization_id,
+                    team_id=team_id,
+                    user_id=user_id,
+                    role=role,
+                )
+                s.add(row)
+                s.commit()
+                return row.id
+            if row.role != role:
+                row.role = role
+                s.commit()
+            return row.id
+
+    def ensure_brand(
+        self,
+        organization_id: int,
+        slug: str,
+        display_name: str | None = None,
+        *,
+        description: str = "",
+        source_config: dict | None = None,
+    ) -> BrandRow:
+        normalized = _normalize_slug(slug)
+        with self.session() as s:
+            row = s.execute(
+                select(BrandRow).where(
+                    BrandRow.organization_id == organization_id,
+                    BrandRow.slug == normalized,
+                ),
+            ).scalar_one_or_none()
+            if row is None:
+                row = BrandRow(
+                    organization_id=organization_id,
+                    slug=normalized,
+                    display_name=display_name or slug,
+                    description=description,
+                    source_config=source_config or {},
+                )
+                s.add(row)
+                s.commit()
+                return row
+            if display_name:
+                row.display_name = display_name
+            row.description = description if description else row.description
+            if source_config is not None:
+                row.source_config = source_config
+            s.commit()
+            return row
+
+    def list_brands_for_tenant(self, context: TenantContext) -> list[BrandRow]:
+        with self.session() as s:
+            stmt = (
+                select(BrandRow)
+                .where(BrandRow.organization_id == context.organization_id)
+                .order_by(BrandRow.display_name, BrandRow.id)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def list_signals_for_tenant(
+        self,
+        context: TenantContext,
+        *,
+        brand_slug: str | None = None,
+    ) -> list[SignalRow]:
+        with self.session() as s:
+            stmt = (
+                select(SignalRow)
+                .where(SignalRow.organization_id == context.organization_id)
+                .order_by(SignalRow.ingested_at.desc(), SignalRow.id.desc())
+            )
+            if brand_slug:
+                stmt = stmt.where(SignalRow.brand_slug == brand_slug)
+            return list(s.execute(stmt).scalars())
+
+    def save_listening_profile(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        profile: ListeningProfile,
+        authored_by: str = "user",
+    ) -> int:
+        with self.session() as s:
+            row = s.execute(
+                select(ListeningProfileRow).where(
+                    ListeningProfileRow.organization_id == organization_id,
+                    ListeningProfileRow.brand_id == brand_id,
+                ),
+            ).scalar_one_or_none()
+            payload = {
+                "brand_names": profile.brand_names,
+                "product_names": profile.product_names,
+                "competitor_names": profile.competitor_names,
+                "keywords": profile.keywords,
+                "excluded_terms": profile.excluded_terms,
+                "enabled_sources": list(profile.enabled_sources),
+                "cadence_minutes": profile.cadence_minutes,
+                "locale": profile.locale,
+                "language": profile.language,
+                "setup_notes": profile.setup_notes,
+                "confidence": profile.confidence,
+            }
+            if row is None:
+                row = ListeningProfileRow(
+                    organization_id=organization_id,
+                    brand_id=brand_id,
+                    **payload,
+                )
+                s.add(row)
+                s.commit()
+                return row.id
+
+            before = _listening_profile_payload(row)
+            for key, value in payload.items():
+                setattr(row, key, value)
+            s.commit()
+            for key, old_value in before.items():
+                new_value = payload[key]
+                if old_value == new_value:
+                    continue
+                revision = ListeningProfileRevisionRow(
+                    profile_id=row.id,
+                    field_name=key,
+                    old_value=old_value,
+                    new_value=new_value,
+                    authored_by=authored_by,
+                )
+                s.add(revision)
+            s.commit()
+            return row.id
+
+    def get_listening_profile(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        brand_slug: str,
+    ) -> ListeningProfile | None:
+        with self.session() as s:
+            row = s.execute(
+                select(ListeningProfileRow).where(
+                    ListeningProfileRow.organization_id == organization_id,
+                    ListeningProfileRow.brand_id == brand_id,
+                ),
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            return ListeningProfile(
+                brand_slug=brand_slug,
+                brand_names=list(row.brand_names or []),
+                product_names=list(row.product_names or []),
+                competitor_names=list(row.competitor_names or []),
+                keywords=list(row.keywords or []),
+                excluded_terms=list(row.excluded_terms or []),
+                enabled_sources=list(row.enabled_sources or []),
+                cadence_minutes=row.cadence_minutes,
+                locale=row.locale,
+                language=row.language,
+                setup_notes=row.setup_notes,
+                confidence=row.confidence,
+            )
+
+    def create_listening_profile_suggestion(
+        self,
+        *,
+        profile_id: int,
+        suggestion_type: str,
+        value: str,
+        reason: str | None = None,
+        status: str = "pending",
+    ) -> int:
+        with self.session() as s:
+            row = ListeningProfileSuggestionRow(
+                profile_id=profile_id,
+                suggestion_type=suggestion_type,
+                value=value,
+                reason=reason,
+                status=status,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def list_listening_profile_suggestions(
+        self,
+        profile_id: int,
+    ) -> list[ListeningProfileSuggestionRow]:
+        with self.session() as s:
+            stmt = (
+                select(ListeningProfileSuggestionRow)
+                .where(ListeningProfileSuggestionRow.profile_id == profile_id)
+                .order_by(
+                    ListeningProfileSuggestionRow.created_at,
+                    ListeningProfileSuggestionRow.id,
+                )
+            )
+            return list(s.execute(stmt).scalars())
+
+    def list_listening_profile_revisions(
+        self,
+        profile_id: int,
+    ) -> list[ListeningProfileRevisionRow]:
+        with self.session() as s:
+            stmt = (
+                select(ListeningProfileRevisionRow)
+                .where(ListeningProfileRevisionRow.profile_id == profile_id)
+                .order_by(ListeningProfileRevisionRow.created_at, ListeningProfileRevisionRow.id)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def apply_listening_profile_suggestion_decision(
+        self,
+        *,
+        suggestion_id: int,
+        organization_id: int,
+        decision: str,
+        edited_value: str | None = None,
+        authored_by: str = "user",
+    ) -> ListeningProfileSuggestionRow | None:
+        field_by_type = {
+            "brand": "brand_names",
+            "product": "product_names",
+            "competitor": "competitor_names",
+            "keyword": "keywords",
+            "excluded_term": "excluded_terms",
+            "source": "enabled_sources",
+        }
+        with self.session() as s:
+            suggestion = s.execute(
+                select(ListeningProfileSuggestionRow).where(
+                    ListeningProfileSuggestionRow.id == suggestion_id,
+                ),
+            ).scalar_one_or_none()
+            if suggestion is None:
+                return None
+            profile = s.execute(
+                select(ListeningProfileRow).where(
+                    ListeningProfileRow.id == suggestion.profile_id,
+                    ListeningProfileRow.organization_id == organization_id,
+                ),
+            ).scalar_one_or_none()
+            if profile is None:
+                return None
+
+            if decision not in {"accept", "edit", "reject"}:
+                raise ValueError(f"Unsupported listening profile suggestion decision: {decision}")
+            if decision == "edit" and not (edited_value or "").strip():
+                raise ValueError("edited_value is required when editing a suggestion")
+
+            suggestion.status = "rejected" if decision == "reject" else f"{decision}ed"
+            suggestion.resolved_at = datetime.utcnow()
+            if decision == "reject":
+                s.commit()
+                return suggestion
+
+            field_name = field_by_type.get(suggestion.suggestion_type)
+            if field_name is None:
+                raise ValueError(
+                    "Unsupported listening profile suggestion type: "
+                    f"{suggestion.suggestion_type}"
+                )
+            old_value = list(getattr(profile, field_name) or [])
+            value = (edited_value if decision == "edit" else suggestion.value).strip()
+            new_value = [*old_value]
+            if value and value not in new_value:
+                new_value.append(value)
+            setattr(profile, field_name, new_value)
+            if old_value != new_value:
+                s.add(
+                    ListeningProfileRevisionRow(
+                        profile_id=profile.id,
+                        field_name=field_name,
+                        old_value=old_value,
+                        new_value=new_value,
+                        authored_by=authored_by,
+                    )
+                )
+            s.commit()
+            return suggestion
+
+    def record_source_health(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        source_type: str,
+        provider: str,
+        status: str,
+        run_id: str | None = None,
+        item_count: int = 0,
+        error_message: str | None = None,
+        checked_at: datetime | None = None,
+    ) -> int:
+        checked_at = checked_at or datetime.utcnow()
+        with self.session() as s:
+            row = s.execute(
+                select(SourceHealthRow).where(
+                    SourceHealthRow.organization_id == organization_id,
+                    SourceHealthRow.brand_id == brand_id,
+                    SourceHealthRow.source_type == source_type,
+                ),
+            ).scalar_one_or_none()
+            if row is None:
+                row = SourceHealthRow(
+                    organization_id=organization_id,
+                    brand_id=brand_id,
+                    source_type=source_type,
+                    provider=provider,
+                )
+                s.add(row)
+            row.status = status
+            row.provider = provider
+            row.last_run_id = run_id
+            row.item_count = item_count
+            row.error_message = error_message
+            if status == "ok":
+                row.last_success_at = checked_at
+            else:
+                row.last_failure_at = checked_at
+            s.commit()
+            return row.id
+
+    def list_source_health(self, organization_id: int, brand_id: int) -> list[SourceHealthRow]:
+        with self.session() as s:
+            stmt = (
+                select(SourceHealthRow)
+                .where(
+                    SourceHealthRow.organization_id == organization_id,
+                    SourceHealthRow.brand_id == brand_id,
+                )
+                .order_by(SourceHealthRow.source_type)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def count_report_runs_by_status(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int | None = None,
+    ) -> dict[str, int]:
+        with self.session() as s:
+            stmt = (
+                select(ReportRunRow.status, func.count(ReportRunRow.id))
+                .where(ReportRunRow.organization_id == organization_id)
+                .group_by(ReportRunRow.status)
+            )
+            if brand_id is not None:
+                stmt = stmt.where(ReportRunRow.brand_id == brand_id)
+            return {status: int(count) for status, count in s.execute(stmt).all()}
+
+    # ---- agent/report artifacts ----
+
+    def create_agent_session(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int | None,
+        agent_type: str,
+        user_goal: str,
+        status: str = "running",
+    ) -> int:
+        with self.session() as s:
+            row = AgentSessionRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
+                agent_type=agent_type,
+                user_goal=user_goal,
+                status=status,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def record_agent_step(
+        self,
+        *,
+        agent_session_id: int,
+        tool_name: str,
+        input_json: dict | None = None,
+        output_json: dict | None = None,
+        status: str = "succeeded",
+        error_message: str | None = None,
+    ) -> int:
+        with self.session() as s:
+            row = AgentStepRow(
+                agent_session_id=agent_session_id,
+                tool_name=tool_name,
+                input_json=input_json or {},
+                output_json=output_json or {},
+                status=status,
+                error_message=error_message,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def update_agent_session_status(self, agent_session_id: int, status: str) -> None:
+        with self.session() as s:
+            row = s.execute(
+                select(AgentSessionRow).where(AgentSessionRow.id == agent_session_id),
+            ).scalar_one_or_none()
+            if row is None:
+                return
+            row.status = status
+            if status in {"completed", "failed", "waiting_for_approval"}:
+                row.completed_at = datetime.utcnow()
+            s.commit()
+
+    def list_agent_steps(self, agent_session_id: int) -> list[AgentStepRow]:
+        with self.session() as s:
+            stmt = (
+                select(AgentStepRow)
+                .where(AgentStepRow.agent_session_id == agent_session_id)
+                .order_by(AgentStepRow.created_at, AgentStepRow.id)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def list_agent_sessions_for_tenant(self, context: TenantContext) -> list[AgentSessionRow]:
+        with self.session() as s:
+            stmt = (
+                select(AgentSessionRow)
+                .where(AgentSessionRow.organization_id == context.organization_id)
+                .order_by(AgentSessionRow.created_at.desc(), AgentSessionRow.id.desc())
+            )
+            return list(s.execute(stmt).scalars())
+
+    def save_report_config(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        team_id: int | None,
+        role: str,
+        name: str,
+        filters: dict | None = None,
+        timeframe: str = "7d",
+    ) -> int:
+        with self.session() as s:
+            row = ReportConfigRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
+                team_id=team_id,
+                role=role,
+                name=name,
+                filters=filters or {},
+                timeframe=timeframe,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def get_report_config(self, report_config_id: int) -> ReportConfigRow | None:
+        with self.session() as s:
+            return s.execute(
+                select(ReportConfigRow).where(ReportConfigRow.id == report_config_id),
+            ).scalar_one_or_none()
+
+    def create_report_run(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        team_id: int | None,
+        role: str,
+        timeframe: str,
+        status: str,
+        report_config_id: int | None = None,
+        source_freshness: dict | None = None,
+        sections: list | None = None,
+        summary: str = "",
+        markdown: str = "",
+        internal_usefulness_rating: float | None = None,
+    ) -> int:
+        with self.session() as s:
+            row = ReportRunRow(
+                report_config_id=report_config_id,
+                organization_id=organization_id,
+                brand_id=brand_id,
+                team_id=team_id,
+                role=role,
+                timeframe=timeframe,
+                status=status,
+                source_freshness=source_freshness or {},
+                sections=sections or [],
+                summary=summary,
+                markdown=markdown,
+                internal_usefulness_rating=internal_usefulness_rating,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def get_report_run(self, report_run_id: int) -> ReportRunRow | None:
+        with self.session() as s:
+            return s.execute(
+                select(ReportRunRow).where(ReportRunRow.id == report_run_id),
+            ).scalar_one_or_none()
+
+    def list_report_runs_for_tenant(self, context: TenantContext) -> list[ReportRunRow]:
+        with self.session() as s:
+            stmt = (
+                select(ReportRunRow)
+                .where(ReportRunRow.organization_id == context.organization_id)
+                .order_by(ReportRunRow.generated_at.desc(), ReportRunRow.id.desc())
+            )
+            return list(s.execute(stmt).scalars())
+
+    def save_report_citation(
+        self,
+        *,
+        report_run_id: int,
+        signal_id: int | None,
+        section_title: str,
+        quote: str,
+        source: str,
+        full_text: str,
+    ) -> int:
+        with self.session() as s:
+            row = ReportCitationRow(
+                report_run_id=report_run_id,
+                signal_id=signal_id,
+                section_title=section_title,
+                quote=quote,
+                source=source,
+                full_text=full_text,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def list_report_citations(self, report_run_id: int) -> list[ReportCitationRow]:
+        with self.session() as s:
+            stmt = (
+                select(ReportCitationRow)
+                .where(ReportCitationRow.report_run_id == report_run_id)
+                .order_by(ReportCitationRow.id)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def create_workflow_job(
+        self,
+        *,
+        workflow_id: str,
+        run_id: str | None = None,
+        workflow_type: str,
+        organization_id: int | None,
+        brand_id: int | None,
+        status: str = "queued",
+        task_queue: str | None = None,
+    ) -> int:
+        with self.session() as s:
+            row = WorkflowJobRow(
+                workflow_id=workflow_id,
+                run_id=run_id,
+                workflow_type=workflow_type,
+                organization_id=organization_id,
+                brand_id=brand_id,
+                status=status,
+                task_queue=task_queue,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def get_workflow_job(self, workflow_id: str) -> WorkflowJobRow | None:
+        with self.session() as s:
+            return s.execute(
+                select(WorkflowJobRow).where(WorkflowJobRow.workflow_id == workflow_id),
+            ).scalar_one_or_none()
+
+    def update_workflow_job_handle(
+        self,
+        *,
+        workflow_id: str,
+        run_id: str | None,
+        task_queue: str | None,
+        status: str = "queued",
+    ) -> None:
+        with self.session() as s:
+            row = s.execute(
+                select(WorkflowJobRow).where(WorkflowJobRow.workflow_id == workflow_id),
+            ).scalar_one_or_none()
+            if row is None:
+                return
+            row.run_id = run_id
+            row.task_queue = task_queue
+            row.status = status
+            s.commit()
+
+    def record_workflow_event(
+        self,
+        *,
+        workflow_job_id: int,
+        stage: str,
+        status: str,
+        message: str | None = None,
+        event_metadata: dict | None = None,
+    ) -> int:
+        with self.session() as s:
+            row = WorkflowEventRow(
+                workflow_job_id=workflow_job_id,
+                stage=stage,
+                status=status,
+                message=message,
+                event_metadata=event_metadata or {},
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def list_workflow_events(self, workflow_job_id: int) -> list[WorkflowEventRow]:
+        with self.session() as s:
+            stmt = (
+                select(WorkflowEventRow)
+                .where(WorkflowEventRow.workflow_job_id == workflow_job_id)
+                .order_by(WorkflowEventRow.created_at, WorkflowEventRow.id)
+            )
+            return list(s.execute(stmt).scalars())
+
+    def list_public_feed_items(self, brand_slug: str, limit: int) -> list[SignalRow]:
+        with self.session() as s:
+            stmt = (
+                select(SignalRow)
+                .where(SignalRow.brand_slug == brand_slug)
+                .order_by(SignalRow.posted_at.desc(), SignalRow.id.desc())
+            )
+            rows = list(s.execute(stmt).scalars())
+            visible = [
+                row for row in rows
+                if (row.raw_metadata or {}).get("public_feed_visible") is True
+                and (row.raw_metadata or {}).get("public_feed_takedown") is not True
+            ]
+            return visible[:max(1, min(limit, 50))]
+
+    def moderate_public_feed_item(
+        self,
+        *,
+        signal_id: int,
+        organization_id: int,
+        action: str,
+        reason: str | None = None,
+        actor: str | None = None,
+    ) -> PublicFeedModerationEventRow | None:
+        with self.session() as s:
+            signal = s.execute(
+                select(SignalRow).where(
+                    SignalRow.id == signal_id,
+                    SignalRow.organization_id == organization_id,
+                ),
+            ).scalar_one_or_none()
+            if signal is None:
+                return None
+            metadata = dict(signal.raw_metadata or {})
+            if action == "show":
+                metadata["public_feed_visible"] = True
+                metadata["public_feed_takedown"] = False
+            elif action == "hide":
+                metadata["public_feed_visible"] = False
+            elif action == "takedown":
+                metadata["public_feed_visible"] = False
+                metadata["public_feed_takedown"] = True
+            elif action == "no_export":
+                metadata["public_feed_no_export"] = True
+            else:
+                raise ValueError(f"Unsupported public feed moderation action: {action}")
+            signal.raw_metadata = metadata
+            event = PublicFeedModerationEventRow(
+                organization_id=signal.organization_id,
+                brand_id=signal.brand_id,
+                signal_id=signal.id,
+                action=action,
+                reason=reason,
+                actor=actor,
+            )
+            s.add(event)
+            s.commit()
+            return event
+
+    def list_public_feed_moderation_events(
+        self,
+        signal_id: int,
+    ) -> list[PublicFeedModerationEventRow]:
+        with self.session() as s:
+            stmt = (
+                select(PublicFeedModerationEventRow)
+                .where(PublicFeedModerationEventRow.signal_id == signal_id)
+                .order_by(PublicFeedModerationEventRow.created_at, PublicFeedModerationEventRow.id)
+            )
+            return list(s.execute(stmt).scalars())
 
     # ---- writes ----
+
+    def signal_dedupe_key(
+        self,
+        brand_slug: str,
+        raw: RawSignal,
+        *,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
+    ) -> str:
+        base = raw.dedupe_key()
+        if organization_id is None:
+            return base
+        brand_scope = brand_id if brand_id is not None else brand_slug
+        return f"org:{organization_id}::brand:{brand_scope}::{base}"
 
     def has_seen(self, dedupe_key: str) -> bool:
         with Session(self.engine) as s:
             stmt = select(SignalRow.id).where(SignalRow.dedupe_key == dedupe_key)
             return s.execute(stmt).first() is not None
 
-    def record_signal(self, brand_slug: str, raw: RawSignal) -> int:
-        with Session(self.engine) as s:
+    def record_signal(
+        self,
+        brand_slug: str,
+        raw: RawSignal,
+        *,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
+    ) -> int:
+        with self.session() as s:
             row = SignalRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
                 brand_slug=brand_slug,
                 source=raw.source,
+                source_mode=raw.source_mode,
+                provider=raw.provider,
                 external_id=raw.external_id,
-                dedupe_key=raw.dedupe_key(),
+                dedupe_key=self.signal_dedupe_key(
+                    brand_slug,
+                    raw,
+                    organization_id=organization_id,
+                    brand_id=brand_id,
+                ),
                 url=raw.url,
                 author_handle=raw.author_handle,
                 content=raw.content,
@@ -325,6 +1445,8 @@ class SqlMemory(Memory):
         was_fallback: bool,
         attempt_count: int,
         signal_id: int | None = None,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
     ) -> int:
         """Record a successful LLM gateway call to the audit trail.
 
@@ -336,6 +1458,8 @@ class SqlMemory(Memory):
         """
         with Session(self.engine) as s:
             row = LLMCallRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
                 brand_slug=brand_slug,
                 signal_id=signal_id,
                 stage=stage,
@@ -366,6 +1490,8 @@ class SqlMemory(Memory):
         latency_ms: float,
         attempt_count: int,
         signal_id: int | None = None,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
     ) -> int:
         """Record a failed LLM gateway call to the audit trail.
 
@@ -378,6 +1504,8 @@ class SqlMemory(Memory):
         """
         with Session(self.engine) as s:
             row = LLMCallRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
                 brand_slug=brand_slug,
                 signal_id=signal_id,
                 stage=stage,
@@ -435,7 +1563,10 @@ class SqlMemory(Memory):
     # ---- LLM telemetry reads ----
 
     def query_llm_costs(
-        self, brand_slug: str, since: datetime,
+        self,
+        brand_slug: str,
+        since: datetime,
+        organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Aggregate LLM spend by ``(stage, model)`` for ``brand_slug`` since
         ``since``. Only successful calls are included — failure rows have
@@ -470,6 +1601,8 @@ class SqlMemory(Memory):
                 .group_by(LLMCallRow.stage, LLMCallRow.model)
                 .order_by(LLMCallRow.stage, LLMCallRow.model)
             )
+            if organization_id is not None:
+                stmt = stmt.where(LLMCallRow.organization_id == organization_id)
             return [
                 {
                     "stage": stage,
@@ -484,7 +1617,10 @@ class SqlMemory(Memory):
             ]
 
     def query_llm_latency(
-        self, brand_slug: str, since: datetime,
+        self,
+        brand_slug: str,
+        since: datetime,
+        organization_id: int | None = None,
     ) -> dict[str, dict[str, float]]:
         """Compute p50/p95/p99 latency per stage for ``brand_slug`` since
         ``since``. Excludes failure rows (per design #32 — timeout-capped
@@ -506,6 +1642,8 @@ class SqlMemory(Memory):
                 .where(LLMCallRow.called_at >= since)
                 .where(LLMCallRow.success.is_(True))
             )
+            if organization_id is not None:
+                stmt = stmt.where(LLMCallRow.organization_id == organization_id)
             by_stage: dict[str, list[float]] = {}
             for stage, latency_ms in s.execute(stmt).all():
                 by_stage.setdefault(stage, []).append(float(latency_ms))
@@ -516,7 +1654,10 @@ class SqlMemory(Memory):
         }
 
     def query_fallback_rate(
-        self, brand_slug: str, since: datetime,
+        self,
+        brand_slug: str,
+        since: datetime,
+        organization_id: int | None = None,
     ) -> dict[str, dict[str, float]]:
         """Per-stage primary-vs-fallback breakdown for ``brand_slug`` since
         ``since``. Only successful calls are counted — a failed call means
@@ -539,6 +1680,8 @@ class SqlMemory(Memory):
                 .where(LLMCallRow.success.is_(True))
                 .group_by(LLMCallRow.stage, LLMCallRow.was_fallback)
             )
+            if organization_id is not None:
+                stmt = stmt.where(LLMCallRow.organization_id == organization_id)
             counts: dict[str, dict[bool, int]] = {}
             for stage, was_fallback, n in s.execute(stmt).all():
                 counts.setdefault(stage, {})[bool(was_fallback)] = int(n)

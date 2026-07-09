@@ -5,9 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
 
 from resound.api import projections, schemas
-from resound.api.dependencies import get_memory
+from resound.api.dependencies import get_memory, get_tenant_context
 from resound.config import load_brand_config
 from resound.memory import SqlMemory
+from resound.tenancy import TenantContext
 
 router = APIRouter(tags=["routes", "feedback"])
 
@@ -18,8 +19,15 @@ def list_routes(
     period: schemas.Period = "7d",
     limit: int = 50,
     memory: SqlMemory = Depends(get_memory),
+    tenant: TenantContext | None = Depends(get_tenant_context),
 ) -> list[schemas.RouteAudit]:
-    return projections.list_routes(memory, brand_slug=brand_id, period=period, limit=limit)
+    return projections.list_routes(
+        memory,
+        tenant=tenant,
+        brand_slug=brand_id,
+        period=period,
+        limit=limit,
+    )
 
 
 @router.patch(
@@ -32,16 +40,18 @@ def reroute_signal(
     body: schemas.RerouteInput,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     memory: SqlMemory = Depends(get_memory),
+    tenant: TenantContext | None = Depends(get_tenant_context),
 ) -> schemas.RouteAudit:
-    existing = projections._joined_row_for_route(memory, route_id)  # noqa: SLF001
+    existing = projections._joined_row_for_route(memory, route_id, tenant=tenant)  # noqa: SLF001
     if existing is None:
         raise HTTPException(status_code=404, detail="Route not found")
-    brand = load_brand_config(existing.signal.brand_slug)
-    if body.owner not in projections.valid_owner_ids(brand):
+    brand = _optional_brand_config(existing.signal.brand_slug)
+    if brand is not None and body.owner not in projections.valid_owner_ids(brand):
         raise HTTPException(status_code=422, detail="Owner is not valid for this brand")
 
     audit = projections.reroute(
         memory,
+        tenant=tenant,
         route_id=route_id,
         owner=body.owner,
         note=body.note,
@@ -63,9 +73,11 @@ def submit_feedback(
     route_id: Annotated[int, Path(alias="routeId")],
     body: schemas.FeedbackInput,
     memory: SqlMemory = Depends(get_memory),
+    tenant: TenantContext | None = Depends(get_tenant_context),
 ) -> schemas.FeedbackEvent:
     feedback = projections.submit_feedback(
         memory,
+        tenant=tenant,
         route_id=route_id,
         correct=body.correct,
         note=body.note,
@@ -75,3 +87,10 @@ def submit_feedback(
     if feedback is None:
         raise HTTPException(status_code=404, detail="Route not found")
     return feedback
+
+
+def _optional_brand_config(brand_slug: str):
+    try:
+        return load_brand_config(brand_slug)
+    except FileNotFoundError:
+        return None

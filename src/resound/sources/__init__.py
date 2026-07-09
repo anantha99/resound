@@ -5,11 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from resound.core.source import SourceAdapter
+from resound.sources.apify import ApifyPublicListeningSource
 from resound.sources.g2 import G2Source
 from resound.sources.reddit import RedditSource
 from resound.sources.twitter import TwitterSource
 
 REGISTRY: dict[str, type[SourceAdapter]] = {
+    "apify": ApifyPublicListeningSource,
     "reddit": RedditSource,
     "g2": G2Source,
     "twitter": TwitterSource,
@@ -29,4 +31,11 @@ def build_sources(brand_slug: str, sources_config: dict[str, Any]) -> list[Sourc
     return adapters
 
 
-__all__ = ["RedditSource", "G2Source", "TwitterSource", "REGISTRY", "build_sources"]
+__all__ = [
+    "ApifyPublicListeningSource",
+    "RedditSource",
+    "G2Source",
+    "TwitterSource",
+    "REGISTRY",
+    "build_sources",
+]

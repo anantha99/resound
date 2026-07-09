@@ -4,8 +4,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from resound.api import schemas
-from resound.api.routes import brands, health, patterns, routes, signals
+from resound.api import events, schemas
+from resound.api.routes import (
+    agents,
+    brands,
+    health,
+    listening_profiles,
+    operations,
+    patterns,
+    public,
+    reports,
+    routes,
+    signals,
+    workflows,
+)
 from resound.config import env
 
 
@@ -21,7 +33,14 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=origins,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Resound-Organization",
+            "X-Resound-Team",
+            "X-Resound-User",
+        ],
     )
 
     for prefix, include_in_schema in (("/api", True), ("/api/v1", False)):
@@ -30,13 +49,24 @@ def create_app() -> FastAPI:
         app.include_router(signals.router, prefix=prefix, include_in_schema=include_in_schema)
         app.include_router(routes.router, prefix=prefix, include_in_schema=include_in_schema)
         app.include_router(patterns.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(workflows.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(
+            listening_profiles.router,
+            prefix=prefix,
+            include_in_schema=include_in_schema,
+        )
+        app.include_router(operations.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(reports.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(agents.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(public.router, prefix=prefix, include_in_schema=include_in_schema)
+        app.include_router(events.router, prefix=prefix, include_in_schema=include_in_schema)
 
     @app.exception_handler(Exception)
     async def unhandled_error(_: Request, exc: Exception) -> JSONResponse:
         problem = schemas.Problem(
             title="Internal Server Error",
             status=500,
-            detail=str(exc),
+            detail="An unexpected error occurred.",
         )
         return JSONResponse(status_code=500, content=problem.model_dump(by_alias=True))
 

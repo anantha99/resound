@@ -20,22 +20,42 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AgentSession,
   Brand,
   BrandStats,
+  EvaluationSummary,
   FeedbackEvent,
   FeedbackInput,
   GetCriticalSignalsParams,
+  GetEvaluationSummaryParams,
+  GetLlmTelemetryParams,
+  GetPublicBrandFeedParams,
   HTTPValidationError,
   HealthStatus,
+  LLMTelemetry,
   ListPatternsParams,
   ListRoutesParams,
   ListSignalsParams,
+  ListSourceHealthParams,
+  ListeningProfileSetupInput,
+  ListeningProfileSuggestion,
+  ListeningProfileSuggestionDecision,
   Pattern,
   PatternDetail,
+  PublicFeed,
+  PublicFeedModerationEvent,
+  PublicFeedModerationInput,
+  ReadinessStatus,
+  ReportRun,
+  ReportRunCreateInput,
+  ReportTemplate,
   RerouteInput,
   RouteAudit,
   SignalDetail,
-  SignalList
+  SignalList,
+  SourceHealth,
+  SourceSyncInput,
+  WorkflowJob
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -135,7 +155,76 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+export const getReadinessCheckUrl = () => {
 
+
+
+
+  return `/api/readiness`
+}
+
+/**
+ * @summary Readiness Check
+ */
+export const readinessCheck = async ( options?: RequestInit): Promise<ReadinessStatus> => {
+
+  return customFetch<ReadinessStatus>(getReadinessCheckUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getReadinessCheckQueryKey = () => {
+    return [
+    `/api/readiness`
+    ] as const;
+    }
+
+
+export const getReadinessCheckQueryOptions = <TData = Awaited<ReturnType<typeof readinessCheck>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof readinessCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getReadinessCheckQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof readinessCheck>>> = ({ signal }) => readinessCheck({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof readinessCheck>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ReadinessCheckQueryResult = NonNullable<Awaited<ReturnType<typeof readinessCheck>>>
+export type ReadinessCheckQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Readiness Check
+ */
+
+export function useReadinessCheck<TData = Awaited<ReturnType<typeof readinessCheck>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof readinessCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getReadinessCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 export const getListBrandsUrl = () => {
 
 
@@ -169,7 +258,7 @@ export const getListBrandsQueryKey = () => {
     }
 
 
-export const getListBrandsQueryOptions = <TData = Awaited<ReturnType<typeof listBrands>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBrands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListBrandsQueryOptions = <TData = Awaited<ReturnType<typeof listBrands>>, TError = ErrorType<HTTPValidationError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBrands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -188,14 +277,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListBrandsQueryResult = NonNullable<Awaited<ReturnType<typeof listBrands>>>
-export type ListBrandsQueryError = ErrorType<unknown>
+export type ListBrandsQueryError = ErrorType<HTTPValidationError>
 
 
 /**
  * @summary List Brands
  */
 
-export function useListBrands<TData = Awaited<ReturnType<typeof listBrands>>, TError = ErrorType<unknown>>(
+export function useListBrands<TData = Awaited<ReturnType<typeof listBrands>>, TError = ErrorType<HTTPValidationError>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBrands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -206,8 +295,6 @@ export function useListBrands<TData = Awaited<ReturnType<typeof listBrands>>, TE
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
 export const getGetBrandStatsUrl = (brandId: string,
     period: '24h' | '7d' | '30d' | 'qtd',) => {
 
@@ -910,6 +997,1002 @@ export function useGetPattern<TData = Awaited<ReturnType<typeof getPattern>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPatternQueryOptions(patternId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartSourceSyncUrl = () => {
+
+
+
+
+  return `/api/workflows/source-sync`
+}
+
+/**
+ * @summary Start Source Sync
+ */
+export const startSourceSync = async (sourceSyncInput: SourceSyncInput, options?: RequestInit): Promise<WorkflowJob> => {
+
+  return customFetch<WorkflowJob>(getStartSourceSyncUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceSyncInput)
+  }
+);}
+
+
+
+
+export const getStartSourceSyncMutationOptions = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSourceSync>>, TError,{data: BodyType<SourceSyncInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startSourceSync>>, TError,{data: BodyType<SourceSyncInput>}, TContext> => {
+
+const mutationKey = ['startSourceSync'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startSourceSync>>, {data: BodyType<SourceSyncInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startSourceSync(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartSourceSyncMutationResult = NonNullable<Awaited<ReturnType<typeof startSourceSync>>>
+    export type StartSourceSyncMutationBody = BodyType<SourceSyncInput>
+    export type StartSourceSyncMutationError = ErrorType<HTTPValidationError>
+
+    /**
+ * @summary Start Source Sync
+ */
+export const useStartSourceSync = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSourceSync>>, TError,{data: BodyType<SourceSyncInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startSourceSync>>,
+        TError,
+        {data: BodyType<SourceSyncInput>},
+        TContext
+      > => {
+      return useMutation(getStartSourceSyncMutationOptions(options));
+    }
+
+export const getStartListeningProfileSetupUrl = () => {
+
+
+
+
+  return `/api/listening-profiles/setup`
+}
+
+/**
+ * @summary Start Listening Profile Setup
+ */
+export const startListeningProfileSetup = async (listeningProfileSetupInput: ListeningProfileSetupInput, options?: RequestInit): Promise<WorkflowJob> => {
+
+  return customFetch<WorkflowJob>(getStartListeningProfileSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(listeningProfileSetupInput)
+  }
+);}
+
+
+
+
+export const getStartListeningProfileSetupMutationOptions = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startListeningProfileSetup>>, TError,{data: BodyType<ListeningProfileSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startListeningProfileSetup>>, TError,{data: BodyType<ListeningProfileSetupInput>}, TContext> => {
+
+const mutationKey = ['startListeningProfileSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startListeningProfileSetup>>, {data: BodyType<ListeningProfileSetupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startListeningProfileSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartListeningProfileSetupMutationResult = NonNullable<Awaited<ReturnType<typeof startListeningProfileSetup>>>
+    export type StartListeningProfileSetupMutationBody = BodyType<ListeningProfileSetupInput>
+    export type StartListeningProfileSetupMutationError = ErrorType<HTTPValidationError>
+
+    /**
+ * @summary Start Listening Profile Setup
+ */
+export const useStartListeningProfileSetup = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startListeningProfileSetup>>, TError,{data: BodyType<ListeningProfileSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startListeningProfileSetup>>,
+        TError,
+        {data: BodyType<ListeningProfileSetupInput>},
+        TContext
+      > => {
+      return useMutation(getStartListeningProfileSetupMutationOptions(options));
+    }
+
+export const getDecideListeningProfileSuggestionUrl = (suggestionId: number,) => {
+
+
+
+
+  return `/api/listening-profiles/suggestions/${suggestionId}`
+}
+
+/**
+ * @summary Decide Listening Profile Suggestion
+ */
+export const decideListeningProfileSuggestion = async (suggestionId: number,
+    listeningProfileSuggestionDecision: ListeningProfileSuggestionDecision, options?: RequestInit): Promise<ListeningProfileSuggestion> => {
+
+  return customFetch<ListeningProfileSuggestion>(getDecideListeningProfileSuggestionUrl(suggestionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(listeningProfileSuggestionDecision)
+  }
+);}
+
+
+
+
+export const getDecideListeningProfileSuggestionMutationOptions = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideListeningProfileSuggestion>>, TError,{suggestionId: number;data: BodyType<ListeningProfileSuggestionDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideListeningProfileSuggestion>>, TError,{suggestionId: number;data: BodyType<ListeningProfileSuggestionDecision>}, TContext> => {
+
+const mutationKey = ['decideListeningProfileSuggestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideListeningProfileSuggestion>>, {suggestionId: number;data: BodyType<ListeningProfileSuggestionDecision>}> = (props) => {
+          const {suggestionId,data} = props ?? {};
+
+          return  decideListeningProfileSuggestion(suggestionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideListeningProfileSuggestionMutationResult = NonNullable<Awaited<ReturnType<typeof decideListeningProfileSuggestion>>>
+    export type DecideListeningProfileSuggestionMutationBody = BodyType<ListeningProfileSuggestionDecision>
+    export type DecideListeningProfileSuggestionMutationError = ErrorType<HTTPValidationError>
+
+    /**
+ * @summary Decide Listening Profile Suggestion
+ */
+export const useDecideListeningProfileSuggestion = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideListeningProfileSuggestion>>, TError,{suggestionId: number;data: BodyType<ListeningProfileSuggestionDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideListeningProfileSuggestion>>,
+        TError,
+        {suggestionId: number;data: BodyType<ListeningProfileSuggestionDecision>},
+        TContext
+      > => {
+      return useMutation(getDecideListeningProfileSuggestionMutationOptions(options));
+    }
+
+export const getListSourceHealthUrl = (params: ListSourceHealthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/source-health?${stringifiedParams}` : `/api/source-health`
+}
+
+/**
+ * @summary List Source Health
+ */
+export const listSourceHealth = async (params: ListSourceHealthParams, options?: RequestInit): Promise<SourceHealth[]> => {
+
+  return customFetch<SourceHealth[]>(getListSourceHealthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSourceHealthQueryKey = (params?: ListSourceHealthParams,) => {
+    return [
+    `/api/source-health`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSourceHealthQueryOptions = <TData = Awaited<ReturnType<typeof listSourceHealth>>, TError = ErrorType<HTTPValidationError>>(params: ListSourceHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSourceHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSourceHealthQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSourceHealth>>> = ({ signal }) => listSourceHealth(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSourceHealth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSourceHealthQueryResult = NonNullable<Awaited<ReturnType<typeof listSourceHealth>>>
+export type ListSourceHealthQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary List Source Health
+ */
+
+export function useListSourceHealth<TData = Awaited<ReturnType<typeof listSourceHealth>>, TError = ErrorType<HTTPValidationError>>(
+ params: ListSourceHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSourceHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSourceHealthQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLlmTelemetryUrl = (params: GetLlmTelemetryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/telemetry/llm?${stringifiedParams}` : `/api/telemetry/llm`
+}
+
+/**
+ * @summary Get Llm Telemetry
+ */
+export const getLlmTelemetry = async (params: GetLlmTelemetryParams, options?: RequestInit): Promise<LLMTelemetry> => {
+
+  return customFetch<LLMTelemetry>(getGetLlmTelemetryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLlmTelemetryQueryKey = (params?: GetLlmTelemetryParams,) => {
+    return [
+    `/api/telemetry/llm`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLlmTelemetryQueryOptions = <TData = Awaited<ReturnType<typeof getLlmTelemetry>>, TError = ErrorType<HTTPValidationError>>(params: GetLlmTelemetryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLlmTelemetry>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLlmTelemetryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLlmTelemetry>>> = ({ signal }) => getLlmTelemetry(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLlmTelemetry>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLlmTelemetryQueryResult = NonNullable<Awaited<ReturnType<typeof getLlmTelemetry>>>
+export type GetLlmTelemetryQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary Get Llm Telemetry
+ */
+
+export function useGetLlmTelemetry<TData = Awaited<ReturnType<typeof getLlmTelemetry>>, TError = ErrorType<HTTPValidationError>>(
+ params: GetLlmTelemetryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLlmTelemetry>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLlmTelemetryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEvaluationSummaryUrl = (params: GetEvaluationSummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/evaluations/summary?${stringifiedParams}` : `/api/evaluations/summary`
+}
+
+/**
+ * @summary Get Evaluation Summary
+ */
+export const getEvaluationSummary = async (params: GetEvaluationSummaryParams, options?: RequestInit): Promise<EvaluationSummary> => {
+
+  return customFetch<EvaluationSummary>(getGetEvaluationSummaryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEvaluationSummaryQueryKey = (params?: GetEvaluationSummaryParams,) => {
+    return [
+    `/api/evaluations/summary`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEvaluationSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getEvaluationSummary>>, TError = ErrorType<HTTPValidationError>>(params: GetEvaluationSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEvaluationSummaryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEvaluationSummary>>> = ({ signal }) => getEvaluationSummary(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEvaluationSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getEvaluationSummary>>>
+export type GetEvaluationSummaryQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary Get Evaluation Summary
+ */
+
+export function useGetEvaluationSummary<TData = Awaited<ReturnType<typeof getEvaluationSummary>>, TError = ErrorType<HTTPValidationError>>(
+ params: GetEvaluationSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEvaluationSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEvaluationSummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListReportTemplatesUrl = () => {
+
+
+
+
+  return `/api/reports/templates`
+}
+
+/**
+ * @summary List Report Templates
+ */
+export const listReportTemplates = async ( options?: RequestInit): Promise<ReportTemplate[]> => {
+
+  return customFetch<ReportTemplate[]>(getListReportTemplatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListReportTemplatesQueryKey = () => {
+    return [
+    `/api/reports/templates`
+    ] as const;
+    }
+
+
+export const getListReportTemplatesQueryOptions = <TData = Awaited<ReturnType<typeof listReportTemplates>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReportTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReportTemplatesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReportTemplates>>> = ({ signal }) => listReportTemplates({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReportTemplates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReportTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof listReportTemplates>>>
+export type ListReportTemplatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List Report Templates
+ */
+
+export function useListReportTemplates<TData = Awaited<ReturnType<typeof listReportTemplates>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReportTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReportTemplatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListReportRunsUrl = () => {
+
+
+
+
+  return `/api/reports/runs`
+}
+
+/**
+ * @summary List Report Runs
+ */
+export const listReportRuns = async ( options?: RequestInit): Promise<ReportRun[]> => {
+
+  return customFetch<ReportRun[]>(getListReportRunsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListReportRunsQueryKey = () => {
+    return [
+    `/api/reports/runs`
+    ] as const;
+    }
+
+
+export const getListReportRunsQueryOptions = <TData = Awaited<ReturnType<typeof listReportRuns>>, TError = ErrorType<HTTPValidationError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReportRunsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReportRuns>>> = ({ signal }) => listReportRuns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReportRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReportRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listReportRuns>>>
+export type ListReportRunsQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary List Report Runs
+ */
+
+export function useListReportRuns<TData = Awaited<ReturnType<typeof listReportRuns>>, TError = ErrorType<HTTPValidationError>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReportRunsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartReportGenerationUrl = () => {
+
+
+
+
+  return `/api/reports/runs`
+}
+
+/**
+ * @summary Start Report Generation
+ */
+export const startReportGeneration = async (reportRunCreateInput: ReportRunCreateInput, options?: RequestInit): Promise<WorkflowJob> => {
+
+  return customFetch<WorkflowJob>(getStartReportGenerationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reportRunCreateInput)
+  }
+);}
+
+
+
+
+export const getStartReportGenerationMutationOptions = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startReportGeneration>>, TError,{data: BodyType<ReportRunCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startReportGeneration>>, TError,{data: BodyType<ReportRunCreateInput>}, TContext> => {
+
+const mutationKey = ['startReportGeneration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startReportGeneration>>, {data: BodyType<ReportRunCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startReportGeneration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartReportGenerationMutationResult = NonNullable<Awaited<ReturnType<typeof startReportGeneration>>>
+    export type StartReportGenerationMutationBody = BodyType<ReportRunCreateInput>
+    export type StartReportGenerationMutationError = ErrorType<HTTPValidationError>
+
+    /**
+ * @summary Start Report Generation
+ */
+export const useStartReportGeneration = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startReportGeneration>>, TError,{data: BodyType<ReportRunCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startReportGeneration>>,
+        TError,
+        {data: BodyType<ReportRunCreateInput>},
+        TContext
+      > => {
+      return useMutation(getStartReportGenerationMutationOptions(options));
+    }
+
+export const getListAgentSessionsUrl = () => {
+
+
+
+
+  return `/api/agents/sessions`
+}
+
+/**
+ * @summary List Agent Sessions
+ */
+export const listAgentSessions = async ( options?: RequestInit): Promise<AgentSession[]> => {
+
+  return customFetch<AgentSession[]>(getListAgentSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentSessionsQueryKey = () => {
+    return [
+    `/api/agents/sessions`
+    ] as const;
+    }
+
+
+export const getListAgentSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentSessions>>, TError = ErrorType<HTTPValidationError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentSessions>>> = ({ signal }) => listAgentSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentSessions>>>
+export type ListAgentSessionsQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary List Agent Sessions
+ */
+
+export function useListAgentSessions<TData = Awaited<ReturnType<typeof listAgentSessions>>, TError = ErrorType<HTTPValidationError>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicBrandFeedUrl = (params: GetPublicBrandFeedParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/public/feed?${stringifiedParams}` : `/api/public/feed`
+}
+
+/**
+ * @summary Public Brand Feed
+ */
+export const getPublicBrandFeed = async (params: GetPublicBrandFeedParams, options?: RequestInit): Promise<PublicFeed> => {
+
+  return customFetch<PublicFeed>(getGetPublicBrandFeedUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicBrandFeedQueryKey = (params?: GetPublicBrandFeedParams,) => {
+    return [
+    `/api/public/feed`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPublicBrandFeedQueryOptions = <TData = Awaited<ReturnType<typeof getPublicBrandFeed>>, TError = ErrorType<HTTPValidationError>>(params: GetPublicBrandFeedParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBrandFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicBrandFeedQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicBrandFeed>>> = ({ signal }) => getPublicBrandFeed(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicBrandFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicBrandFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicBrandFeed>>>
+export type GetPublicBrandFeedQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary Public Brand Feed
+ */
+
+export function useGetPublicBrandFeed<TData = Awaited<ReturnType<typeof getPublicBrandFeed>>, TError = ErrorType<HTTPValidationError>>(
+ params: GetPublicBrandFeedParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBrandFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicBrandFeedQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getModeratePublicFeedItemUrl = (signalId: number,) => {
+
+
+
+
+  return `/api/public/feed/items/${signalId}/moderation`
+}
+
+/**
+ * @summary Moderate Public Feed Item
+ */
+export const moderatePublicFeedItem = async (signalId: number,
+    publicFeedModerationInput: PublicFeedModerationInput, options?: RequestInit): Promise<PublicFeedModerationEvent> => {
+
+  return customFetch<PublicFeedModerationEvent>(getModeratePublicFeedItemUrl(signalId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(publicFeedModerationInput)
+  }
+);}
+
+
+
+
+export const getModeratePublicFeedItemMutationOptions = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moderatePublicFeedItem>>, TError,{signalId: number;data: BodyType<PublicFeedModerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof moderatePublicFeedItem>>, TError,{signalId: number;data: BodyType<PublicFeedModerationInput>}, TContext> => {
+
+const mutationKey = ['moderatePublicFeedItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof moderatePublicFeedItem>>, {signalId: number;data: BodyType<PublicFeedModerationInput>}> = (props) => {
+          const {signalId,data} = props ?? {};
+
+          return  moderatePublicFeedItem(signalId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ModeratePublicFeedItemMutationResult = NonNullable<Awaited<ReturnType<typeof moderatePublicFeedItem>>>
+    export type ModeratePublicFeedItemMutationBody = BodyType<PublicFeedModerationInput>
+    export type ModeratePublicFeedItemMutationError = ErrorType<HTTPValidationError>
+
+    /**
+ * @summary Moderate Public Feed Item
+ */
+export const useModeratePublicFeedItem = <TError = ErrorType<HTTPValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moderatePublicFeedItem>>, TError,{signalId: number;data: BodyType<PublicFeedModerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof moderatePublicFeedItem>>,
+        TError,
+        {signalId: number;data: BodyType<PublicFeedModerationInput>},
+        TContext
+      > => {
+      return useMutation(getModeratePublicFeedItemMutationOptions(options));
+    }
+
+export const getStreamEventsUrl = () => {
+
+
+
+
+  return `/api/events`
+}
+
+/**
+ * @summary Stream Events
+ */
+export const streamEvents = async ( options?: RequestInit): Promise<unknown> => {
+
+  return customFetch<unknown>(getStreamEventsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamEventsQueryKey = () => {
+    return [
+    `/api/events`
+    ] as const;
+    }
+
+
+export const getStreamEventsQueryOptions = <TData = Awaited<ReturnType<typeof streamEvents>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamEventsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamEvents>>> = ({ signal }) => streamEvents({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamEventsQueryResult = NonNullable<Awaited<ReturnType<typeof streamEvents>>>
+export type StreamEventsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stream Events
+ */
+
+export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamEventsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
