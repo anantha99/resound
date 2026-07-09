@@ -18,7 +18,14 @@ class Memory(ABC):
         ...
 
     @abstractmethod
-    def record_signal(self, brand_slug: str, raw: RawSignal) -> int:
+    def record_signal(
+        self,
+        brand_slug: str,
+        raw: RawSignal,
+        *,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
+    ) -> int:
         """Persist a raw signal and return its primary key."""
         ...
 

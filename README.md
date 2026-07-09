@@ -165,6 +165,25 @@ Streamlit launches at http://localhost:8501 with three views:
 2. **Memory browser** — all persisted signals, filterable, exportable as CSV.
 3. **Routing audit** — which rule fired, where each signal went, volume by owner.
 
+## Production Backend Preview
+
+The production-shaped backend uses FastAPI for commands/reads, Postgres for durable state,
+Temporal workers for long-running ingestion/report workflows, LangGraph-compatible agents for
+bounded report and memory tasks, and OpenRouterGateway as the only LLM access path.
+
+Local production stack:
+
+```bash
+docker compose up postgres temporal
+uv run alembic upgrade head
+uv run resound api --host 127.0.0.1 --port 8000
+uv run resound worker
+```
+
+See [`docs/runbooks/production-backend.md`](docs/runbooks/production-backend.md) and
+[`docs/runbooks/temporal-workers.md`](docs/runbooks/temporal-workers.md) for deployment order,
+required environment variables, worker scaling, and common recovery paths.
+
 ## Helper scripts
 
 The `scripts/` directory contains read-only operational utilities. None of them mutate the DB.
@@ -214,14 +233,19 @@ resound/
 ├── config/
 │   └── models.yaml         # global LLM stage config (filter / classify / etc.)
 ├── src/resound/
+│   ├── agents/             # audited agent tools and report/memory agents
 │   ├── core/               # the five ABCs
+│   ├── db/                 # database engine/session lifecycle
 │   ├── sources/            # ingestion adapters
 │   │   ├── reddit.py       # PRAW + Composio backends, dispatched by REDDIT_BACKEND
 │   │   ├── g2.py
 │   │   └── twitter.py
 │   ├── classifiers/        # OpenRouter classifier
 │   ├── routers/            # rules-based router with predicate DSL
-│   ├── memory/             # SQLAlchemy-backed Memory + LLM call audit
+│   ├── memory/             # SQLAlchemy-backed Memory + LLM/workflow/agent audit
+│   ├── reports/            # role report templates and generation helpers
+│   ├── workflows/          # Temporal workflows and activities
+│   ├── workers/            # Temporal worker entrypoints
 │   ├── feedback/           # file-based feedback channel
 │   ├── gateway/            # OpenRouter client with fallback chain
 │   ├── prompts/            # versioned LLM prompts

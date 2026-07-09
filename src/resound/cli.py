@@ -9,12 +9,14 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.console import Console
@@ -22,7 +24,16 @@ from rich.table import Table
 
 from resound.config import env, load_brand_config
 from resound.gateway import load_models_config
+from resound.memory import SqlMemory
 from resound.pipeline import Pipeline
+from resound.social import V1_PUBLIC_SOURCE_TYPES, ListeningProfile, SourceType
+from resound.tenancy import TenantContext
+from resound.workflows.public_listening import (
+    PublicListeningSyncRequest,
+)
+from resound.workflows.public_listening import (
+    sync_public_listening as run_public_listening_sync,
+)
 
 app = typer.Typer(add_completion=False, help="Resound — voice-of-customer routing.")
 console = Console()
@@ -102,9 +113,9 @@ def healthcheck(
     console.print(f"    timeout: {classify.timeout_s}s")
 
     if not env("OPENROUTER_API_KEY"):
-        console.print("[red]✗ OPENROUTER_API_KEY not set[/]")
+        console.print("[red]FAIL OPENROUTER_API_KEY not set[/]")
     else:
-        console.print("[green]✓ OPENROUTER_API_KEY set[/]")
+        console.print("[green]OK OPENROUTER_API_KEY set[/]")
 
     reddit_cfg = cfg.sources.get("reddit", {})
     if reddit_cfg.get("enabled"):
@@ -113,17 +124,17 @@ def healthcheck(
         if backend == "composio":
             for key in ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID"):
                 if not env(key):
-                    console.print(f"[red]✗ {key} not set[/]")
+                    console.print(f"[red]FAIL {key} not set[/]")
                 else:
-                    console.print(f"[green]✓ {key} set[/]")
+                    console.print(f"[green]OK {key} set[/]")
         elif backend == "praw":
             for key in ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"):
                 if not env(key):
-                    console.print(f"[red]✗ {key} not set[/]")
+                    console.print(f"[red]FAIL {key} not set[/]")
                 else:
-                    console.print(f"[green]✓ {key} set[/]")
+                    console.print(f"[green]OK {key} set[/]")
         else:
-            console.print(f"[red]✗ unknown REDDIT_BACKEND={backend!r} (use composio or praw)[/]")
+            console.print(f"[red]FAIL unknown REDDIT_BACKEND={backend!r} (use composio or praw)[/]")
 
 
 @app.command()
@@ -155,6 +166,88 @@ def api(
 
     console.print(f"[bold cyan]Launching Resound API[/] on http://{host}:{port}...")
     uvicorn.run("resound.api.app:app", host=host, port=port, reload=reload)
+
+
+@app.command("sync-public-listening")
+def sync_public_listening_cmd(
+    brand: str = typer.Option(..., help="Brand slug (matches brands/<slug>/)"),
+    organization: str = typer.Option("demo", help="Organization slug to seed/use"),
+    sources: list[str] | None = typer.Option(
+        None,
+        "--source",
+        help="Public source to sync. Repeat or comma-separate. Defaults to reddit.",
+    ),
+    max_items: int = typer.Option(20, min=1, help="Maximum Apify items per source"),
+) -> None:
+    """Seed a tenant brand/profile and run the Apify-backed public-listening sync."""
+    _setup_logging()
+    cfg = load_brand_config(brand)
+    enabled_sources = _parse_public_sources(sources)
+    memory = SqlMemory()
+    organization_id = memory.ensure_organization(organization, organization.title())
+    brand_row = memory.ensure_brand(
+        organization_id,
+        cfg.slug,
+        cfg.name,
+        description=cfg.description,
+        source_config=cfg.sources,
+    )
+    memory.save_listening_profile(
+        organization_id=organization_id,
+        brand_id=brand_row.id,
+        profile=ListeningProfile(
+            brand_slug=cfg.slug,
+            brand_names=_unique_text([cfg.name, cfg.slug]),
+            keywords=_brand_search_terms(cfg),
+            enabled_sources=enabled_sources,
+        ),
+        authored_by="agent",
+    )
+
+    console.print(
+        f"[bold cyan]Syncing public listening[/] brand=[bold]{cfg.slug}[/] "
+        f"sources={enabled_sources} max_items={max_items}"
+    )
+    result = run_public_listening_sync(
+        PublicListeningSyncRequest(
+            tenant=TenantContext(
+                organization_id,
+                organization,
+                team_id=None,
+                user_id=None,
+            ),
+            brand_id=brand_row.id,
+            brand_slug=cfg.slug,
+            brand_context=cfg.understanding,
+            routing_config=cfg.routing,
+            people_config=cfg.people,
+            enabled_sources=enabled_sources,
+            max_items_per_source=max_items,
+        ),
+        memory=memory,
+    )
+    console.print(
+        f"[green]{result.status}[/] processed={result.processed_count} "
+        f"skipped={result.skipped_count} synced={result.synced_sources}"
+    )
+    if result.failed_sources:
+        console.print(f"[red]failed_sources={result.failed_sources}[/]")
+
+
+@app.command("worker")
+def worker() -> None:
+    """Launch Temporal workers for durable ingestion and agent jobs."""
+    _setup_logging()
+    from resound.workers import run_worker
+    from resound.workflows import WorkflowRuntimeConfig
+
+    config = WorkflowRuntimeConfig.from_env()
+    console.print(
+        "[bold cyan]Launching Resound worker[/] "
+        f"task_queue={config.task_queue} namespace={config.namespace} "
+        f"address={config.address}"
+    )
+    asyncio.run(run_worker(config))
 
 
 @app.command("export-openapi")
@@ -191,6 +284,60 @@ def _print_stats(stats) -> None:
     table.add_row("ignored", str(stats.ignored))
     table.add_row("errors", str(stats.errors))
     console.print(table)
+
+
+def _parse_public_sources(values: list[str] | None) -> list[SourceType]:
+    raw_values = values or ["reddit"]
+    requested = [
+        source.strip()
+        for value in raw_values
+        for source in value.split(",")
+        if source.strip()
+    ]
+    invalid = sorted(set(requested) - V1_PUBLIC_SOURCE_TYPES)
+    if invalid:
+        allowed = ", ".join(sorted(V1_PUBLIC_SOURCE_TYPES))
+        raise typer.BadParameter(
+            f"Unsupported source(s): {', '.join(invalid)}. Choose from: {allowed}"
+        )
+    selected: list[SourceType] = []
+    seen: set[str] = set()
+    for source in requested:
+        if source in seen:
+            continue
+        selected.append(cast(SourceType, source))
+        seen.add(source)
+    return selected or [cast(SourceType, "reddit")]
+
+
+def _brand_search_terms(cfg) -> list[str]:
+    terms: list[str] = []
+    for source_config in cfg.sources.values():
+        if not isinstance(source_config, dict):
+            continue
+        terms.extend(_string_list(source_config.get("search_terms")))
+        terms.extend(_string_list(source_config.get("keywords")))
+    return _unique_text(terms)
+
+
+def _string_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def _unique_text(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized.lower() in seen:
+            continue
+        unique.append(normalized)
+        seen.add(normalized.lower())
+    return unique
 
 
 if __name__ == "__main__":

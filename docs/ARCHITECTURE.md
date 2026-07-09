@@ -185,6 +185,43 @@ flowchart TB
 
 Notice every LLM call (filter, classify, tiebreaker, NL memory query) routes through the same gateway, and the gateway is the only thing that talks to OpenRouter. That's the swap-the-model property: change `models.yaml`, the gateway picks a different slug, no other layer notices.
 
+## Production Backend Orchestration
+
+The production backend splits synchronous API work from durable execution:
+
+Current implementation note: the Apify public-listening path now uses a
+LangGraph-backed `SignalTriageAgent` for classification and routing in the
+durable signal-processing path. See
+[`runbooks/agentic-public-listening-progress.md`](runbooks/agentic-public-listening-progress.md)
+for the latest verified local proof, commands, caveats, and next steps.
+
+```mermaid
+flowchart LR
+    UI[Frontend]
+    API[FastAPI command/read API]
+    DB[(Postgres)]
+    TEMP[Temporal]
+    WORKER[Workers]
+    AGENTS[LangGraph-compatible agents]
+    GW[OpenRouterGateway]
+
+    UI --> API
+    API --> DB
+    API --> TEMP
+    TEMP --> WORKER
+    WORKER --> DB
+    WORKER --> AGENTS
+    WORKER --> GW
+    AGENTS --> GW
+    AGENTS --> DB
+```
+
+- FastAPI returns workflow/job identities for long-running source sync and report commands.
+- Temporal workers own durable retries, idempotency, and stage transitions.
+- Agents operate through audited domain tools and persist `agent_sessions` / `agent_steps`.
+- Reports are persisted `report_runs` with fixed role sections, citations, freshness metadata, and Markdown export.
+- Public demo feeds are projections over stored signals, not raw unrestricted mirrors.
+
 ---
 
 ## 2. LLM Gateway internals — one classify call

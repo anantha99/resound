@@ -74,6 +74,13 @@ _BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "timeout_s": 10.0,
         "fallbacks": ["anthropic/claude-haiku-4-5"],
     },
+    "route": {
+        "model": "openai/gpt-4.1-mini",
+        "temperature": 0.0,
+        "max_tokens": 256,
+        "timeout_s": 10.0,
+        "fallbacks": ["anthropic/claude-haiku-4-5"],
+    },
     "memory_query": {
         "model": "openai/gpt-4.1-mini",
         "temperature": 0.0,

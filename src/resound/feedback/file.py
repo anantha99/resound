@@ -57,7 +57,7 @@ class FileFeedback(FeedbackChannel):
             "content": signal.content[:500],
         }
 
-        with out_path.open("a") as f:
+        with out_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         logger.info(

@@ -54,46 +54,48 @@ class OpenRouterClassifier(Classifier):
             prompt=prompt,
             response_schema=JSON_MODE,
         )
-        classification = self._parse(response.content)
+        classification = parse_classification_response(response.content)
         return classification, response
 
     @staticmethod
     def _parse(text: str) -> Classification:
-        """Extract a Classification from gateway-returned content.
+        return parse_classification_response(text)
 
-        Returns a stub Classification (via make_fallback_classification) on
-        any parse failure. Does not raise. The caller still records a
-        SUCCESSFUL llm_calls row — the gateway call DID succeed; only the
-        downstream parse failed. The unparseable content is preserved in
-        llm_calls.response_content for forensics.
-        """
-        from resound.classifiers import make_fallback_classification
 
-        text = text.strip()
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            logger.warning("No JSON object found in classifier response")
-            return make_fallback_classification("no_json_in_response")
+def parse_classification_response(text: str) -> Classification:
+    """Extract a Classification from gateway-returned content.
 
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            logger.warning(f"JSON decode failed: {exc}")
-            return make_fallback_classification(f"json_decode_error: {exc}")
+    Returns a stub Classification (via make_fallback_classification) on any
+    parse failure. Does not raise. The caller still records a successful
+    llm_calls row; only the downstream parse failed.
+    """
+    from resound.classifiers import make_fallback_classification
 
-        try:
-            return Classification(
-                is_about_brand=bool(data.get("is_about_brand", False)),
-                area=str(data.get("area", "other")),
-                subarea=data.get("subarea"),
-                sentiment=Sentiment(data.get("sentiment", "neutral")),
-                severity=Severity(data.get("severity", "low")),
-                action_class=ActionClass(data.get("action_class", "ignore")),
-                summary=str(data.get("summary", ""))[:280],
-                root_cause_hypothesis=data.get("root_cause_hypothesis"),
-                confidence=float(data.get("confidence", 0.5)),
-                reasoning=data.get("reasoning"),
-            )
-        except (ValueError, KeyError) as exc:
-            logger.warning(f"Classification validation failed: {exc}")
-            return make_fallback_classification(f"validation_error: {exc}")
+    text = text.strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        logger.warning("No JSON object found in classifier response")
+        return make_fallback_classification("no_json_in_response")
+
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        logger.warning(f"JSON decode failed: {exc}")
+        return make_fallback_classification(f"json_decode_error: {exc}")
+
+    try:
+        return Classification(
+            is_about_brand=bool(data.get("is_about_brand", False)),
+            area=str(data.get("area", "other")),
+            subarea=data.get("subarea"),
+            sentiment=Sentiment(data.get("sentiment", "neutral")),
+            severity=Severity(data.get("severity", "low")),
+            action_class=ActionClass(data.get("action_class", "ignore")),
+            summary=str(data.get("summary", ""))[:280],
+            root_cause_hypothesis=data.get("root_cause_hypothesis"),
+            confidence=float(data.get("confidence", 0.5)),
+            reasoning=data.get("reasoning"),
+        )
+    except (ValueError, KeyError) as exc:
+        logger.warning(f"Classification validation failed: {exc}")
+        return make_fallback_classification(f"validation_error: {exc}")

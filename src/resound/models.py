@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,8 @@ class RawSignal(BaseModel):
     """The output of a SourceAdapter. Layer-1 contract."""
 
     source: str  # e.g., "reddit", "g2", "twitter"
+    source_mode: Literal["public_listening", "connected_account"] = "public_listening"
+    provider: Optional[str] = None
     external_id: str  # source-specific unique ID for dedup
     url: Optional[str] = None
     author_handle: Optional[str] = None

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from resound.api import schemas
 from resound.config import BrandConfig, load_brand_config
 from resound.memory import (
+    BrandRow,
     ClassificationRow,
     FeedbackRow,
     RouteHandoffRow,
@@ -22,6 +23,7 @@ from resound.memory import (
     SqlMemory,
 )
 from resound.models import FeedbackEvent as DomainFeedbackEvent
+from resound.tenancy import TenantContext
 
 BRANDS_DIR = Path("brands")
 
@@ -55,7 +57,11 @@ def list_brand_slugs(brands_dir: Path = BRANDS_DIR) -> list[str]:
     )
 
 
-def list_brands(memory: SqlMemory) -> list[schemas.Brand]:
+def list_brands(memory: SqlMemory, tenant: TenantContext | None = None) -> list[schemas.Brand]:
+    if tenant is not None:
+        tenant_brands = memory.list_brands_for_tenant(tenant)
+        return [_tenant_brand_to_schema(row, memory) for row in tenant_brands]
+
     brands = [
         brand_to_schema(idx, load_brand_config(slug), memory)
         for idx, slug in enumerate(list_brand_slugs(), start=1)
@@ -63,7 +69,17 @@ def list_brands(memory: SqlMemory) -> list[schemas.Brand]:
     return sorted(brands, key=lambda brand: (brand.last_ingested is None, brand.name.lower()))
 
 
-def get_brand(slug: str, memory: SqlMemory) -> schemas.Brand | None:
+def get_brand(
+    slug: str,
+    memory: SqlMemory,
+    tenant: TenantContext | None = None,
+) -> schemas.Brand | None:
+    if tenant is not None:
+        for brand in memory.list_brands_for_tenant(tenant):
+            if brand.slug == slug:
+                return _tenant_brand_to_schema(brand, memory)
+        return None
+
     slugs = list_brand_slugs()
     if slug not in slugs:
         return None
@@ -90,6 +106,25 @@ def brand_to_schema(index: int, brand: BrandConfig, memory: SqlMemory) -> schema
     )
 
 
+def _tenant_brand_to_schema(row: BrandRow, memory: SqlMemory) -> schemas.Brand:
+    source_config = row.source_config or {}
+    active_sources = [
+        source for source, config in source_config.items()
+        if not isinstance(config, dict) or config.get("enabled", True)
+    ]
+    return schemas.Brand(
+        id=row.id,
+        name=row.display_name,
+        slug=row.slug,
+        description=row.description,
+        primary_contact="operator",
+        sources_active=active_sources,
+        last_ingested=_last_ingested(memory, row.slug, organization_id=row.organization_id),
+        tagline=row.description,
+        owner_options=[],
+    )
+
+
 def owner_options_for_brand(brand: BrandConfig) -> list[schemas.OwnerOption]:
     options: list[schemas.OwnerOption] = []
     for owner, info in sorted(brand.people.get("people", {}).items()):
@@ -108,12 +143,23 @@ def valid_owner_ids(brand: BrandConfig) -> set[str]:
     }
 
 
-def brand_stats(memory: SqlMemory, brand_slug: str, period: schemas.Period) -> schemas.BrandStats:
+def brand_stats(
+    memory: SqlMemory,
+    brand_slug: str,
+    period: schemas.Period,
+    tenant: TenantContext | None = None,
+) -> schemas.BrandStats:
     since = period_since(period)
     previous_since = since - (datetime.utcnow() - since)
-    current = _joined_rows(memory, brand_slug, since=since, limit=None, offset=0)
+    current = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
     previous = _joined_rows(
-        memory, brand_slug, since=previous_since, before=since, limit=None, offset=0,
+        memory,
+        brand_slug,
+        tenant=tenant,
+        since=previous_since,
+        before=since,
+        limit=None,
+        offset=0,
     )
     current_classes = [row.classification for row in current]
     previous_classes = [row.classification for row in previous]
@@ -123,7 +169,7 @@ def brand_stats(memory: SqlMemory, brand_slug: str, period: schemas.Period) -> s
     current_critical = _critical_count(current_classes)
     previous_critical = _critical_count(previous_classes)
     source_mix = _source_mix(row.signal.source for row in current)
-    patterns = list_patterns(memory, brand_slug, area=None)
+    patterns = list_patterns(memory, brand_slug, area=None, tenant=tenant)
     top_pattern = _pattern_summary(patterns[0]) if patterns else _empty_pattern_summary()
 
     return schemas.BrandStats(
@@ -149,6 +195,7 @@ def brand_stats(memory: SqlMemory, brand_slug: str, period: schemas.Period) -> s
 def list_signals(
     memory: SqlMemory,
     *,
+    tenant: TenantContext | None = None,
     brand_slug: str | None,
     source: str | None,
     area: str | None,
@@ -161,6 +208,7 @@ def list_signals(
     rows = _joined_rows(
         memory,
         brand_slug,
+        tenant=tenant,
         since=period_since(period),
         source=_normalize_source(source),
         area=area,
@@ -172,6 +220,7 @@ def list_signals(
     total = _joined_count(
         memory,
         brand_slug,
+        tenant=tenant,
         since=period_since(period),
         source=_normalize_source(source),
         area=area,
@@ -186,8 +235,12 @@ def list_signals(
     )
 
 
-def get_signal(memory: SqlMemory, signal_id: int) -> schemas.SignalDetail | None:
-    rows = _joined_rows(memory, None, signal_id=signal_id, limit=1, offset=0)
+def get_signal(
+    memory: SqlMemory,
+    signal_id: int,
+    tenant: TenantContext | None = None,
+) -> schemas.SignalDetail | None:
+    rows = _joined_rows(memory, None, tenant=tenant, signal_id=signal_id, limit=1, offset=0)
     if not rows:
         return None
     handoff = _latest_handoffs(memory, [rows[0].route.id]).get(rows[0].route.id)
@@ -195,11 +248,15 @@ def get_signal(memory: SqlMemory, signal_id: int) -> schemas.SignalDetail | None
 
 
 def critical_signals(
-    memory: SqlMemory, brand_slug: str | None, period: schemas.Period,
+    memory: SqlMemory,
+    brand_slug: str | None,
+    period: schemas.Period,
+    tenant: TenantContext | None = None,
 ) -> list[schemas.SignalDetail]:
     rows = _joined_rows(
         memory,
         brand_slug,
+        tenant=tenant,
         since=period_since(period),
         severities=["critical", "high"],
         limit=100,
@@ -212,11 +269,19 @@ def critical_signals(
 def list_routes(
     memory: SqlMemory,
     *,
+    tenant: TenantContext | None = None,
     brand_slug: str | None,
     period: schemas.Period,
     limit: int,
 ) -> list[schemas.RouteAudit]:
-    rows = _joined_rows(memory, brand_slug, since=period_since(period), limit=limit, offset=0)
+    rows = _joined_rows(
+        memory,
+        brand_slug,
+        tenant=tenant,
+        since=period_since(period),
+        limit=limit,
+        offset=0,
+    )
     route_ids = [row.route.id for row in rows]
     latest_handoffs = _latest_handoffs(memory, route_ids)
     latest_feedback = _latest_feedback(memory, route_ids)
@@ -229,13 +294,14 @@ def list_routes(
 def reroute(
     memory: SqlMemory,
     *,
+    tenant: TenantContext | None = None,
     route_id: int,
     owner: str,
     note: str | None,
     submitted_by: str | None,
     idempotency_key: str | None,
 ) -> schemas.RouteAudit | None:
-    row = _joined_row_for_route(memory, route_id)
+    row = _joined_row_for_route(memory, route_id, tenant=tenant)
     if row is None:
         return None
 
@@ -257,13 +323,14 @@ def reroute(
 def submit_feedback(
     memory: SqlMemory,
     *,
+    tenant: TenantContext | None = None,
     route_id: int,
     correct: bool,
     note: str | None,
     actioned: bool | None,
     submitted_by: str | None,
 ) -> schemas.FeedbackEvent | None:
-    row = _joined_row_for_route(memory, route_id)
+    row = _joined_row_for_route(memory, route_id, tenant=tenant)
     if row is None:
         return None
 
@@ -291,9 +358,12 @@ def submit_feedback(
 
 
 def list_patterns(
-    memory: SqlMemory, brand_slug: str | None, area: str | None,
+    memory: SqlMemory,
+    brand_slug: str | None,
+    area: str | None,
+    tenant: TenantContext | None = None,
 ) -> list[schemas.Pattern]:
-    rows = _joined_rows(memory, brand_slug, limit=None, offset=0)
+    rows = _joined_rows(memory, brand_slug, tenant=tenant, limit=None, offset=0)
     groups: dict[str, list[SignalJoinedRow]] = {}
     for row in rows:
         if area and row.classification.area != area:
@@ -305,14 +375,18 @@ def list_patterns(
     return sorted(patterns, key=lambda p: (p.velocity_multiple, p.signal_count), reverse=True)
 
 
-def get_pattern(memory: SqlMemory, pattern_id: int) -> schemas.PatternDetail | None:
-    for pattern in list_patterns(memory, None, None):
+def get_pattern(
+    memory: SqlMemory,
+    pattern_id: int,
+    tenant: TenantContext | None = None,
+) -> schemas.PatternDetail | None:
+    for pattern in list_patterns(memory, None, None, tenant=tenant):
         if pattern.id != pattern_id:
             continue
         brand_slug = pattern.brand_id
         key = _pattern_key_from_name(pattern.name)
         rows = [
-            row for row in _joined_rows(memory, brand_slug, limit=None, offset=0)
+            row for row in _joined_rows(memory, brand_slug, tenant=tenant, limit=None, offset=0)
             if (row.classification.subarea or row.classification.area) == key
         ]
         latest_handoffs = _latest_handoffs(memory, [row.route.id for row in rows])
@@ -411,6 +485,7 @@ def _joined_rows(
     memory: SqlMemory,
     brand_slug: str | None,
     *,
+    tenant: TenantContext | None = None,
     since: datetime | None = None,
     before: datetime | None = None,
     source: str | None = None,
@@ -432,6 +507,7 @@ def _joined_rows(
         stmt = _apply_join_filters(
             stmt,
             brand_slug=brand_slug,
+            tenant=tenant,
             since=since,
             before=before,
             source=source,
@@ -452,6 +528,7 @@ def _joined_count(
     memory: SqlMemory,
     brand_slug: str | None,
     *,
+    tenant: TenantContext | None = None,
     since: datetime | None,
     source: str | None,
     area: str | None,
@@ -467,6 +544,7 @@ def _joined_count(
         stmt = _apply_join_filters(
             stmt,
             brand_slug=brand_slug,
+            tenant=tenant,
             since=since,
             before=None,
             source=source,
@@ -480,6 +558,8 @@ def _joined_count(
 
 
 def _apply_join_filters(stmt, **filters):
+    if filters["tenant"] is not None:
+        stmt = stmt.where(SignalRow.organization_id == filters["tenant"].organization_id)
     if filters["brand_slug"]:
         stmt = stmt.where(SignalRow.brand_slug == filters["brand_slug"])
     if filters["since"]:
@@ -501,7 +581,11 @@ def _apply_join_filters(stmt, **filters):
     return stmt
 
 
-def _joined_row_for_route(memory: SqlMemory, route_id: int) -> SignalJoinedRow | None:
+def _joined_row_for_route(
+    memory: SqlMemory,
+    route_id: int,
+    tenant: TenantContext | None = None,
+) -> SignalJoinedRow | None:
     with Session(memory.engine) as session:
         stmt = (
             select(SignalRow, ClassificationRow, RouteRow)
@@ -509,6 +593,8 @@ def _joined_row_for_route(memory: SqlMemory, route_id: int) -> SignalJoinedRow |
             .join(RouteRow, RouteRow.signal_id == SignalRow.id)
             .where(RouteRow.id == route_id)
         )
+        if tenant is not None:
+            stmt = stmt.where(SignalRow.organization_id == tenant.organization_id)
         row = session.execute(stmt).first()
         if row is None:
             return None
@@ -599,11 +685,17 @@ def _primary_contact(brand: BrandConfig) -> str:
     return first.get("email") or first.get("name") or "operator"
 
 
-def _last_ingested(memory: SqlMemory, brand_slug: str) -> str | None:
+def _last_ingested(
+    memory: SqlMemory,
+    brand_slug: str,
+    *,
+    organization_id: int | None = None,
+) -> str | None:
     with Session(memory.engine) as session:
-        value = session.execute(
-            select(func.max(SignalRow.ingested_at)).where(SignalRow.brand_slug == brand_slug),
-        ).scalar_one_or_none()
+        stmt = select(func.max(SignalRow.ingested_at)).where(SignalRow.brand_slug == brand_slug)
+        if organization_id is not None:
+            stmt = stmt.where(SignalRow.organization_id == organization_id)
+        value = session.execute(stmt).scalar_one_or_none()
         return _iso(value) if value else None
 
 

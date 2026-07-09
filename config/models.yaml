@@ -50,6 +50,14 @@ defaults:
     fallbacks:
       - anthropic/claude-haiku-4-5
 
+  route:
+    model: google/gemini-2.5-flash
+    temperature: 0.0
+    max_tokens: 256
+    timeout_s: 10
+    fallbacks:
+      - anthropic/claude-haiku-4-5
+
   memory_query:
     model: google/gemini-2.5-flash
     temperature: 0.0
