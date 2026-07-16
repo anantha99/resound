@@ -84,5 +84,313 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    margin: 0;
+  }
+}
+
+.resound-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.resound-pattern-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+}
+
+.resound-signal-row {
+  grid-template-columns: 96px minmax(0, 1fr) 220px;
+}
+
+@media (max-width: 1024px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .resound-dashboard-shell {
+    width: 100%;
+    padding-inline: 32px;
+  }
+
+  .resound-masthead {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 18px 12px;
+  }
+
+  .resound-masthead-controls {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    width: 100%;
+    gap: 12px 20px;
+  }
+
+  .resound-live-status {
+    grid-column: 1;
+  }
+
+  .resound-brand-switcher {
+    grid-column: 2;
+    min-width: 0;
+    justify-self: start;
+  }
+
+  .resound-brand-switcher button {
+    min-width: 0;
+    max-width: 280px;
+  }
+
+  .resound-brand-switcher strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .resound-brand-menu {
+    right: auto !important;
+    left: 0;
+    max-width: calc(100vw - 64px);
+  }
+
+  .resound-operator {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .resound-nav {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    gap: 0;
+    border-block: 1px solid #d9d3c7;
+  }
+
+  .resound-nav a {
+    padding: 10px 4px;
+    text-align: center;
+  }
+
+  .resound-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .resound-kpi-grid > * {
+    min-width: 0;
+  }
+
+  .resound-pane-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .resound-signal-row {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 20px 28px;
+  }
+
+  .resound-signal-author,
+  .resound-signal-body blockquote,
+  .resound-signal-routing {
+    overflow-wrap: anywhere;
+  }
+
+  .resound-signal-tags {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .resound-signal-routing {
+    grid-column: 1 / -1;
+    padding-top: 14px;
+    border-top: 1px solid #e3ddd1;
+    text-align: left;
+  }
+
+  .resound-signal-routing [data-testid^="reroute-popover-"] {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 64px);
+  }
+
+  .resound-dashboard-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .resound-source-status {
+    flex-wrap: wrap;
+    gap: 8px 20px;
+  }
+}
+
+@media (max-width: 800px) {
+  .resound-brand-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 22px;
+    padding-bottom: 28px;
+  }
+
+  .resound-brand-title {
+    overflow-wrap: anywhere;
+    font-size: clamp(52px, 10vw, 64px) !important;
+  }
+
+  .resound-period-controls {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .resound-period-controls button {
+    width: 100%;
+  }
+
+  .resound-pattern-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .resound-dashboard-shell {
+    width: 100%;
+    padding-inline: 16px;
+  }
+
+  .resound-masthead {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 18px 12px;
+    padding-top: 20px;
+    padding-bottom: 18px;
+  }
+
+  .resound-masthead-controls {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    width: 100%;
+    gap: 12px 16px;
+  }
+
+  .resound-live-status {
+    grid-column: 1;
+  }
+
+  .resound-brand-switcher {
+    grid-column: 2;
+    min-width: 0;
+    justify-self: end;
+  }
+
+  .resound-brand-switcher button {
+    min-width: 0;
+    max-width: 210px;
+  }
+
+  .resound-brand-switcher strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .resound-brand-menu {
+    right: 0 !important;
+    left: auto;
+    max-width: calc(100vw - 32px);
+  }
+
+  .resound-operator {
+    display: none;
+  }
+
+  .resound-nav {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    gap: 0;
+    border-block: 1px solid #d9d3c7;
+  }
+
+  .resound-nav a {
+    padding: 10px 2px;
+    text-align: center;
+  }
+
+  .resound-brand-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 22px;
+    padding-bottom: 28px;
+  }
+
+  .resound-brand-title {
+    font-size: clamp(48px, 15vw, 64px) !important;
+  }
+
+  .resound-period-controls {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .resound-period-controls button {
+    width: 100%;
+    padding-inline: 4px !important;
+  }
+
+  .resound-kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .resound-pane-header h2 {
+    font-size: 28px !important;
+    line-height: 1.05 !important;
+  }
+
+  .resound-pattern-summary {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px !important;
+    gap: 20px !important;
+  }
+
+  .resound-signal-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .resound-signal-routing {
+    grid-column: auto;
+  }
+
+  .resound-signal-routing [data-testid^="reroute-popover-"] {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 32px);
+  }
+
+  .resound-source-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 }

@@ -97,20 +97,20 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#f4f1ec", color: "#1a1815" }}>
-      <div className="max-w-[1320px] mx-auto px-14">
+      <div className="resound-dashboard-shell max-w-[1320px] mx-auto px-14">
         <Masthead />
 
         {/* Brand bar */}
-        <section className="flex items-end justify-between pb-10 border-t mt-1 pt-6" style={{ borderColor: "#1a1815" }}>
-          <div>
-            <h1 style={{ fontFamily: CG, fontSize: 64, fontWeight: 300, letterSpacing: "-0.025em", lineHeight: 0.9, color: "#1a1815" }}>
+        <section className="resound-brand-bar flex items-end justify-between pb-10 border-t mt-1 pt-6" style={{ borderColor: "#1a1815" }}>
+          <div className="min-w-0">
+            <h1 className="resound-brand-title" style={{ fontFamily: CG, fontSize: 64, fontWeight: 300, letterSpacing: "-0.025em", lineHeight: 0.9, color: "#1a1815" }}>
               {activeBrand.name}<em style={{ fontStyle: "italic", color: "#4a4640" }}>.</em>
             </h1>
             <div className="mt-4" style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", color: "#8b857a", textTransform: "uppercase" }}>
               Brand health · {period.toLowerCase()} window
             </div>
           </div>
-          <div className="flex">
+          <div className="resound-period-controls flex">
             {PERIODS.map((p, i) => (
               <button key={p} data-testid={`period-${p}`} onClick={() => setPeriod(p)}
                 style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", padding: "6px 12px", cursor: "pointer", border: "1px solid", borderRight: i < PERIODS.length - 1 ? "none" : "1px solid", borderColor: period === p ? "#1a1815" : "#d9d3c7", background: period === p ? "#1a1815" : "transparent", color: period === p ? "#f4f1ec" : "#8b857a", transition: "all 0.15s" }}>
@@ -121,7 +121,7 @@ export default function Dashboard() {
         </section>
 
         {/* KPI Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1, background: "#d9d3c7" }}>
+        <div className="resound-kpi-grid" style={{ background: "#d9d3c7" }}>
 
           {/* Net Sentiment */}
           <motion.div whileHover={{ backgroundColor: s.hoverBg }} onClick={() => setActivePane("sentiment")} data-testid="kpi-sentiment"
@@ -226,7 +226,7 @@ export default function Dashboard() {
 
         {/* Signal Pane */}
         <section className="py-12 pb-6">
-          <div className="flex justify-between items-baseline mb-4">
+          <div className="resound-pane-header flex justify-between items-baseline mb-4">
             <h2 style={{ fontFamily: CG, fontSize: 30, fontWeight: 300, letterSpacing: "-0.015em", lineHeight: 1, color: "#1a1815" }}>
               {paneTitles[activePane].title}
             </h2>
@@ -236,8 +236,8 @@ export default function Dashboard() {
           </div>
 
           {activePane === "emerging" && topPattern && (
-            <motion.div key={topPattern.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              style={{ padding: 32, background: "#ebe7df", marginBottom: 32, display: "grid", gridTemplateColumns: "1fr 220px", gap: 32, alignItems: "center" }}>
+            <motion.div className="resound-pattern-summary" key={topPattern.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              style={{ padding: 32, background: "#ebe7df", marginBottom: 32, gap: 32, alignItems: "center" }}>
               <div>
                 <div style={{ fontFamily: CG, fontSize: 34, fontWeight: 300, lineHeight: 1.1, letterSpacing: "-0.015em", marginBottom: 12, color: "#1a1815" }}>{topPattern.name}</div>
                 <div style={{ fontFamily: CG, fontStyle: "italic", color: "#4a4640", fontSize: 17, lineHeight: 1.5, marginBottom: 16 }}>{topPattern.blurb}</div>
@@ -279,8 +279,8 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <footer className="mt-8 py-6 pb-12 flex justify-between items-baseline" style={{ borderTop: "1px solid #1a1815", fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#8b857a" }}>
-          <div className="flex gap-6 items-center">
+        <footer className="resound-dashboard-footer mt-8 py-6 pb-12 flex justify-between items-baseline" style={{ borderTop: "1px solid #1a1815", fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#8b857a" }}>
+          <div className="resound-source-status flex gap-6 items-center">
             {activeBrand.sourcesActive.map(src => (
               <span key={src}>
                 <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "#4a6b3f", marginRight: 6, verticalAlign: "middle" }} />

@@ -1,9 +1,9 @@
 """Per-stage LLM model configuration with brand overrides.
 
-Brand overrides merge field-by-field over global defaults; list fields
-(``fallbacks``) replace whole — they do **not** concat. Missing fields
-inherit from the level below (brand → global ``config/models.yaml`` →
-built-in demo defaults).
+Brand overrides and explicitly selected profiles merge field-by-field over
+global defaults; list fields (``fallbacks``) replace whole — they do **not**
+concat. Missing fields inherit from the level below. Profiles are applied last
+so an explicit run profile can reliably bypass brand overrides.
 
 See ``docs/design_decisions.md`` decisions #15-17 for the locked rationale.
 """
@@ -17,6 +17,16 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from resound.gateway.base import LLMGatewayConfigError
+
+DEMO_POPULATION_MODEL_PROFILE = "demo_population"
+"""Explicit model profile used by the bounded demo-population workflow."""
+
+DEMO_POPULATION_RELIABLE_MODEL_PROFILE = "demo_population_reliable"
+"""Demo profile promoting Sonnet 5 after semantic benchmark review."""
+
+DEMO_POPULATION_MODEL_PROFILES = frozenset(
+    {DEMO_POPULATION_MODEL_PROFILE, DEMO_POPULATION_RELIABLE_MODEL_PROFILE}
+)
 
 
 class StageConfig(BaseModel):
@@ -152,14 +162,18 @@ def load_models_config(
     brand_slug: str | None = None,
     config_dir: Path | None = None,
     brands_dir: Path | None = None,
+    profile: str | None = None,
 ) -> ModelsConfig:
-    """Load global models.yaml, optionally merge a brand override on top.
+    """Load models.yaml, optionally merging a brand override and named profile.
 
-    Layering (top wins): ``brands/<slug>/models.yaml`` → ``config/models.yaml``
-    → built-in demo defaults.
+    Layering (top wins): selected profile → ``brands/<slug>/models.yaml`` →
+    global defaults → built-in defaults. Applying the profile last is
+    intentional: run-scoped profiles must not inherit a conflicting brand model.
 
     Args:
         brand_slug: If given, merge ``brands/<slug>/models.yaml`` on top.
+        profile: If given, merge that named ``profiles`` entry on top of global
+            and brand configuration.
         config_dir: Directory holding the global ``models.yaml``. Defaults to
             ``./config``.
         brands_dir: Directory holding brand subdirectories. Defaults to
@@ -178,6 +192,23 @@ def load_models_config(
     if brand_slug is not None:
         brand_raw = _load_yaml(brands_dir / brand_slug / "models.yaml")
         merged = _merge_stages(merged, _extract_stages(brand_raw))
+
+    if profile is not None:
+        profiles = global_raw.get("profiles", {})
+        if not isinstance(profiles, dict):
+            raise LLMGatewayConfigError("models.yaml 'profiles' must be a mapping")
+        profile_raw = profiles.get(profile)
+        if profile_raw is None:
+            known = ", ".join(sorted(profiles)) or "(none)"
+            raise LLMGatewayConfigError(
+                f"Unknown model profile {profile!r}. Known profiles: {known}"
+            )
+        if not isinstance(profile_raw, dict):
+            raise LLMGatewayConfigError(
+                f"Model profile {profile!r} must be a mapping, "
+                f"got {type(profile_raw).__name__}"
+            )
+        merged = _merge_stages(merged, _extract_stages(profile_raw))
 
     try:
         stages = {name: StageConfig(**cfg) for name, cfg in merged.items()}

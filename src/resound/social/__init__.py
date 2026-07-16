@@ -53,6 +53,7 @@ class ListeningProfile:
     language: str = "en"
     setup_notes: str | None = None
     confidence: float | None = None
+    source_config: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class ApifyQueryConfig:
     cadence_minutes: int
     locale: str | None
     language: str
+    source_settings: dict[str, Any] = field(default_factory=dict)
 
 
 CONTENT_KEYS_BY_SOURCE: dict[str, tuple[str, ...]] = {
@@ -139,7 +141,7 @@ AUTHOR_KEYS = (
 
 
 def build_apify_query_configs(profile: ListeningProfile) -> list[ApifyQueryConfig]:
-    query_terms = sorted(
+    generic_query_terms = sorted(
         {
             term.strip()
             for term in [
@@ -153,18 +155,37 @@ def build_apify_query_configs(profile: ListeningProfile) -> list[ApifyQueryConfi
     )
     excluded_terms = sorted({term.strip() for term in profile.excluded_terms if term.strip()})
     enabled_sources = sorted(set(profile.enabled_sources).intersection(V1_PUBLIC_SOURCE_TYPES))
-    return [
-        ApifyQueryConfig(
-            source_type=source_type,
-            actor_id=APIFY_ACTORS[source_type],
-            query_terms=query_terms,
-            excluded_terms=excluded_terms,
-            cadence_minutes=profile.cadence_minutes,
-            locale=profile.locale,
-            language=profile.language,
+    configs: list[ApifyQueryConfig] = []
+    for source_type in enabled_sources:
+        source_settings = profile.source_config.get(source_type, {})
+        configured_terms = source_settings.get("search_terms", [])
+        if isinstance(configured_terms, str):
+            configured_terms = [configured_terms]
+        elif not isinstance(configured_terms, list):
+            configured_terms = []
+        query_terms = sorted(
+            {
+                *generic_query_terms,
+                *(
+                    term.strip()
+                    for term in configured_terms
+                    if isinstance(term, str) and term.strip()
+                ),
+            }
         )
-        for source_type in enabled_sources
-    ]
+        configs.append(
+            ApifyQueryConfig(
+                source_type=source_type,
+                actor_id=APIFY_ACTORS[source_type],
+                query_terms=query_terms,
+                excluded_terms=excluded_terms,
+                cadence_minutes=profile.cadence_minutes,
+                locale=profile.locale,
+                language=profile.language,
+                source_settings=dict(source_settings),
+            )
+        )
+    return configs
 
 
 def normalize_apify_item(

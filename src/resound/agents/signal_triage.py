@@ -11,8 +11,12 @@ from typing import Any
 
 from resound.agents.runtime import AgentRuntime
 from resound.agents.team_directory import TeamDirectory, build_team_directory
-from resound.classifiers.openrouter import parse_classification_response
+from resound.classifiers.openrouter import (
+    parse_classification_response,
+    parse_classification_response_strict,
+)
 from resound.gateway import (
+    DEMO_POPULATION_MODEL_PROFILES,
     JSON_MODE,
     LLMGateway,
     LLMGatewayAuthError,
@@ -40,6 +44,7 @@ class SignalTriageRequest:
     brand_context: str
     routing_config: dict[str, Any]
     people_config: dict[str, Any]
+    model_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,9 +71,10 @@ class SignalTriageAgent:
     ):
         self.memory = memory
         self.gateway = gateway
+        self._resolved_gateway: tuple[tuple[str, str | None], LLMGateway] | None = None
 
     def run(self, request: SignalTriageRequest) -> SignalTriageResult:
-        gateway = self.gateway or build_gateway(request.brand_slug)
+        gateway = self.gateway or self._gateway_for(request)
         session_id = self._create_session(request)
         runtime = AgentRuntime.linear(
             [
@@ -105,6 +111,15 @@ class SignalTriageAgent:
             agent_session_id=session_id,
         )
 
+    def _gateway_for(self, request: SignalTriageRequest) -> LLMGateway:
+        key = (request.brand_slug, request.model_profile)
+        if self._resolved_gateway is None or self._resolved_gateway[0] != key:
+            self._resolved_gateway = (
+                key,
+                build_gateway(request.brand_slug, profile=request.model_profile),
+            )
+        return self._resolved_gateway[1]
+
     def _create_session(self, request: SignalTriageRequest) -> int | None:
         if request.tenant is None:
             return None
@@ -118,8 +133,19 @@ class SignalTriageAgent:
     def _classify(self, gateway: LLMGateway, state: dict[str, Any]) -> dict[str, Any]:
         request: SignalTriageRequest = state["request"]
         prompt = build_classify_prompt(request.raw_signal, request.brand_context)
-        response = gateway.complete(stage="classify", prompt=prompt, response_schema=JSON_MODE)
-        classification = parse_classification_response(response.content)
+        if request.model_profile not in DEMO_POPULATION_MODEL_PROFILES:
+            response = gateway.complete(
+                stage="classify", prompt=prompt, response_schema=JSON_MODE
+            )
+            classification = parse_classification_response(response.content)
+        else:
+            response = gateway.complete_validated(
+                stage="classify",
+                prompt=prompt,
+                response_schema=JSON_MODE,
+                validator=parse_classification_response_strict,
+            )
+            classification = parse_classification_response_strict(response.content)
         _record_agent_step(
             self.memory,
             state.get("session_id"),

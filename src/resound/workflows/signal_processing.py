@@ -12,7 +12,14 @@ from sqlalchemy import select
 from resound.agents.signal_triage import SignalTriageAgent, SignalTriageRequest
 from resound.classifiers import make_fallback_classification
 from resound.core.classifier import Classifier
-from resound.gateway import LLMGatewayAuthError, LLMGatewayConfigError, LLMGatewayError
+from resound.gateway import (
+    DEMO_POPULATION_MODEL_PROFILES,
+    LLMGatewayAuthError,
+    LLMGatewayConfigError,
+    LLMGatewayError,
+    LLMGatewayExhaustedError,
+    LLMGatewayParseError,
+)
 from resound.memory import ClassificationRow, RouteRow, SignalRow, SqlMemory
 from resound.models import RawSignal
 from resound.prompts.classify import build_classify_prompt
@@ -34,6 +41,7 @@ class SignalProcessingRequest:
     brand_id: int | None = None
     workflow_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    model_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,21 +103,23 @@ def process_signal(
         brand_id=request.brand_id,
     )
     if classifier is not None:
-        classification, route = _classify_and_route_with_legacy_classifier(
-            request,
-            memory,
-            signal_id,
-            classifier,
-            router,
-        )
+        try:
+            classification, route = _classify_and_route_with_legacy_classifier(
+                request, memory, signal_id, classifier, router
+            )
+        except (LLMGatewayConfigError, LLMGatewayAuthError):
+            raise
+        except LLMGatewayError as exc:
+            return _failed_processing_result(dedupe_key, signal_id, exc)
     else:
-        classification, route = _classify_and_route_with_agent(
-            request,
-            memory,
-            signal_id,
-            triage_agent,
-            router,
-        )
+        try:
+            classification, route = _classify_and_route_with_agent(
+                request, memory, signal_id, triage_agent, router
+            )
+        except (LLMGatewayConfigError, LLMGatewayAuthError):
+            raise
+        except LLMGatewayError as exc:
+            return _failed_processing_result(dedupe_key, signal_id, exc)
 
     classification_id = memory.record_classification(signal_id, classification)
     route_id = memory.record_route(signal_id, classification_id, route)
@@ -122,6 +132,20 @@ def process_signal(
         signal_id=signal_id,
         classification_id=classification_id,
         route_id=route_id,
+    )
+
+
+def _failed_processing_result(
+    dedupe_key: str,
+    signal_id: int,
+    error: LLMGatewayError,
+) -> SignalProcessingResult:
+    return SignalProcessingResult(
+        status="failed",
+        dedupe_key=dedupe_key,
+        signal_id=signal_id,
+        error_class=type(error).__name__,
+        error_message=str(error),
     )
 
 
@@ -161,6 +185,11 @@ def _classify_and_route_with_legacy_classifier(
             organization_id=request.organization_id,
             brand_id=request.brand_id,
         )
+        if (
+            request.model_profile in DEMO_POPULATION_MODEL_PROFILES
+            and _is_classification_validation_failure(exc)
+        ):
+            raise
         classification = make_fallback_classification(f"{type(exc).__name__}: {exc}")
     except Exception as exc:
         classification = make_fallback_classification(f"unexpected: {type(exc).__name__}")
@@ -206,6 +235,7 @@ def _classify_and_route_with_agent(
                 brand_context=request.brand_context,
                 routing_config=request.routing_config,
                 people_config=request.people_config,
+                model_profile=request.model_profile,
             )
         )
         memory.record_llm_call(
@@ -258,10 +288,24 @@ def _classify_and_route_with_agent(
             organization_id=request.organization_id,
             brand_id=request.brand_id,
         )
+        if (
+            request.model_profile in DEMO_POPULATION_MODEL_PROFILES
+            and _is_classification_validation_failure(exc)
+        ):
+            raise
         classification = make_fallback_classification(f"{type(exc).__name__}: {exc}")
     except Exception as exc:
         classification = make_fallback_classification(f"unexpected: {type(exc).__name__}")
     return classification, router.route(request.raw_signal, classification)
+
+
+def _is_classification_validation_failure(error: LLMGatewayError) -> bool:
+    if isinstance(error, LLMGatewayParseError):
+        return True
+    return isinstance(error, LLMGatewayExhaustedError) and isinstance(
+        error.last_error,
+        LLMGatewayParseError,
+    )
 
 
 def _tenant_from_request(request: SignalProcessingRequest) -> TenantContext | None:

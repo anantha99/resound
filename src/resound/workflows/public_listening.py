@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -25,7 +26,18 @@ from resound.workflows.temporal_compat import activity, workflow
 class PublicListeningClient(Protocol):
     def run_actor(self, actor_id: str, actor_input: dict): ...
 
+    def wait_for_run(
+        self,
+        run: dict,
+        *,
+        progress_callback: Callable[[], None] | None = None,
+    ) -> dict: ...
+
     def fetch_dataset_items(self, dataset_id: str) -> list[dict]: ...
+
+
+class PublicListeningProgressError(RuntimeError):
+    """Raised when a runtime progress hook cannot confirm continued ownership."""
 
 
 @dataclass(frozen=True)
@@ -39,6 +51,7 @@ class PublicListeningSyncRequest:
     workflow_job_id: int | None = None
     enabled_sources: list[SourceType] | None = None
     max_items_per_source: int = 100
+    model_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,9 +70,12 @@ def sync_public_listening(
     apify_client: PublicListeningClient | None = None,
     classifier: Classifier | None = None,
     triage_agent: SignalTriageAgent | None = None,
+    progress_callback: Callable[[], None] | None = None,
 ) -> PublicListeningSyncResult:
     memory = memory or SqlMemory()
     apify_client = apify_client or ApifyClient()
+    if classifier is None and triage_agent is None:
+        triage_agent = SignalTriageAgent(memory=memory)
     profile = memory.get_listening_profile(
         organization_id=request.tenant.organization_id,
         brand_id=request.brand_id,
@@ -84,16 +100,28 @@ def sync_public_listening(
         )
 
     for config in configs:
+        _report_progress(progress_callback)
         try:
             run = apify_client.run_actor(
                 config.actor_id,
                 apify_actor_input(config, max_items=max_items_per_source),
             )
+            run = apify_client.wait_for_run(
+                run,
+                progress_callback=(
+                    (lambda: _report_progress(progress_callback))
+                    if progress_callback is not None
+                    else None
+                ),
+            )
             run_id = str(run.get("id") or "") or None
             dataset_id = run.get("defaultDatasetId") or run.get("default_dataset_id")
-            items = apify_client.fetch_dataset_items(str(dataset_id)) if dataset_id else []
+            if not dataset_id:
+                raise RuntimeError(f"Apify run {run_id or 'unknown'} succeeded without a dataset")
+            items = apify_client.fetch_dataset_items(str(dataset_id))
             items = items[:max_items_per_source]
             for item in items:
+                _report_progress(progress_callback)
                 try:
                     raw = normalize_apify_item(
                         source_type=config.source_type,
@@ -113,6 +141,7 @@ def sync_public_listening(
                         people_config=request.people_config,
                         organization_id=request.tenant.organization_id,
                         brand_id=request.brand_id,
+                        model_profile=request.model_profile,
                     ),
                     memory=memory,
                     classifier=classifier,
@@ -120,8 +149,14 @@ def sync_public_listening(
                 )
                 if result.status == "duplicate":
                     skipped_count += 1
+                elif result.status == "failed":
+                    raise RuntimeError(
+                        "signal processing failed: "
+                        f"{result.error_class or 'unknown'}: {result.error_message or ''}"
+                    )
                 else:
                     processed_count += 1
+                _report_progress(progress_callback)
             memory.record_source_health(
                 organization_id=request.tenant.organization_id,
                 brand_id=request.brand_id,
@@ -133,7 +168,7 @@ def sync_public_listening(
                 checked_at=checked_at,
             )
             synced_sources.append(config.source_type)
-        except (LLMGatewayConfigError, LLMGatewayAuthError):
+        except (LLMGatewayConfigError, LLMGatewayAuthError, PublicListeningProgressError):
             raise
         except Exception as exc:
             failed_sources[config.source_type] = str(exc)
@@ -166,6 +201,17 @@ def sync_public_listening(
         skipped_count=skipped_count,
         failed_sources=failed_sources,
     )
+
+
+def _report_progress(callback: Callable[[], None] | None) -> None:
+    if callback is None:
+        return
+    try:
+        callback()
+    except Exception as exc:
+        raise PublicListeningProgressError(
+            f"public listening progress hook failed: {exc}"
+        ) from exc
 
 
 @activity.defn

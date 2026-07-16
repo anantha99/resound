@@ -19,7 +19,8 @@ this surface. In short:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +44,7 @@ class LLMResponse(BaseModel):
     model_used: str  # the model that actually returned (may be a fallback)
     tokens_in: int
     tokens_out: int
-    cost_usd: Optional[float] = None  # None when OpenRouter omits usage.cost
+    cost_usd: float | None = None  # None when OpenRouter omits usage.cost
     latency_ms: float
     raw_response: dict[str, Any] = Field(default_factory=dict)
     was_fallback: bool = False
@@ -76,6 +77,24 @@ class LLMGateway(ABC):
         :class:`LLMGatewayParseError` when JSON extraction ultimately fails.
         """
 
+    def complete_validated(
+        self,
+        stage: str,
+        prompt: str,
+        *,
+        response_schema: dict | None = None,
+        validator: Callable[[str], object],
+    ) -> LLMResponse:
+        """Complete and validate content before considering the call successful.
+
+        The default keeps custom/test gateways compatible. Gateways with model
+        fallback support override this so validation failure advances to the
+        next configured model rather than escaping after model selection.
+        """
+        response = self.complete(stage, prompt, response_schema)
+        validator(response.content)
+        return response
+
 
 class LLMGatewayError(Exception):
     """Base for all gateway errors. Pipeline catches this broadly to skip
@@ -95,9 +114,25 @@ class LLMGatewayAuthError(LLMGatewayError):
 class LLMGatewayExhaustedError(LLMGatewayError):
     """All retries and fallback models were exhausted without success."""
 
-    def __init__(self, message: str, attempts: int) -> None:
+    def __init__(
+        self,
+        message: str,
+        attempts: int,
+        last_error: Exception | None = None,
+        model_used: str | None = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float | None = None,
+        latency_ms: float = 0.0,
+    ) -> None:
         super().__init__(message)
         self.attempts = attempts
+        self.last_error = last_error
+        self.model_used = model_used
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.cost_usd = cost_usd
+        self.latency_ms = latency_ms
 
 
 class LLMGatewayTimeoutError(LLMGatewayError):
@@ -107,6 +142,21 @@ class LLMGatewayTimeoutError(LLMGatewayError):
 class LLMGatewayParseError(LLMGatewayError):
     """JSON extraction failed even after the prompt-suffix fallback."""
 
-    def __init__(self, message: str, raw_text: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        raw_text: str,
+        *,
+        model_used: str | None = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost_usd: float | None = None,
+        latency_ms: float = 0.0,
+    ) -> None:
         super().__init__(message)
         self.raw_text = raw_text
+        self.model_used = model_used
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.cost_usd = cost_usd
+        self.latency_ms = latency_ms

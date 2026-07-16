@@ -17,6 +17,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _organization: string | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -27,6 +28,14 @@ let _authTokenGetter: AuthTokenGetter | null = null;
  */
 export function setBaseUrl(url: string | null): void {
   _baseUrl = url ? url.replace(/\/+$/, "") : null;
+}
+
+/**
+ * Set the tenant organization sent with API requests. Pass `null` or an empty
+ * string to omit the header for local backends that do not enforce tenants.
+ */
+export function setOrganization(organization: string | null): void {
+  _organization = organization?.trim() || null;
 }
 
 /**
@@ -347,6 +356,10 @@ export async function customFetch<T = unknown>(
 
   if (responseType === "json" && !headers.has("accept")) {
     headers.set("accept", DEFAULT_JSON_ACCEPT);
+  }
+
+  if (_organization && !headers.has("x-resound-organization")) {
+    headers.set("x-resound-organization", _organization);
   }
 
   // Attach bearer token when an auth getter is configured and no

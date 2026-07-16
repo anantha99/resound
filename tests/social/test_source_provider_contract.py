@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+from resound.config import load_brand_config
 from resound.social import (
     V1_PUBLIC_SOURCE_TYPES,
     ListeningProfile,
@@ -83,6 +85,49 @@ def test_reddit_apify_input_uses_actor_schema_and_item_cap():
     assert payload["searchPosts"] is True
     assert payload["skipComments"] is True
     assert payload["maxItems"] == 7
+
+
+def test_scalar_reddit_search_term_is_one_query_not_character_queries():
+    profile = ListeningProfile(
+        brand_slug="acme",
+        enabled_sources=["reddit"],
+        source_config={"reddit": {"search_terms": "Acme outage"}},
+    )
+
+    payload = apify_actor_input(build_apify_query_configs(profile)[0], max_items=7)
+
+    assert payload["searches"] == ["Acme outage"]
+
+
+@pytest.mark.parametrize(
+    ("slug", "expected_subreddits", "expected_searches"),
+    [
+        ("liquiddeath", ["liquiddeath"], {"liquid death", "liquiddeath"}),
+        (
+            "notion",
+            ["Notion", "productivity", "startups"],
+            {"Notion", "Notion AI", "Notion outage"},
+        ),
+    ],
+)
+def test_brand_reddit_apify_input_preserves_source_targeting(
+    slug,
+    expected_subreddits,
+    expected_searches,
+):
+    cfg = load_brand_config(slug, brands_dir=Path("brands"))
+    reddit = cfg.sources["reddit"]
+    profile = ListeningProfile(
+        brand_slug=slug,
+        brand_names=[cfg.name],
+        enabled_sources=["reddit"],
+        source_config={"reddit": reddit},
+    )
+
+    payload = apify_actor_input(build_apify_query_configs(profile)[0], max_items=10)
+
+    assert payload["subreddits"] == expected_subreddits
+    assert expected_searches.issubset(payload["searches"])
 
 
 def test_non_reddit_apify_inputs_use_channel_actor_schemas():

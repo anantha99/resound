@@ -24,7 +24,11 @@ from openai import (
 )
 
 import resound.gateway as gateway_pkg
+from resound.classifiers.openrouter import parse_classification_response_strict
 from resound.gateway import (
+    DEMO_POPULATION_MODEL_PROFILE,
+    DEMO_POPULATION_MODEL_PROFILES,
+    DEMO_POPULATION_RELIABLE_MODEL_PROFILE,
     LLMGateway,
     LLMGatewayAuthError,
     LLMGatewayConfigError,
@@ -283,6 +287,39 @@ class TestModelsConfig:
         )
         assert cfg.stages["classify"].fallbacks == ["b/only"]
 
+    def test_profile_applies_after_brand_override(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "models.yaml").write_text(
+            "defaults:\n  classify:\n    model: g/global\n    temperature: 0.2\n"
+            "profiles:\n  demo:\n    classify:\n      model: p/profile\n"
+            "      fallbacks: [p/fallback]\n"
+        )
+        brands_dir = tmp_path / "brands"
+        (brands_dir / "acme").mkdir(parents=True)
+        (brands_dir / "acme" / "models.yaml").write_text(
+            "classify:\n  model: b/brand\n  fallbacks: [b/fallback]\n"
+        )
+
+        cfg = load_models_config(
+            brand_slug="acme",
+            profile="demo",
+            config_dir=config_dir,
+            brands_dir=brands_dir,
+        )
+
+        assert cfg.stages["classify"].model == "p/profile"
+        assert cfg.stages["classify"].fallbacks == ["p/fallback"]
+        assert cfg.stages["classify"].temperature == 0.2
+
+    def test_unknown_profile_raises_config_error(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "models.yaml").write_text("profiles:\n  demo: {}\n")
+
+        with pytest.raises(LLMGatewayConfigError, match="Unknown model profile"):
+            load_models_config(profile="missing", config_dir=config_dir)
+
     def test_get_stage_config_unknown_raises_config_error(self, tmp_path):
         cfg = load_models_config(
             config_dir=tmp_path / "missing", brands_dir=tmp_path / "missing"
@@ -320,6 +357,89 @@ class TestModelsConfig:
             assert sc.timeout_s > 0
             assert sc.max_tokens > 0
 
+    @pytest.mark.parametrize("brand_slug", ["notion", "liquiddeath"])
+    def test_demo_population_profile_has_approved_models(self, brand_slug):
+        cfg = load_models_config(
+            brand_slug=brand_slug,
+            profile=DEMO_POPULATION_MODEL_PROFILE,
+        )
+
+        expected = {
+            "filter": (
+                "google/gemini-3.1-flash-lite",
+                ["openai/gpt-5.4-nano", "anthropic/claude-haiku-4-5"],
+            ),
+            "classify": (
+                "openai/gpt-5-mini",
+                ["anthropic/claude-sonnet-5", "google/gemini-3.1-flash-lite"],
+            ),
+            "routing_tiebreaker": (
+                "google/gemini-3.1-flash-lite",
+                ["openai/gpt-5.4-nano"],
+            ),
+            "route": (
+                "google/gemini-3.1-flash-lite",
+                ["openai/gpt-5.4-nano"],
+            ),
+            "memory_query": (
+                "google/gemini-3.1-flash-lite",
+                ["openai/gpt-5.4-nano"],
+            ),
+        }
+        assert {
+            stage: (cfg.stages[stage].model, cfg.stages[stage].fallbacks)
+            for stage in expected
+        } == expected
+
+    def test_demo_profile_is_opt_in_and_bypasses_notion_qwen(self):
+        normal = load_models_config(brand_slug="notion")
+        demo = load_models_config(
+            brand_slug="notion",
+            profile=DEMO_POPULATION_MODEL_PROFILE,
+        )
+
+        assert normal.stages["classify"].model == "qwen/qwen3-235b-a22b-2507"
+        assert demo.stages["classify"].model == "openai/gpt-5-mini"
+        assert all(
+            "qwen" not in model and "opus" not in model
+            for stage in demo.stages.values()
+            for model in [stage.model, *stage.fallbacks]
+        )
+
+    def test_demo_profile_stage_configs_are_identical_for_both_brands(self):
+        notion = load_models_config(
+            brand_slug="notion", profile=DEMO_POPULATION_MODEL_PROFILE
+        )
+        liquiddeath = load_models_config(
+            brand_slug="liquiddeath", profile=DEMO_POPULATION_MODEL_PROFILE
+        )
+
+        assert notion == liquiddeath
+
+    def test_reliable_demo_profile_promotes_sonnet_and_preserves_fast_stages(self):
+        assert DEMO_POPULATION_MODEL_PROFILES == {
+            DEMO_POPULATION_MODEL_PROFILE,
+            DEMO_POPULATION_RELIABLE_MODEL_PROFILE,
+        }
+        default = load_models_config(
+            brand_slug="notion", profile=DEMO_POPULATION_MODEL_PROFILE
+        )
+        reliable_notion = load_models_config(
+            brand_slug="notion", profile=DEMO_POPULATION_RELIABLE_MODEL_PROFILE
+        )
+        reliable_liquiddeath = load_models_config(
+            brand_slug="liquiddeath", profile=DEMO_POPULATION_RELIABLE_MODEL_PROFILE
+        )
+
+        assert reliable_notion == reliable_liquiddeath
+        assert reliable_notion.stages["classify"].model == "anthropic/claude-sonnet-5"
+        assert reliable_notion.stages["classify"].fallbacks == [
+            "openai/gpt-5-mini",
+            "google/gemini-3.1-flash-lite",
+        ]
+        for stage in ("filter", "routing_tiebreaker", "route", "memory_query"):
+            assert reliable_notion.stages[stage] == default.stages[stage]
+
 
 # =============================================================================
 # 3. openrouter.py — retry / fallback / JSON mode / cost / timeout (1.3, 1.4)
@@ -343,7 +463,73 @@ class TestOpenRouterGateway:
         assert out.tokens_out == 20
         assert out.cost_usd == 0.0042
         assert out.latency_ms >= 0
-        assert len(client.calls) == 1
+
+    def test_classification_validation_uses_sonnet_reliability_fallback(self):
+        cfg = load_models_config(
+            brand_slug="notion",
+            profile=DEMO_POPULATION_MODEL_PROFILE,
+        )
+        valid = (
+            '{"is_about_brand": true, "area": "product", '
+            '"sentiment": "negative", "severity": "medium", '
+            '"action_class": "sprint", "summary": "AI pricing concern", '
+            '"confidence": 0.9}'
+        )
+        client = FakeClient([
+            _ok_response("not JSON", cost=0.10),
+            _ok_response(valid, cost=0.20),
+        ])
+        gw = OpenRouterGateway(config=cfg, client=client)
+
+        out = gw.complete_validated(
+            "classify",
+            "classify this",
+            response_schema={},
+            validator=parse_classification_response_strict,
+        )
+
+        assert [call["model"] for call in client.calls] == [
+            "openai/gpt-5-mini",
+            "anthropic/claude-sonnet-5",
+        ]
+        assert out.model_used == "anthropic/claude-sonnet-5"
+        assert out.was_fallback is True
+        assert out.attempt_count == 2
+        assert out.cost_usd == pytest.approx(0.30)
+        assert out.tokens_in == 20
+        assert out.tokens_out == 40
+
+    def test_all_schema_invalid_classifiers_exhaust_in_profile_order(self):
+        cfg = load_models_config(
+            brand_slug="liquiddeath",
+            profile=DEMO_POPULATION_MODEL_PROFILE,
+        )
+        client = FakeClient(
+            [
+                _ok_response("not JSON", cost=0.10),
+                _ok_response("{}", cost=0.20),
+                _ok_response("{bad JSON}", cost=0.30),
+            ]
+        )
+        gw = OpenRouterGateway(config=cfg, client=client)
+
+        with pytest.raises(LLMGatewayExhaustedError) as exc_info:
+            gw.complete_validated(
+                "classify",
+                "classify this",
+                response_schema={},
+                validator=parse_classification_response_strict,
+            )
+
+        assert [call["model"] for call in client.calls] == [
+            "openai/gpt-5-mini",
+            "anthropic/claude-sonnet-5",
+            "google/gemini-3.1-flash-lite",
+        ]
+        assert exc_info.value.attempts == 3
+        assert exc_info.value.cost_usd == pytest.approx(0.60)
+        assert exc_info.value.tokens_in == 30
+        assert exc_info.value.tokens_out == 60
 
     # ---- retry / backoff ------------------------------------------------
 
@@ -598,6 +784,9 @@ class TestExports:
     EXPECTED = {
         "LLMGateway", "LLMResponse", "OpenRouterGateway",
         "load_models_config", "StageConfig", "ModelsConfig",
+        "DEMO_POPULATION_MODEL_PROFILE",
+        "DEMO_POPULATION_RELIABLE_MODEL_PROFILE",
+        "DEMO_POPULATION_MODEL_PROFILES",
         "build_gateway",
         "JSON_MODE",
         "LLMGatewayError", "LLMGatewayConfigError", "LLMGatewayAuthError",
@@ -620,6 +809,17 @@ class TestExports:
         assert gw._no_json_mode_models == set()
         # Config was populated from config/models.yaml.
         assert "classify" in gw.config.stages
+
+    def test_build_gateway_accepts_demo_population_profile(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+
+        gw = build_gateway("notion", profile=DEMO_POPULATION_MODEL_PROFILE)
+
+        assert gw.config.stages["classify"].model == "openai/gpt-5-mini"
+        assert gw.config.stages["classify"].fallbacks == [
+            "anthropic/claude-sonnet-5",
+            "google/gemini-3.1-flash-lite",
+        ]
 
     def test_module_has_docstring(self):
         assert gateway_pkg.__doc__ and "Gateway" in gateway_pkg.__doc__

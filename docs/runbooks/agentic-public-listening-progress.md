@@ -1,6 +1,6 @@
 # Agentic Public Listening Progress
 
-Last updated: 2026-07-09
+Last updated: 2026-07-16
 
 This is the current handoff for the Apify-backed, LangGraph-agentic public-listening backend.
 
@@ -52,6 +52,16 @@ For low-confidence classification or invalid/low-confidence route output, the ro
 
 ## Current Local Commands
 
+The approved Railway procedure for populating exactly Liquid Death and Notion
+now lives in [`production-backend.md`](production-backend.md#railway-liquid-death-and-notion-demo-population).
+It is the source of truth for environment-presence checks, migration order,
+strict non-mutating dry-run, one-item smoke, ten-item fill, exact demo models,
+abort criteria, log capture, tenant-scoped API verification, and frontend
+network verification. Production commands run remotely through a deployed-image
+Railway job or `railway ssh`; `railway run` is only a documented local fallback
+and cannot use Railway-only private networking. Do not substitute the older
+single-brand commands below for that production procedure.
+
 Run a bounded agentic sync against a fresh/local SQLite database:
 
 ```bash
@@ -73,13 +83,13 @@ RESOUND_DATABASE_URL=sqlite:///./data/resound-agentic-demo.db RESOUND_CORS_ORIGI
 Start the frontend from `Resound-UI/Builtiful-Interface/`:
 
 ```bash
-PORT=5004 BASE_PATH=/ VITE_API_BASE_URL=http://127.0.0.1:8004 pnpm --filter @workspace/resound run dev
+PORT=5004 BASE_PATH=/ VITE_API_BASE_URL=http://127.0.0.1:8004 VITE_RESOUND_ORGANIZATION=demo pnpm --filter @workspace/resound run dev
 ```
 
 On Windows `cmd.exe`, use:
 
 ```cmd
-set PORT=5004&& set BASE_PATH=/&& set VITE_API_BASE_URL=http://127.0.0.1:8004&& pnpm --filter @workspace/resound run dev
+set PORT=5004&& set BASE_PATH=/&& set VITE_API_BASE_URL=http://127.0.0.1:8004&& set VITE_RESOUND_ORGANIZATION=demo&& pnpm --filter @workspace/resound run dev
 ```
 
 ## Proven Live Results
@@ -165,6 +175,8 @@ Additional focused tests cover:
 - Apify auth uses bearer headers, not token query params.
 - Fresh SQLite demo DBs work without the stale `data/resound.db` schema issue.
 - FastAPI read endpoints populate the current React UI from agentic DB rows.
+- The React API wrapper can send `X-Resound-Organization` from the build-time
+  `VITE_RESOUND_ORGANIZATION` setting while remaining header-free when unset.
 - Agentic classification/routing stores the same domain models the UI already expects.
 - Agent sessions and steps are persisted for traceability.
 - LLM cost/latency/failure audit still flows through `llm_calls`.
@@ -181,13 +193,19 @@ Additional focused tests cover:
 
 ## Next Improvements
 
-1. Populate `data/resound-agentic-demo.db` with more Notion rows using `--max-items 10` or `--max-items 25`, then visually inspect the UI.
-2. Run the full Temporal path locally: start Temporal, API, worker, seed profile, call `POST /api/workflows/source-sync`, and verify workflow/job/event rows.
-3. Validate additional Apify sources one at a time with source-specific inputs and normalization.
-4. Promote generic team setup into a configurable/default team directory rather than code-only defaults.
-5. Wire onboarding/listening setup so approved suggestions create the listening profile and team context automatically.
-6. Add routing quality evaluation using feedback events and route correctness metrics.
-7. Decide final demo model profile for Notion, including whether to switch `classify` to Sonnet 5 for the final refresh.
+1. Use `--max-items 10` for the routine Liquid Death and Notion fill. Use a
+   single targeted `--max-items 25` recovery only when one brand remains empty
+   after that fill and its Reddit terms/subreddits have been inspected and
+   deliberately broadened; report the brand blocked if recovery is still empty.
+2. If GPT-5 Mini fails the semantic benchmark gate, use the production
+   runbook's `--reliable-classifier` option for the live fill. It promotes
+   Sonnet 5 to classification primary while preserving the approved fast-stage
+   models; record the resulting cost comparison.
+3. Run the full Temporal path locally: start Temporal, API, worker, seed profile, call `POST /api/workflows/source-sync`, and verify workflow/job/event rows.
+4. Validate additional Apify sources one at a time with source-specific inputs and normalization.
+5. Promote generic team setup into a configurable/default team directory rather than code-only defaults.
+6. Wire onboarding/listening setup so approved suggestions create the listening profile and team context automatically.
+7. Add routing quality evaluation using feedback events and route correctness metrics.
 8. Add browser automation or manual screenshot evidence once Playwright/browser tooling is available.
 
 ## Current Mental Model
