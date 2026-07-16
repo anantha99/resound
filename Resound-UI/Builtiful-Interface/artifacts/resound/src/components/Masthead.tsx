@@ -96,11 +96,11 @@ export default function Masthead() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="flex items-center justify-between pt-8 pb-6">
+    <header className="resound-masthead flex items-center justify-between pt-8 pb-6">
       <ResoundMark />
 
-      <div className="flex gap-7 items-center" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#8b857a" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="resound-masthead-controls flex gap-7 items-center" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#8b857a" }}>
+        <span className="resound-live-status" style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{
             display: "inline-block", width: 5, height: 5,
             background: "#4a6b3f", borderRadius: "50%",
@@ -110,7 +110,7 @@ export default function Masthead() {
         </span>
 
         {/* Brand switcher */}
-        <div className="relative">
+        <div className="resound-brand-switcher relative">
           <button
             onClick={() => setOpen(!open)}
             data-testid="brand-switcher"
@@ -136,6 +136,7 @@ export default function Masthead() {
                   onClick={() => setOpen(false)}
                 />
                 <motion.div
+                  className="resound-brand-menu"
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
@@ -209,7 +210,7 @@ export default function Masthead() {
           </AnimatePresence>
         </div>
 
-        <span>Op <strong style={{ color: "#1a1815", fontWeight: 500 }}>{activeBrand.primaryContact}</strong></span>
+        <span className="resound-operator">Op <strong style={{ color: "#1a1815", fontWeight: 500 }}>{activeBrand.primaryContact}</strong></span>
         <Nav />
       </div>
 

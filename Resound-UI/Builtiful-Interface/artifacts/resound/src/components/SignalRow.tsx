@@ -68,8 +68,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="grid gap-8 py-6 border-t border-[#e3ddd1] items-start"
-      style={{ gridTemplateColumns: "96px 1fr 220px" }}
+      className="resound-signal-row grid gap-8 py-6 border-t border-[#e3ddd1] items-start"
       data-testid={`signal-row-${signal.id}`}
     >
       {/* Meta */}
@@ -80,8 +79,8 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
       </div>
 
       {/* Body */}
-      <div>
-        <div className="font-mono text-[10px] text-[#8b857a] mb-2 uppercase tracking-[0.04em]">
+      <div className="resound-signal-body min-w-0">
+        <div className="resound-signal-author font-mono text-[10px] text-[#8b857a] mb-2 uppercase tracking-[0.04em]">
           {signal.authorHandle} · {signal.authorMeta}
         </div>
         <blockquote
@@ -90,7 +89,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
         >
           {signal.content}
         </blockquote>
-        <div className="flex gap-3.5 items-center font-mono text-[10px] uppercase tracking-[0.06em] text-[#8b857a]">
+        <div className="resound-signal-tags flex gap-3.5 items-center font-mono text-[10px] uppercase tracking-[0.06em] text-[#8b857a]">
           <span className="text-[#1a1815] font-medium">{signal.area.toUpperCase()}</span>
           <span className={severityClass[signal.severity]}>{signal.severity.toUpperCase()}</span>
           <span className={sentimentClass[signal.sentiment]}>{signal.sentiment.toUpperCase()}</span>
@@ -102,7 +101,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
       </div>
 
       {/* Routing */}
-      <div className="text-right font-mono text-[11px] text-[#8b857a] leading-[1.6] relative">
+      <div className="resound-signal-routing text-right font-mono text-[11px] text-[#8b857a] leading-[1.6] relative">
         <div className="text-[10px] uppercase tracking-[0.08em] text-[#8b857a] mb-1">Routed to</div>
         <div className="text-[#1a1815] font-medium text-[13px] tracking-normal">{currentOwner}</div>
         <div className={`text-[10px] tracking-[0.04em] mt-1 ${isLowConfidence ? "text-[#b8431f]" : "text-[#8b857a]"}`}>

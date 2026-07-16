@@ -11,7 +11,7 @@ export default function Nav() {
   const [location] = useLocation();
 
   return (
-    <nav className="flex gap-6 items-center">
+    <nav className="resound-nav flex gap-6 items-center">
       {navItems.map((item) => {
         const active = item.href === "/" ? location === "/" : location.startsWith(item.href);
         return (

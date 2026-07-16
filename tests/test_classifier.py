@@ -3,13 +3,13 @@
 Covers the classifier's contract per design #36, #39, #40:
   * happy path returns (Classification, LLMResponse)
   * passes JSON_MODE sentinel and stage="classify" to the gateway
-  * parse failures return stub-as-data with the actual LLMResponse
+  * legacy parse failures return stub-as-data with the actual response
   * gateway exceptions propagate (classifier does NOT catch them)
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -70,7 +70,7 @@ def _signal() -> RawSignal:
         url=None,
         author_handle="someone",
         content="hello world",
-        posted_at=datetime.now(tz=timezone.utc),
+        posted_at=datetime.now(tz=UTC),
     )
 
 
@@ -95,7 +95,11 @@ def test_classify_happy_path_returns_tuple_with_classification_and_response():
 
 
 def test_classify_passes_json_mode_sentinel_to_gateway():
-    gw = FakeGateway(response=_ok_response('{"is_about_brand": false, "area": "other", "sentiment": "neutral", "severity": "low", "action_class": "ignore", "summary": "x"}'))
+    gw = FakeGateway(response=_ok_response(
+        '{"is_about_brand": false, "area": "other", "sentiment": "neutral", '
+        '"severity": "low", "action_class": "ignore", "summary": "x", '
+        '"confidence": 0.9}'
+    ))
     OpenRouterClassifier(gw).classify(_signal(), "ctx")
     assert len(gw.calls) == 1
     _, _, schema = gw.calls[0]
@@ -103,22 +107,25 @@ def test_classify_passes_json_mode_sentinel_to_gateway():
 
 
 def test_classify_uses_classify_stage_name():
-    gw = FakeGateway(response=_ok_response('{"is_about_brand": false, "area": "other", "sentiment": "neutral", "severity": "low", "action_class": "ignore", "summary": "x"}'))
+    gw = FakeGateway(response=_ok_response(
+        '{"is_about_brand": false, "area": "other", "sentiment": "neutral", '
+        '"severity": "low", "action_class": "ignore", "summary": "x", '
+        '"confidence": 0.9}'
+    ))
     OpenRouterClassifier(gw).classify(_signal(), "ctx")
     stage, _, _ = gw.calls[0]
     assert stage == "classify"
 
 
-# ---- parse failures (stub-as-data) ----
+# ---- parse failures ----
 
 
 def test_classify_parse_no_json_returns_stub_with_response():
     gw = FakeGateway(response=_ok_response("there is no json here at all"))
     classification, response = OpenRouterClassifier(gw).classify(_signal(), "ctx")
-    assert classification.is_about_brand is False
     assert classification.action_class == ActionClass.IGNORE
     assert "no_json_in_response" in (classification.reasoning or "")
-    assert response is gw.response  # successful gateway call preserved
+    assert response is gw.response
 
 
 def test_classify_parse_bad_json_returns_stub():

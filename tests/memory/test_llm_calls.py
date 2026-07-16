@@ -248,6 +248,35 @@ class TestRecordLlmFailure:
         assert row.attempt_count == 6
         assert row.was_fallback is False
 
+    def test_failure_preserves_known_billable_usage(self, memory: SqlMemory) -> None:
+        error = LLMGatewayExhaustedError(
+            "invalid outputs",
+            attempts=3,
+            model_used="google/gemini-3.1-flash-lite",
+            tokens_in=30,
+            tokens_out=60,
+            cost_usd=0.60,
+            latency_ms=123.0,
+        )
+        rid = memory.record_llm_failure(
+            brand_slug="lq",
+            stage="classify",
+            prompt="p",
+            error=error,
+            latency_ms=999.0,
+            attempt_count=3,
+        )
+
+        row = _row(memory, rid)
+        assert row.model == "google/gemini-3.1-flash-lite"
+        assert row.tokens_in == 30
+        assert row.tokens_out == 60
+        assert row.cost_usd == pytest.approx(0.60)
+        assert row.latency_ms == 123.0
+
+        costs = memory.query_llm_costs("lq", since=SINCE_FAR_PAST)
+        assert costs[0]["total_cost_usd"] == pytest.approx(0.60)
+
     def test_failure_signal_id_optional(self, memory: SqlMemory) -> None:
         rid = memory.record_llm_failure(
             brand_slug="lq",

@@ -17,7 +17,14 @@ from resound.gateway.base import (
     LLMGatewayTimeoutError,
     LLMResponse,
 )
-from resound.gateway.models_config import ModelsConfig, StageConfig, load_models_config
+from resound.gateway.models_config import (
+    DEMO_POPULATION_MODEL_PROFILE,
+    DEMO_POPULATION_MODEL_PROFILES,
+    DEMO_POPULATION_RELIABLE_MODEL_PROFILE,
+    ModelsConfig,
+    StageConfig,
+    load_models_config,
+)
 from resound.gateway.openrouter import OpenRouterGateway
 
 JSON_MODE: dict = {}
@@ -38,6 +45,9 @@ __all__ = [
     "load_models_config",
     "StageConfig",
     "ModelsConfig",
+    "DEMO_POPULATION_MODEL_PROFILE",
+    "DEMO_POPULATION_RELIABLE_MODEL_PROFILE",
+    "DEMO_POPULATION_MODEL_PROFILES",
     # Factory
     "build_gateway",
     # Sentinels
@@ -52,11 +62,13 @@ __all__ = [
 ]
 
 
-def build_gateway(brand_slug: str) -> OpenRouterGateway:
+def build_gateway(brand_slug: str, profile: str | None = None) -> OpenRouterGateway:
     """Build an OpenRouterGateway configured for a specific brand.
 
     Loads ``config/models.yaml`` global defaults merged with brand-specific
-    overrides from ``brands/<brand_slug>/models.yaml``. This is the public
-    API; use ``OpenRouterGateway(config=..., client=...)`` directly for tests.
+    overrides from ``brands/<brand_slug>/models.yaml``. A named profile is
+    applied last when explicitly selected by a scoped workflow. This is the
+    public API; use ``OpenRouterGateway(config=..., client=...)`` directly for
+    tests.
     """
-    return OpenRouterGateway(config=load_models_config(brand_slug))
+    return OpenRouterGateway(config=load_models_config(brand_slug, profile=profile))

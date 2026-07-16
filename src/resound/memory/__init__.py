@@ -753,6 +753,12 @@ class SqlMemory(Memory):
             ).scalar_one_or_none()
             if row is None:
                 return None
+            brand = s.execute(
+                select(BrandRow).where(
+                    BrandRow.organization_id == organization_id,
+                    BrandRow.id == brand_id,
+                ),
+            ).scalar_one_or_none()
             return ListeningProfile(
                 brand_slug=brand_slug,
                 brand_names=list(row.brand_names or []),
@@ -766,6 +772,7 @@ class SqlMemory(Memory):
                 language=row.language,
                 setup_notes=row.setup_notes,
                 confidence=row.confidence,
+                source_config=dict(brand.source_config or {}) if brand is not None else {},
             )
 
     def create_listening_profile_suggestion(
@@ -1495,10 +1502,10 @@ class SqlMemory(Memory):
     ) -> int:
         """Record a failed LLM gateway call to the audit trail.
 
-        Failure-path companion to :meth:`record_llm_call`. ``model`` /
-        ``response_content`` / token / cost columns stay null because the
-        call either never reached a model (config/auth errors) or never
-        returned a parseable body. ``error.__class__.__name__`` is stored
+        Failure-path companion to :meth:`record_llm_call`. Usage from billable
+        malformed responses is retained when the gateway provides it; fields
+        remain null for failures that never reached or returned from a model.
+        ``error.__class__.__name__`` is stored
         in ``error_class`` so dashboards can group failures by type without
         substring-matching the message.
         """
@@ -1509,13 +1516,13 @@ class SqlMemory(Memory):
                 brand_slug=brand_slug,
                 signal_id=signal_id,
                 stage=stage,
-                model=None,
+                model=getattr(error, "model_used", None),
                 prompt_hash=_sha256(prompt),
                 response_content=None,
-                tokens_in=None,
-                tokens_out=None,
-                cost_usd=None,
-                latency_ms=latency_ms,
+                tokens_in=getattr(error, "tokens_in", None),
+                tokens_out=getattr(error, "tokens_out", None),
+                cost_usd=getattr(error, "cost_usd", None),
+                latency_ms=getattr(error, "latency_ms", 0.0) or latency_ms,
                 was_fallback=False,
                 attempt_count=attempt_count,
                 success=False,
@@ -1569,8 +1576,8 @@ class SqlMemory(Memory):
         organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Aggregate LLM spend by ``(stage, model)`` for ``brand_slug`` since
-        ``since``. Only successful calls are included — failure rows have
-        no cost.
+        ``since``. Successful calls and failed calls with known billable usage
+        are included; failures without provider-reported cost remain excluded.
 
         Returns a list of dicts, one per ``(stage, model)`` group:
         ``{"stage": str, "model": str, "call_count": int,
@@ -1597,7 +1604,10 @@ class SqlMemory(Memory):
                 )
                 .where(LLMCallRow.brand_slug == brand_slug)
                 .where(LLMCallRow.called_at >= since)
-                .where(LLMCallRow.success.is_(True))
+                .where(
+                    (LLMCallRow.success.is_(True))
+                    | (LLMCallRow.cost_usd.is_not(None))
+                )
                 .group_by(LLMCallRow.stage, LLMCallRow.model)
                 .order_by(LLMCallRow.stage, LLMCallRow.model)
             )

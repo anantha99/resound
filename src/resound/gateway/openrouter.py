@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any, NoReturn
 
 import openai
@@ -49,7 +50,7 @@ JSON_MODE_ERROR_MARKERS = ("response_format", "json_object")
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-class _RetryWithinModel(Exception):
+class _RetryWithinModelError(Exception):
     """Internal: transient error — retry the same model after backoff."""
 
     def __init__(self, original: Exception) -> None:
@@ -57,7 +58,7 @@ class _RetryWithinModel(Exception):
         self.original = original
 
 
-class _TryNextModel(Exception):
+class _TryNextModelError(Exception):
     """Internal: error means give up on this model and try the next."""
 
     def __init__(self, original: Exception) -> None:
@@ -65,7 +66,7 @@ class _TryNextModel(Exception):
         self.original = original
 
 
-class _JsonModeNotSupported(Exception):
+class _JsonModeNotSupportedError(Exception):
     """Internal: model rejected ``response_format``; retry with prompt suffix."""
 
     def __init__(self, original: Exception) -> None:
@@ -116,11 +117,37 @@ class OpenRouterGateway(LLMGateway):
         prompt: str,
         response_schema: dict | None = None,
     ) -> LLMResponse:
+        return self._complete(stage, prompt, response_schema)
+
+    def complete_validated(
+        self,
+        stage: str,
+        prompt: str,
+        *,
+        response_schema: dict | None = None,
+        validator: Callable[[str], object],
+    ) -> LLMResponse:
+        return self._complete(stage, prompt, response_schema, validator=validator)
+
+    def _complete(
+        self,
+        stage: str,
+        prompt: str,
+        response_schema: dict | None = None,
+        *,
+        validator: Callable[[str], object] | None = None,
+    ) -> LLMResponse:
         stage_cfg = self.config.get_stage_config(stage)
         deadline = time.perf_counter() + stage_cfg.timeout_s
         models = [stage_cfg.model, *stage_cfg.fallbacks]
         total_attempts = 0
         last_error: Exception | None = None
+        total_tokens_in = 0
+        total_tokens_out = 0
+        total_cost_usd = 0.0
+        has_known_cost = False
+        total_latency_ms = 0.0
+        last_model: str | None = None
 
         for model_idx, model in enumerate(models):
             is_fallback = model_idx > 0
@@ -132,15 +159,58 @@ class OpenRouterGateway(LLMGateway):
                     response = self._call_once(
                         model, stage_cfg, prompt, response_schema, deadline
                     )
-                except _RetryWithinModel as wrap:
+                except _RetryWithinModelError as wrap:
                     last_error = wrap.original
                     if attempt >= MAX_ATTEMPTS_PER_MODEL:
                         break  # exhausted on this model — try next
                     self._backoff(attempt, deadline, stage, stage_cfg.timeout_s)
                     continue
-                except _TryNextModel as wrap:
+                except _TryNextModelError as wrap:
                     last_error = wrap.original
                     break  # try next model
+                except LLMGatewayParseError as exc:
+                    if validator is None:
+                        raise
+                    last_error = exc
+                    total_tokens_in += exc.tokens_in
+                    total_tokens_out += exc.tokens_out
+                    total_latency_ms += exc.latency_ms
+                    if exc.cost_usd is not None:
+                        total_cost_usd += exc.cost_usd
+                        has_known_cost = True
+                    last_model = exc.model_used or model
+                    logger.warning(
+                        "Response from %s failed %s JSON extraction; trying next model: %s",
+                        model,
+                        stage,
+                        exc,
+                    )
+                    break
+
+                if validator is not None:
+                    total_tokens_in += response.tokens_in
+                    total_tokens_out += response.tokens_out
+                    total_latency_ms += response.latency_ms
+                    if response.cost_usd is not None:
+                        total_cost_usd += response.cost_usd
+                        has_known_cost = True
+                    last_model = response.model_used
+                    try:
+                        validator(response.content)
+                    except LLMGatewayParseError as exc:
+                        last_error = exc
+                        logger.warning(
+                            "Response from %s failed %s validation; trying next model: %s",
+                            model,
+                            stage,
+                            exc,
+                        )
+                        break
+
+                    response.tokens_in = total_tokens_in
+                    response.tokens_out = total_tokens_out
+                    response.cost_usd = total_cost_usd if has_known_cost else None
+                    response.latency_ms = total_latency_ms
 
                 response.was_fallback = is_fallback
                 response.attempt_count = total_attempts
@@ -150,6 +220,12 @@ class OpenRouterGateway(LLMGateway):
             f"Stage {stage!r}: all {len(models)} model(s) failed after "
             f"{total_attempts} attempt(s). Last error: {last_error!r}",
             attempts=total_attempts,
+            last_error=last_error,
+            model_used=last_model,
+            tokens_in=total_tokens_in,
+            tokens_out=total_tokens_out,
+            cost_usd=total_cost_usd if has_known_cost else None,
+            latency_ms=total_latency_ms,
         )
 
     # --- internals -------------------------------------------------------
@@ -196,7 +272,7 @@ class OpenRouterGateway(LLMGateway):
                 model, stage_cfg, prompt,
                 json_mode=True, prompt_suffix=False, deadline=deadline,
             )
-        except _JsonModeNotSupported:
+        except _JsonModeNotSupportedError:
             self._no_json_mode_models.add(model)
             logger.warning(
                 "%s does not support native JSON mode; caching and retrying "
@@ -245,6 +321,12 @@ class OpenRouterGateway(LLMGateway):
         latency_ms = (time.perf_counter() - start) * 1000.0
 
         text = response.choices[0].message.content or ""
+        usage = response.usage
+        tokens_in = getattr(usage, "prompt_tokens", 0) if usage else 0
+        tokens_out = getattr(usage, "completion_tokens", 0) if usage else 0
+        cost = getattr(usage, "cost", None) if usage else None
+        if cost is None:
+            logger.warning("OpenRouter returned no usage.cost for %s", model)
 
         # Always run defensive regex extraction when JSON output expected.
         if json_mode or prompt_suffix:
@@ -253,17 +335,15 @@ class OpenRouterGateway(LLMGateway):
                 raise LLMGatewayParseError(
                     f"No JSON object found in response from {model}",
                     raw_text=text,
+                    model_used=model,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_usd=cost,
+                    latency_ms=latency_ms,
                 )
             content = match.group(0)
         else:
             content = text
-
-        usage = response.usage
-        tokens_in = getattr(usage, "prompt_tokens", 0) if usage else 0
-        tokens_out = getattr(usage, "completion_tokens", 0) if usage else 0
-        cost = getattr(usage, "cost", None) if usage else None
-        if cost is None:
-            logger.warning("OpenRouter returned no usage.cost for %s", model)
 
         return LLMResponse(
             content=content,
@@ -283,9 +363,9 @@ class OpenRouterGateway(LLMGateway):
 
         # Connection-level transients first (no status code attached)
         if isinstance(exc, openai.APITimeoutError | openai.APIConnectionError):
-            raise _RetryWithinModel(exc) from exc
+            raise _RetryWithinModelError(exc) from exc
         if isinstance(exc, openai.RateLimitError):
-            raise _RetryWithinModel(exc) from exc
+            raise _RetryWithinModelError(exc) from exc
 
         if isinstance(exc, openai.APIStatusError):
             sc: int | None = getattr(exc, "status_code", None)
@@ -293,13 +373,13 @@ class OpenRouterGateway(LLMGateway):
             # OpenRouter "no available provider" can come back as 5xx — treat
             # as fallback regardless of status (decision #5).
             if any(marker in msg_lower for marker in NO_PROVIDER_MARKERS):
-                raise _TryNextModel(exc) from exc
+                raise _TryNextModelError(exc) from exc
 
             if sc is not None and sc >= 500:
-                raise _RetryWithinModel(exc) from exc
+                raise _RetryWithinModelError(exc) from exc
 
             if sc in (404, 413, 422):
-                raise _TryNextModel(exc) from exc
+                raise _TryNextModelError(exc) from exc
 
             if sc in (401, 403):
                 raise LLMGatewayAuthError(
@@ -308,7 +388,7 @@ class OpenRouterGateway(LLMGateway):
 
             if sc == 400:
                 if any(m in msg_lower for m in JSON_MODE_ERROR_MARKERS):
-                    raise _JsonModeNotSupported(exc) from exc
+                    raise _JsonModeNotSupportedError(exc) from exc
                 raise LLMGatewayConfigError(
                     f"Bad request to {model}: {msg}"
                 ) from exc

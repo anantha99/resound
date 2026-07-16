@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from resound.agents.signal_triage import SignalTriageResult
-from resound.gateway import LLMGatewayExhaustedError, LLMResponse
+from resound.gateway import (
+    DEMO_POPULATION_MODEL_PROFILE,
+    LLMGatewayExhaustedError,
+    LLMGatewayParseError,
+    LLMResponse,
+)
 from resound.memory import LLMCallRow, RouteRow, SqlMemory
 from resound.models import ActionClass, Classification, RawSignal, Route, Sentiment, Severity
 from resound.workflows.signal_processing import (
@@ -128,6 +134,15 @@ class RouteFailingTriageAgent:
         )
 
 
+class ClassificationFailingTriageAgent:
+    def run(self, request):
+        raise LLMGatewayExhaustedError(
+            "all classification models returned malformed output",
+            attempts=3,
+            last_error=LLMGatewayParseError("validation_error", raw_text="{}"),
+        )
+
+
 def test_process_signal_uses_agentic_triage_by_default(tmp_path):
     memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'agentic-process.db'}")
     org = memory.ensure_organization("org-a", "Org A")
@@ -184,6 +199,30 @@ def test_process_signal_records_route_llm_failure_when_route_agent_falls_back(tm
     assert result.status == "processed"
     assert [(call.stage, call.success) for call in calls] == [("classify", True), ("route", False)]
     assert calls[-1].error_class == "LLMGatewayExhaustedError"
+
+
+def test_all_malformed_classifications_return_processing_failure(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'classification-failure.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    request = _processing_request(org=org, brand_id=brand.id, external_id="malformed-1")
+    request = replace(request, model_profile=DEMO_POPULATION_MODEL_PROFILE)
+
+    result = process_signal(
+        request,
+        memory=memory,
+        triage_agent=ClassificationFailingTriageAgent(),
+    )
+
+    with memory.session() as session:
+        calls = list(session.execute(select(LLMCallRow)).scalars())
+        routes = list(session.execute(select(RouteRow)).scalars())
+
+    assert result.status == "failed"
+    assert result.error_class == "LLMGatewayExhaustedError"
+    assert "malformed output" in (result.error_message or "")
+    assert [(call.stage, call.success) for call in calls] == [("classify", False)]
+    assert routes == []
 
 
 def test_process_signal_retries_signal_row_without_classification_or_route(tmp_path):

@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
+import pytest
+
 from resound.agents.signal_triage import SignalTriageAgent, SignalTriageRequest
-from resound.gateway import JSON_MODE, LLMGateway, LLMGatewayExhaustedError, LLMResponse
+from resound.gateway import (
+    DEMO_POPULATION_MODEL_PROFILE,
+    DEMO_POPULATION_RELIABLE_MODEL_PROFILE,
+    JSON_MODE,
+    LLMGateway,
+    LLMGatewayExhaustedError,
+    LLMGatewayParseError,
+    LLMResponse,
+)
 from resound.memory import SqlMemory
 from resound.models import RawSignal
 from resound.tenancy import TenantContext
@@ -102,6 +113,71 @@ def test_signal_triage_agent_classifies_routes_and_records_steps(tmp_path):
     assert result.agent_session_id is not None
     steps = memory.list_agent_steps(result.agent_session_id)
     assert [step.tool_name for step in steps] == ["classify_signal", "route_signal"]
+
+
+def test_signal_triage_agent_uses_default_gateway_profile_when_unspecified(
+    tmp_path,
+    monkeypatch,
+):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'triage-default-profile.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    calls = []
+    gateway = FakeGateway(
+        [
+            _response(
+                '{"is_about_brand": false, "area": "other", '
+                '"sentiment": "neutral", "severity": "low", '
+                '"action_class": "ignore", "summary": "Off brand", '
+                '"confidence": 0.9}'
+            )
+        ]
+    )
+
+    def fake_build_gateway(brand_slug, profile=None):
+        calls.append((brand_slug, profile))
+        return gateway
+
+    monkeypatch.setattr("resound.agents.signal_triage.build_gateway", fake_build_gateway)
+
+    SignalTriageAgent(memory=memory).run(_request(memory, org, brand.id))
+
+    assert calls == [("acme", None)]
+
+
+def test_unprofiled_malformed_classification_preserves_legacy_ignore(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'triage-legacy-malformed.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    gateway = FakeGateway([_response("{}")])
+
+    result = SignalTriageAgent(memory=memory, gateway=gateway).run(
+        _request(memory, org, brand.id)
+    )
+
+    assert result.classification.action_class.value == "ignore"
+    assert result.route.matched_rule == "ignored_by_classifier"
+
+
+@pytest.mark.parametrize(
+    "model_profile",
+    [DEMO_POPULATION_MODEL_PROFILE, DEMO_POPULATION_RELIABLE_MODEL_PROFILE],
+)
+def test_demo_profile_malformed_classification_is_strict_failure(
+    tmp_path,
+    model_profile,
+):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'triage-demo-malformed.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    gateway = FakeGateway([_response("{}")])
+    request = replace(
+        _request(memory, org, brand.id),
+        model_profile=model_profile,
+    )
+
+    with pytest.raises(LLMGatewayParseError, match="validation_error"):
+        SignalTriageAgent(memory=memory, gateway=gateway).run(request)
 
 
 def test_signal_triage_agent_rejects_invalid_route_owner(tmp_path):
