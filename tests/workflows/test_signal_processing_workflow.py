@@ -296,6 +296,7 @@ def test_all_malformed_classifications_return_processing_failure(tmp_path):
         routes = list(session.execute(select(RouteRow)).scalars())
 
     assert result.status == "failed"
+    assert result.processing_state == "failed"
     assert result.error_class == "LLMGatewayExhaustedError"
     assert "malformed output" in (result.error_message or "")
     assert [(call.stage, call.success) for call in calls] == [("classify", False)]

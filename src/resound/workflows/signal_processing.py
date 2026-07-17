@@ -380,6 +380,7 @@ def _failed_processing_result(
         status="failed",
         dedupe_key=dedupe_key,
         signal_id=signal_id,
+        processing_state="failed",
         error_class=type(error).__name__,
         error_message=str(error),
     )
