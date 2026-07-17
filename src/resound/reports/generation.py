@@ -110,7 +110,7 @@ def export_report_markdown(draft: RoleReportDraft) -> str:
 
 
 @activity.defn
-async def generate_report_activity(request: ReportGenerationRequest) -> ReportGenerationResult:
+def generate_report_activity(request: ReportGenerationRequest) -> ReportGenerationResult:
     return generate_report(request)
 
 

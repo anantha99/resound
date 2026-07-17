@@ -535,10 +535,14 @@ def _tenant_from_request(request: SignalProcessingRequest) -> TenantContext | No
 
 
 @activity.defn
-async def process_signal_processing_activity(
+def process_signal_processing_activity(
     request: SignalProcessingRequest,
 ) -> SignalProcessingResult:
-    return process_signal(request)
+    return process_signal(request, heartbeat=_activity_processing_checkpoint)
+
+
+def _activity_processing_checkpoint(stage: str, signal_id: int) -> None:
+    activity.heartbeat({"stage": stage, "signal_id": signal_id})
 
 
 @workflow.defn
