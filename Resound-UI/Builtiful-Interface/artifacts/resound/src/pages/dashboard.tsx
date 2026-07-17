@@ -1,10 +1,19 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useGetBrandStats, useListPatterns, useListSignals } from "@workspace/api-client-react";
+import type { PatternSummary } from "@workspace/api-client-react";
 import Masthead from "@/components/Masthead";
 import SignalRow from "@/components/SignalRow";
 import { useBrand } from "@/context/BrandContext";
-import { apiPeriod, toPatternView, toSignalView, type SignalView } from "@/api/viewModels";
+import {
+  apiPeriod,
+  deltaDisplay,
+  sparklinePath,
+  toPatternView,
+  toSignalView,
+  type DeltaTone,
+  type SignalView,
+} from "@/api/viewModels";
 
 type Period = "24h" | "7d" | "30d" | "QTD";
 type ActivePane = "sentiment" | "critical" | "emerging" | "volume";
@@ -22,6 +31,28 @@ function kpiColors(active: boolean) {
     sub: active ? "#ebe7df" : "#8b857a",
     spark: active ? "#f4f1ec" : "#1a1815",
   };
+}
+
+/** Resolve a delta/velocity tone to a token, honouring the active (dark) card. */
+function toneColor(tone: DeltaTone, active: boolean): string {
+  if (tone === "neutral") return active ? "#ebe7df" : "#8b857a";
+  if (tone === "positive") return active ? "#8fae82" : "#4a6b3f";
+  return active ? "#f4a890" : "#b8431f";
+}
+
+/** Honest velocity copy keyed on the comparable-window velocity state. */
+function velocityLabel(issue: PatternSummary, period: Period): { text: string; tone: DeltaTone } {
+  switch (issue.velocityState) {
+    case "accelerating":
+      return { text: `${issue.velocityMultiple}× · accelerating`, tone: "negative" };
+    case "cooling":
+      return { text: `${issue.velocityMultiple}× · cooling`, tone: "positive" };
+    case "steady":
+      return { text: `${issue.velocityMultiple}× · steady`, tone: "neutral" };
+    case "no_baseline":
+    default:
+      return { text: `${issue.signalCount} signals · ${period} activity`, tone: "neutral" };
+  }
 }
 
 export default function Dashboard() {
@@ -44,10 +75,36 @@ export default function Dashboard() {
   const brandPatterns = (patternsQuery.data ?? []).map(toPatternView);
   const stats = statsQuery.data;
 
+  // Period-scoped emerging issue is the source of truth (from brand_stats).
+  // id === 0 is the empty sentinel from _empty_pattern_summary().
+  const emergingIssue = stats?.topEmergingIssue;
+  const hasEmerging = !!emergingIssue && emergingIssue.id !== 0;
+  // Look up extra all-history display fields (blurb, startedAt) by matching id;
+  // these must NOT override the period-scoped title/count/velocity/area.
+  const emergingExtras = hasEmerging
+    ? brandPatterns.find(p => p.id === emergingIssue!.id)
+    : undefined;
+
   const criticalSignals = brandSignals.filter(s => s.severity === "critical" || s.severity === "high");
   const negativeSignals = brandSignals.filter(s => s.sentiment === "negative");
-  const topPattern = brandPatterns[0];
-  const emergingSignals = topPattern ? brandSignals.filter(s => s.patternId === topPattern.id) : [];
+  const emergingSignals = hasEmerging ? brandSignals.filter(s => s.patternId === emergingIssue!.id) : [];
+
+  const netSentiment = stats?.netSentiment ?? 0;
+  const netSentimentDelta = stats?.netSentimentDelta ?? 0;
+  const criticalCount = stats?.criticalCount ?? criticalSignals.length;
+  const criticalDelta = stats?.criticalDelta ?? 0;
+  const totalVolume = stats?.totalVolume ?? brandSignals.length;
+  const volumeDelta = stats?.volumeDelta ?? 0;
+  const sentimentBreakdown = stats?.sentimentBreakdown ?? { positive: 0, neutral: 0, negative: 0 };
+  const sourceMix = stats?.sourceMix ?? [];
+  const trend = stats?.trend ?? [];
+  const isLoading = statsQuery.isLoading || signalsQuery.isLoading || patternsQuery.isLoading;
+  const isError = statsQuery.isError || signalsQuery.isError || patternsQuery.isError;
+
+  // Shared zero-delta-aware delta displays.
+  const netDelta = deltaDisplay(netSentimentDelta, { unit: "pt", upIsGood: true, flatText: "0pt · flat" });
+  const critDelta = deltaDisplay(criticalDelta, { signed: true, suffix: " vs prev", upIsGood: false, flatText: "no change" });
+  const volDelta = deltaDisplay(volumeDelta, { unit: "%", signed: true, upIsGood: true, flatText: "0% · flat" });
 
   const paneSignals: Record<ActivePane, SignalView[]> = {
     critical: criticalSignals,
@@ -60,35 +117,33 @@ export default function Dashboard() {
     critical: {
       title: "Critical & high · need attention now",
       sub: `${criticalSignals.length} signals · ${period} · sorted by recency`,
-      blurb: `${(stats?.criticalDelta ?? 0) > 0 ? (stats?.criticalDelta ?? 0) + " more" : Math.abs(stats?.criticalDelta ?? 0) + " fewer"} than last period. Each signal is already routed; verify or reroute below.`,
+      blurb:
+        criticalDelta === 0
+          ? "Unchanged vs last period. Each signal is already routed; verify or reroute below."
+          : `${criticalDelta > 0 ? `${criticalDelta} more` : `${Math.abs(criticalDelta)} fewer`} than last period. Each signal is already routed; verify or reroute below.`,
     },
     sentiment: {
       title: "Dragging sentiment down",
       sub: "Negative-sentiment signals · sorted by reach",
-      blurb: `Net sentiment ${(stats?.netSentimentDelta ?? 0) < 0 ? "fell" : "rose"} ${Math.abs(stats?.netSentimentDelta ?? 0)} points this period. These are the loudest voices behind the shift.`,
+      blurb:
+        netSentimentDelta === 0
+          ? "Net sentiment was unchanged this period. These are the loudest voices in the conversation."
+          : `Net sentiment ${netSentimentDelta < 0 ? "fell" : "rose"} ${Math.abs(netSentimentDelta)} points this period. These are the loudest voices behind the shift.`,
     },
     emerging: {
-      title: topPattern ? topPattern.name : "No emerging patterns",
-      sub: topPattern ? `Auto-clustered · ${topPattern.signalCount} signals · started ${topPattern.startedAt}` : "",
+      title: hasEmerging ? emergingIssue!.name : "No emerging patterns",
+      sub: hasEmerging ? `Auto-clustered · ${emergingIssue!.signalCount} signals${emergingExtras ? ` · started ${emergingExtras.startedAt}` : ""}` : "",
       blurb: "",
     },
     volume: {
       title: "Conversation volume · " + period,
-      sub: `${brandSignals.length} signals · sorted by reach`,
-      blurb: `Volume ${(stats?.volumeDelta ?? 0) >= 0 ? "up" : "down"} ${Math.abs(stats?.volumeDelta ?? 0)}% vs previous period.`,
+      sub: `Top ${brandSignals.length} of ${totalVolume.toLocaleString()} · sorted by reach`,
+      blurb:
+        volumeDelta === 0
+          ? "Volume was unchanged vs the previous period."
+          : `Volume ${volumeDelta > 0 ? "up" : "down"} ${Math.abs(volumeDelta)}% vs previous period.`,
     },
   };
-
-  const netSentiment = stats?.netSentiment ?? 0;
-  const netSentimentDelta = stats?.netSentimentDelta ?? 0;
-  const criticalCount = stats?.criticalCount ?? criticalSignals.length;
-  const criticalDelta = stats?.criticalDelta ?? 0;
-  const totalVolume = stats?.totalVolume ?? brandSignals.length;
-  const volumeDelta = stats?.volumeDelta ?? 0;
-  const sentimentBreakdown = stats?.sentimentBreakdown ?? { positive: 0, neutral: 0, negative: 0 };
-  const sourceMix = stats?.sourceMix ?? [];
-  const isLoading = statsQuery.isLoading || signalsQuery.isLoading || patternsQuery.isLoading;
-  const isError = statsQuery.isError || signalsQuery.isError || patternsQuery.isError;
 
   const s = kpiColors(activePane === "sentiment");
   const c = kpiColors(activePane === "critical");
@@ -131,8 +186,8 @@ export default function Dashboard() {
               <div style={{ fontFamily: CG, fontSize: 56, fontWeight: 300, letterSpacing: "-0.03em", lineHeight: 1, color: s.number }}>
                 {netSentiment > 0 ? "+" : ""}{netSentiment}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: netSentimentDelta < 0 ? (activePane === "sentiment" ? "#f4a890" : "#b8431f") : "#4a6b3f", letterSpacing: "0.02em" }}>
-                {netSentimentDelta < 0 ? "↓" : "↑"} {Math.abs(netSentimentDelta)}pt
+              <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(netDelta.tone, activePane === "sentiment"), letterSpacing: "0.02em" }}>
+                {netDelta.arrow} {netDelta.text}
               </div>
             </div>
             <div style={{ display: "flex", width: "100%", height: 4, margin: "0 0 6px", overflow: "hidden" }}>
@@ -146,7 +201,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: 16, fontFamily: MONO, fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: s.label }}>
               <span>{period} trend</span>
               <svg width="70" height="18" viewBox="0 0 70 18">
-                <path stroke={s.spark} fill="none" strokeWidth="1.2" d={netSentimentDelta < 0 ? "M0,4 L8,5 L16,3 L24,6 L32,8 L40,10 L48,12 L56,11 L64,13 L70,14" : "M0,14 L8,12 L16,13 L24,10 L32,8 L40,7 L48,5 L56,4 L64,3 L70,2"} />
+                <path stroke={s.spark} fill="none" strokeWidth="1.2" strokeLinejoin="round" d={sparklinePath(trend.map(p => p.netSentiment), 70, 18)} />
               </svg>
             </div>
           </motion.div>
@@ -159,17 +214,31 @@ export default function Dashboard() {
               <div style={{ fontFamily: CG, fontSize: 56, fontWeight: 300, letterSpacing: "-0.03em", lineHeight: 1, color: c.number }}>
                 {criticalCount}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: criticalDelta > 0 ? (activePane === "critical" ? "#f4a890" : "#b8431f") : "#4a6b3f", letterSpacing: "0.02em" }}>
-                {criticalDelta > 0 ? `↑ +${criticalDelta}` : `↓ ${criticalDelta}`} vs prev
+              <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(critDelta.tone, activePane === "critical"), letterSpacing: "0.02em" }}>
+                {critDelta.arrow} {critDelta.text}
               </div>
             </div>
             <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: c.label, marginTop: "auto", paddingTop: 16 }}>
               {[...new Set(criticalSignals.map(s => s.area.toUpperCase()))].slice(0, 3).join(" · ") || "No critical signals"}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, fontFamily: MONO, fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: c.label }}>
-              <span>weekly</span>
+              <span>{period} trend</span>
               <svg width="70" height="18" viewBox="0 0 70 18">
-                <path fill={c.spark} opacity="0.4" d="M2,14 h6 v4 h-6z M14,12 h6 v6 h-6z M26,13 h6 v5 h-6z M38,11 h6 v7 h-6z M50,10 h6 v8 h-6z M62,4 h6 v14 h-6z" />
+                {(() => {
+                  const counts = trend.map(p => p.criticalCount);
+                  const maxCount = Math.max(1, ...counts);
+                  const n = counts.length;
+                  if (n === 0) return null;
+                  const slot = 70 / n;
+                  const barW = Math.max(2, Math.min(6, slot - 6));
+                  return counts.map((count, i) => {
+                    const h = count === 0 ? 1 : Math.max(1, Math.round((count / maxCount) * 18));
+                    const x = +(i * slot + (slot - barW) / 2).toFixed(2);
+                    const y = 18 - h;
+                    const opacity = count === 0 ? 0.25 : 0.4 + 0.5 * (count / maxCount);
+                    return <rect key={i} x={x} y={y} width={barW} height={h} fill={c.spark} opacity={opacity.toFixed(2)} />;
+                  });
+                })()}
               </svg>
             </div>
           </motion.div>
@@ -178,20 +247,25 @@ export default function Dashboard() {
           <motion.div whileHover={{ backgroundColor: e.hoverBg }} onClick={() => setActivePane("emerging")} data-testid="kpi-emerging"
             style={{ background: e.bg, padding: "28px 24px 24px", cursor: "pointer", minHeight: 200, display: "flex", flexDirection: "column", transition: "background 0.2s" }}>
             <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: e.label, marginBottom: 20 }}>Top emerging issue</div>
-            {topPattern ? (
+            {!hasEmerging ? (
+              <div style={{ fontFamily: CG, fontStyle: "italic", fontSize: 18, color: e.label, marginTop: 8 }}>No patterns detected yet.</div>
+            ) : (
               <>
                 <div style={{ fontFamily: CG, fontStyle: "italic", fontWeight: 300, fontSize: 26, lineHeight: 1.15, letterSpacing: "-0.01em", marginBottom: 8, color: e.number }}>
-                  "{topPattern.name}"
+                  "{emergingIssue!.name}"
                 </div>
-                <div style={{ fontFamily: MONO, fontSize: 11, color: activePane === "emerging" ? "#f4a890" : "#b8431f", letterSpacing: "0.02em" }}>
-                  {topPattern.velocityMultiple}× WoW · accelerating
-                </div>
+                {(() => {
+                  const vel = velocityLabel(emergingIssue!, period);
+                  return (
+                    <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(vel.tone, activePane === "emerging"), letterSpacing: "0.02em" }}>
+                      {vel.text}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: e.label, marginTop: "auto", paddingTop: 16 }}>
-                  {topPattern.area.toUpperCase()} · {topPattern.signalCount} signals
+                  {emergingIssue!.area.toUpperCase()} · {emergingIssue!.signalCount} signals
                 </div>
               </>
-            ) : (
-              <div style={{ fontFamily: CG, fontStyle: "italic", fontSize: 18, color: e.label, marginTop: 8 }}>No patterns detected yet.</div>
             )}
           </motion.div>
 
@@ -203,8 +277,8 @@ export default function Dashboard() {
               <div style={{ fontFamily: CG, fontSize: 56, fontWeight: 300, letterSpacing: "-0.03em", lineHeight: 1, color: v.number }}>
                 {totalVolume.toLocaleString()}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: volumeDelta >= 0 ? "#4a6b3f" : "#b8431f", letterSpacing: "0.02em" }}>
-                {volumeDelta >= 0 ? "↑" : "↓"} {volumeDelta >= 0 ? "+" : ""}{volumeDelta}%
+              <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(volDelta.tone, activePane === "volume"), letterSpacing: "0.02em" }}>
+                {volDelta.arrow} {volDelta.text}
               </div>
             </div>
             <div style={{ display: "flex", gap: 2, height: 4, margin: "0 0 6px" }}>
@@ -216,9 +290,9 @@ export default function Dashboard() {
               {sourceMix.map(src => <span key={src.source}>{src.pct}% {src.source.toUpperCase()}</span>)}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: 16, fontFamily: MONO, fontSize: 10, textTransform: "uppercase", color: v.label }}>
-              <span>vs prev {period}</span>
+              <span>{period} trend</span>
               <svg width="70" height="18" viewBox="0 0 70 18">
-                <path stroke={v.spark} fill="none" strokeWidth="1.2" d="M0,12 L8,10 L16,11 L24,9 L32,7 L40,8 L48,6 L56,5 L64,4 L70,3" />
+                <path stroke={v.spark} fill="none" strokeWidth="1.2" strokeLinejoin="round" d={sparklinePath(trend.map(p => p.volume), 70, 18)} />
               </svg>
             </div>
           </motion.div>
@@ -235,22 +309,33 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {activePane === "emerging" && topPattern && (
-            <motion.div className="resound-pattern-summary" key={topPattern.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          {activePane === "emerging" && hasEmerging && (
+            <motion.div className="resound-pattern-summary" key={emergingIssue!.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               style={{ padding: 32, background: "#ebe7df", marginBottom: 32, gap: 32, alignItems: "center" }}>
               <div>
-                <div style={{ fontFamily: CG, fontSize: 34, fontWeight: 300, lineHeight: 1.1, letterSpacing: "-0.015em", marginBottom: 12, color: "#1a1815" }}>{topPattern.name}</div>
-                <div style={{ fontFamily: CG, fontStyle: "italic", color: "#4a4640", fontSize: 17, lineHeight: 1.5, marginBottom: 16 }}>{topPattern.blurb}</div>
+                <div style={{ fontFamily: CG, fontSize: 34, fontWeight: 300, lineHeight: 1.1, letterSpacing: "-0.015em", marginBottom: 12, color: "#1a1815" }}>{emergingIssue!.name}</div>
+                {emergingExtras?.blurb && (
+                  <div style={{ fontFamily: CG, fontStyle: "italic", color: "#4a4640", fontSize: 17, lineHeight: 1.5, marginBottom: 16 }}>{emergingExtras.blurb}</div>
+                )}
                 <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8b857a" }}>
-                  {topPattern.area.toUpperCase()} · started {topPattern.startedAt.toUpperCase()} · {topPattern.signalCount} signals · {topPattern.weeklyVelocity} this week
+                  {emergingIssue!.area.toUpperCase()}{emergingExtras ? ` · started ${emergingExtras.startedAt.toUpperCase()}` : ""} · {emergingIssue!.signalCount} signals · {period} scope
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8b857a" }}>
-                <span style={{ fontFamily: CG, fontSize: 64, fontWeight: 300, color: "#b8431f", display: "block", lineHeight: 1, marginBottom: 8, letterSpacing: "-0.025em" }}>
-                  {topPattern.velocityMultiple}×
-                </span>
-                weekly volume<br />vs prev 4-week avg
-              </div>
+              {emergingIssue!.velocityState === "no_baseline" ? (
+                <div style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8b857a" }}>
+                  <span style={{ fontFamily: CG, fontSize: 64, fontWeight: 300, color: "#1a1815", display: "block", lineHeight: 1, marginBottom: 8, letterSpacing: "-0.025em" }}>
+                    {emergingIssue!.signalCount}
+                  </span>
+                  signals<br />{period} activity
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8b857a" }}>
+                  <span style={{ fontFamily: CG, fontSize: 64, fontWeight: 300, color: emergingIssue!.velocityState === "cooling" ? "#4a6b3f" : "#b8431f", display: "block", lineHeight: 1, marginBottom: 8, letterSpacing: "-0.025em" }}>
+                    {emergingIssue!.velocityMultiple}×
+                  </span>
+                  {period} volume<br />vs prior {period} · {emergingIssue!.velocityState}
+                </div>
+              )}
             </motion.div>
           )}
 

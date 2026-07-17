@@ -148,6 +148,74 @@ export function apiPeriod(period: "24h" | "7d" | "30d" | "QTD"): "24h" | "7d" | 
   return period === "QTD" ? "qtd" : period;
 }
 
+// --- KPI-card display helpers -------------------------------------------------
+
+export type DeltaTone = "positive" | "negative" | "neutral";
+
+export interface DeltaDisplay {
+  /** "↑" for a positive delta, "↓" for a negative one, "→" when flat (delta === 0). */
+  arrow: string;
+  /** Semantic tone so the caller can resolve the right token per card / active state. */
+  tone: DeltaTone;
+  /** Formatted magnitude (e.g. "14pt", "+3 vs prev", "0pt · flat"). */
+  text: string;
+}
+
+export interface DeltaDisplayOptions {
+  /** Unit suffix appended to the magnitude, e.g. "pt" or "%". */
+  unit?: string;
+  /** When true, show an explicit +/- sign on the value (critical, volume). */
+  signed?: boolean;
+  /** When true a rising delta is "good" (positive tone); false flips it (critical). */
+  upIsGood?: boolean;
+  /** Trailing text after the value, e.g. " vs prev". */
+  suffix?: string;
+  /** Copy shown when the delta is exactly 0, e.g. "0pt · flat" or "no change". */
+  flatText: string;
+}
+
+/**
+ * Shared zero-delta-aware delta display. A delta of 0 renders a neutral "→"
+ * arrow, neutral tone and "flat"/"no change" copy — never a misleading ↑/↓.
+ */
+export function deltaDisplay(delta: number, opts: DeltaDisplayOptions): DeltaDisplay {
+  const { unit = "", signed = false, upIsGood = true, suffix = "", flatText } = opts;
+  if (delta === 0) {
+    return { arrow: "→", tone: "neutral", text: flatText };
+  }
+  const rising = delta > 0;
+  const arrow = rising ? "↑" : "↓";
+  const tone: DeltaTone = rising === upIsGood ? "positive" : "negative";
+  const mag = signed ? (rising ? `+${delta}` : `${delta}`) : `${Math.abs(delta)}`;
+  return { arrow, tone, text: `${mag}${unit}${suffix}` };
+}
+
+/**
+ * Build an SVG polyline `d` path from a series of values scaled into a w×h
+ * viewBox (higher value → higher on the chart). Handles empty / single-point /
+ * all-equal series as a flat mid-line with no NaN output.
+ */
+export function sparklinePath(values: number[], w: number, h: number): string {
+  const pad = 2;
+  const mid = +(h / 2).toFixed(2);
+  if (values.length < 2) {
+    return `M0,${mid} L${w},${mid}`;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const usable = h - pad * 2;
+  const stepX = w / (values.length - 1);
+  return values
+    .map((v, i) => {
+      const x = +(i * stepX).toFixed(2);
+      const norm = range === 0 ? 0.5 : (v - min) / range;
+      const y = +(pad + (1 - norm) * usable).toFixed(2);
+      return `${i === 0 ? "M" : "L"}${x},${y}`;
+    })
+    .join(" ");
+}
+
 export function formatSource(source: string): string {
   const normalized = source.toLowerCase();
   if (normalized === "g2") return "G2";
