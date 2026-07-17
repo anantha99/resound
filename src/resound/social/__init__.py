@@ -9,6 +9,93 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Literal
 
 from resound.models import RawSignal
+from resound.social.common import (
+    ProviderBudget as ProviderBudget,
+)
+from resound.social.common import (
+    allocate_signal_cap as allocate_signal_cap,
+)
+from resound.social.common import (
+    fallback_identity as fallback_identity,
+)
+from resound.social.common import (
+    floor_to_quantum as floor_to_quantum,
+)
+from resound.social.common import (
+    provider_native_identity as provider_native_identity,
+)
+from resound.social.config import SourceConfigError as SourceConfigError
+from resound.social.config import canonical_source as canonical_source
+from resound.social.contracts import (
+    AdapterComponentResult as AdapterComponentResult,
+)
+from resound.social.contracts import (
+    AdapterIssue as AdapterIssue,
+)
+from resound.social.contracts import (
+    AdapterLimits as AdapterLimits,
+)
+from resound.social.contracts import (
+    AdapterResult as AdapterResult,
+)
+from resound.social.contracts import (
+    ApprovedSourceConfigFingerprint as ApprovedSourceConfigFingerprint,
+)
+from resound.social.contracts import (
+    CanonicalIdentity as CanonicalIdentity,
+)
+from resound.social.contracts import (
+    ProviderDatasetRef as ProviderDatasetRef,
+)
+from resound.social.contracts import (
+    ProviderEvidenceManifest as ProviderEvidenceManifest,
+)
+from resound.social.contracts import (
+    ProviderEvidenceRecord as ProviderEvidenceRecord,
+)
+from resound.social.contracts import (
+    ProviderRunRef as ProviderRunRef,
+)
+from resound.social.contracts import (
+    PublicListeningSyncResult as PublicListeningSyncResult,
+)
+from resound.social.contracts import (
+    PublicSource as PublicSource,
+)
+from resound.social.contracts import (
+    ResolvedPathConfig as ResolvedPathConfig,
+)
+from resound.social.contracts import (
+    ResolvedProcessingConfigSnapshot as ResolvedProcessingConfigSnapshot,
+)
+from resound.social.contracts import (
+    ResolvedProviderEvidence as ResolvedProviderEvidence,
+)
+from resound.social.contracts import (
+    ResolvedPublicListeningRequest as ResolvedPublicListeningRequest,
+)
+from resound.social.contracts import (
+    ResolvedSourceConfigSnapshot as ResolvedSourceConfigSnapshot,
+)
+from resound.social.contracts import (
+    SelectedPathInput as SelectedPathInput,
+)
+from resound.social.contracts import (
+    SignalAssociation as SignalAssociation,
+)
+from resound.social.contracts import (
+    SourceLimitOverrides as SourceLimitOverrides,
+)
+from resound.social.contracts import (
+    SourcePath as SourcePath,
+)
+from resound.social.contracts import (
+    SourceSyncInput as SourceSyncInput,
+)
+from resound.social.resolver import parse_cli_request as parse_cli_request
+from resound.social.resolver import (
+    resolve_public_listening_request as resolve_public_listening_request,
+)
 
 SourceType = Literal["instagram_public", "reddit", "tiktok", "x_public", "youtube_comments"]
 
@@ -315,3 +402,6 @@ def _parse_datetime(value: str | None) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+PublicSourceAlias = str

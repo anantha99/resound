@@ -33,7 +33,8 @@ from resound.ops.demo_population import (
     populate_demo_brands,
 )
 from resound.pipeline import Pipeline
-from resound.social import V1_PUBLIC_SOURCE_TYPES, SourceType
+from resound.social import SourceType, canonical_source
+from resound.social.resolver import parse_cli_request
 from resound.tenancy import TenantContext
 from resound.workflows.public_listening import (
     PublicListeningSyncRequest,
@@ -184,12 +185,46 @@ def sync_public_listening_cmd(
         "--source",
         help="Public source to sync. Repeat or comma-separate. Defaults to reddit.",
     ),
-    max_items: int = typer.Option(20, min=1, help="Maximum Apify items per source"),
+    max_items: int = typer.Option(
+        20,
+        "--max-items",
+        "--max-items-per-path",
+        min=1,
+        help="Maximum provider rows requested per selected path.",
+    ),
+    paths: list[str] | None = typer.Option(
+        None, "--path", help="Selected flat path as SOURCE:PATH. Repeat as needed."
+    ),
+    max_signals_per_source: int | None = typer.Option(None, min=1),
+    max_parents_per_path: int | None = typer.Option(None, min=1),
+    max_comments_per_parent: int | None = typer.Option(None, min=1),
+    max_comments_per_path: int | None = typer.Option(None, min=1),
+    max_comments_per_source: int | None = typer.Option(None, min=1),
+    max_runs_per_source: int | None = typer.Option(None, min=1),
+    max_cost_usd_per_source: str | None = typer.Option(
+        None, help="Exact Decimal maximum provider cost per source (for example 0.50)."
+    ),
 ) -> None:
     """Seed a tenant brand/profile and run the Apify-backed public-listening sync."""
     _setup_logging()
     cfg = load_brand_config(brand)
     enabled_sources = _parse_public_sources(sources)
+    # Build the exact same lower-only request contract consumed by the API
+    # integration. The legacy workflow remains in place until Task 4 switches
+    # execution to resolved snapshots.
+    parse_cli_request(
+        brand_id=brand,
+        sources=list(sources or ["reddit"]),
+        paths=paths,
+        max_signals_per_source=max_signals_per_source,
+        max_items_per_path=max_items,
+        max_parents_per_path=max_parents_per_path,
+        max_comments_per_parent=max_comments_per_parent,
+        max_comments_per_path=max_comments_per_path,
+        max_comments_per_source=max_comments_per_source,
+        max_runs_per_source=max_runs_per_source,
+        max_cost_usd_per_source=max_cost_usd_per_source,
+    )
     memory = SqlMemory()
     organization_id = memory.ensure_organization(organization, organization.title())
     brand_row = memory.ensure_brand(
@@ -400,18 +435,28 @@ def _parse_public_sources(values: list[str] | None) -> list[SourceType]:
         for source in value.split(",")
         if source.strip()
     ]
-    invalid = sorted(set(requested) - V1_PUBLIC_SOURCE_TYPES)
-    if invalid:
-        allowed = ", ".join(sorted(V1_PUBLIC_SOURCE_TYPES))
-        raise typer.BadParameter(
-            f"Unsupported source(s): {', '.join(invalid)}. Choose from: {allowed}"
-        )
+    legacy_alias = {
+        "reddit": "reddit",
+        "instagram": "instagram_public",
+        "tiktok": "tiktok",
+        "x": "x_public",
+        "youtube": "youtube_comments",
+    }
     selected: list[SourceType] = []
     seen: set[str] = set()
-    for source in requested:
+    for raw_source in requested:
+        try:
+            source = canonical_source(raw_source)
+        except ValueError as exc:
+            allowed = "instagram, reddit, tiktok, x, youtube"
+            raise typer.BadParameter(
+                f"Unsupported source: {raw_source}. Choose from: {allowed}"
+            ) from exc
         if source in seen:
-            continue
-        selected.append(cast(SourceType, source))
+            raise typer.BadParameter(
+                f"Duplicate source alias after normalization: {raw_source} -> {source}"
+            )
+        selected.append(cast(SourceType, legacy_alias[source]))
         seen.add(source)
     return selected or [cast(SourceType, "reddit")]
 
