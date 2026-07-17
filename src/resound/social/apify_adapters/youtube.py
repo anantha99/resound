@@ -4,22 +4,54 @@ from __future__ import annotations
 
 from resound.social.apify_adapters.common import (
     ActorRunPlan,
+    AdapterPathPlan,
+    ParentContext,
     ParsedProviderSignal,
+    TypedSelector,
     actor_minimum_charge,
     canonical_http_url,
     clean_strings,
     exact_datetime,
     identity_for,
+    observed_metrics,
     optional_text,
     required_text,
 )
-from resound.social.contracts import SourcePath
+from resound.social.contracts import SelectorKind, SourcePath
 from resound.social.registry import ACTOR_REGISTRY
 
 
 class YouTubeAdapter:
     actor = ACTOR_REGISTRY["youtube_discovery"]
     max_runs = 2
+
+    def plan_path(
+        self,
+        *,
+        path: SourcePath,
+        selectors: tuple[TypedSelector, ...] = (),
+        parents: tuple[ParsedProviderSignal, ...] = (),
+        item_cap: int,
+        max_parents: int,
+        max_comments_per_parent: int,
+        max_comments: int,
+    ) -> AdapterPathPlan:
+        del parents, max_parents, max_comments_per_parent, max_comments
+        expected = (
+            SelectorKind.URL if path == SourcePath.OFFICIAL_DISCOVERY else SelectorKind.SEARCH
+        )
+        if path not in {SourcePath.OFFICIAL_DISCOVERY, SourcePath.MENTION_DISCOVERY}:
+            raise ValueError("YouTube supports discovery paths only")
+        invalid = [selector.kind.value for selector in selectors if selector.kind != expected]
+        if invalid:
+            raise ValueError(f"unsupported YouTube selector kind(s): {', '.join(invalid)}")
+        values = [selector.value for selector in selectors]
+        runs = (
+            self.plan_official(channel_urls=values, max_items=item_cap)
+            if path == SourcePath.OFFICIAL_DISCOVERY
+            else self.plan_mentions(search_queries=values, max_items=item_cap)
+        )
+        return AdapterPathPlan(path, actor_runs=runs)
 
     def plan_official(self, *, channel_urls: list[str], max_items: int) -> tuple[ActorRunPlan, ...]:
         urls = clean_strings(channel_urls, field="startUrls")
@@ -81,4 +113,22 @@ class YouTubeAdapter:
             provider_timestamp=timestamp,
             canonical_url=url,
             author_handle=optional_text(item, "channelName", "channelId"),
+            observed_public_metrics=observed_metrics(
+                item,
+                {
+                    "views": ("viewCount", "views"),
+                    "likes": ("likes", "likeCount"),
+                    "comments": ("commentsCount", "commentCount"),
+                },
+            ),
         )
+
+    def parse_path_result(
+        self,
+        *,
+        path: SourcePath,
+        item: dict[str, object],
+        parent: ParentContext | None = None,
+    ) -> ParsedProviderSignal:
+        del path, parent
+        return self.parse(item)

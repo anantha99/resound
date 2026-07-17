@@ -7,25 +7,99 @@ from urllib.parse import urlsplit
 from resound.social.apify import ApifyClient, validate_apify_dataset_url
 from resound.social.apify_adapters.common import (
     ActorRunPlan,
+    AdapterPathPlan,
+    DatasetFetchPlan,
+    ParentContext,
     ParsedProviderSignal,
     ParserError,
+    TypedSelector,
     actor_minimum_charge,
     canonical_http_url,
     clean_strings,
     exact_datetime,
     identity_for,
     nested_text,
+    observed_metrics,
     optional_text,
     positive_quotient,
     required_text,
 )
-from resound.social.contracts import SourcePath
+from resound.social.contracts import SelectorKind, SourcePath
 from resound.social.registry import ACTOR_REGISTRY
 
 
 class TikTokAdapter:
     actor = ACTOR_REGISTRY["tiktok"]
     max_runs = 2
+
+    def plan_path(
+        self,
+        *,
+        path: SourcePath,
+        selectors: tuple[TypedSelector, ...] = (),
+        parents: tuple[ParsedProviderSignal, ...] = (),
+        item_cap: int,
+        max_parents: int,
+        max_comments_per_parent: int,
+        max_comments: int,
+    ) -> AdapterPathPlan:
+        if path == SourcePath.OFFICIAL_DISCOVERY:
+            profiles = self._selector_values(selectors, {SelectorKind.PROFILE})
+            return AdapterPathPlan(
+                path,
+                actor_runs=self.plan_official(
+                    profiles=profiles,
+                    item_cap=item_cap,
+                    comments_per_post=max_comments_per_parent,
+                ),
+            )
+        if path == SourcePath.MENTION_DISCOVERY:
+            hashtags = self._selector_values(selectors, {SelectorKind.HASHTAG}, reject_other=False)
+            searches = self._selector_values(selectors, {SelectorKind.SEARCH}, reject_other=False)
+            invalid = [
+                selector.kind.value
+                for selector in selectors
+                if selector.kind not in {SelectorKind.HASHTAG, SelectorKind.SEARCH}
+            ]
+            if invalid:
+                raise ValueError(
+                    f"unsupported TikTok mention selector kind(s): {', '.join(invalid)}"
+                )
+            return AdapterPathPlan(
+                path,
+                actor_runs=self.plan_mentions(
+                    hashtags=hashtags,
+                    search_queries=searches,
+                    item_cap=item_cap,
+                    comments_per_post=max_comments_per_parent,
+                ),
+            )
+        if path not in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+            raise ValueError(f"unsupported TikTok path: {path.value}")
+        fetches = self.plan_comment_datasets(
+            path=path,
+            parents=parents,
+            max_parents=max_parents,
+            max_comments_per_parent=max_comments_per_parent,
+            max_comments=max_comments,
+        )
+        return AdapterPathPlan(
+            path,
+            dataset_fetches=fetches,
+            empty_reason="no_eligible_parents" if not fetches else None,
+        )
+
+    @staticmethod
+    def _selector_values(
+        selectors: tuple[TypedSelector, ...],
+        allowed: set[SelectorKind],
+        *,
+        reject_other: bool = True,
+    ) -> list[str]:
+        invalid = [selector.kind.value for selector in selectors if selector.kind not in allowed]
+        if invalid and reject_other:
+            raise ValueError(f"unsupported TikTok selector kind(s): {', '.join(invalid)}")
+        return [selector.value for selector in selectors if selector.kind in allowed]
 
     def plan_official(
         self, *, profiles: list[str], item_cap: int, comments_per_post: int
@@ -113,6 +187,45 @@ class TikTokAdapter:
         return dataset_id, sanitized_url
 
     @classmethod
+    def plan_comment_datasets(
+        cls,
+        *,
+        path: SourcePath,
+        parents: tuple[ParsedProviderSignal, ...],
+        max_parents: int,
+        max_comments_per_parent: int,
+        max_comments: int,
+    ) -> tuple[DatasetFetchPlan, ...]:
+        if path not in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+            raise ValueError("TikTok dataset traversal requires a flat comment path")
+        eligible = [parent for parent in parents if parent.comments_dataset_url][:max_parents]
+        if not eligible:
+            return ()
+        per_parent_limit = min(max_comments_per_parent, max_comments // len(eligible))
+        if per_parent_limit <= 0:
+            raise ValueError("TikTok comment cap cannot allocate one row to every eligible parent")
+        plans = []
+        for parent in eligible:
+            dataset_id, dataset_url = cls.comments_dataset_reference(parent.comments_dataset_url)
+            parent_context = parent.as_parent_context()
+            plans.append(
+                DatasetFetchPlan(
+                    path=path,
+                    dataset_id=dataset_id,
+                    dataset_url=dataset_url,
+                    requested_limit=per_parent_limit,
+                    parent=parent_context,
+                    provenance={
+                        "source": "tiktok",
+                        "path": path.value,
+                        "association": "commentsDatasetUrl",
+                        "parent_identity": parent.identity.value,
+                    },
+                )
+            )
+        return tuple(plans)
+
+    @classmethod
     def fetch_comments(
         cls,
         client: ApifyClient,
@@ -155,17 +268,40 @@ class TikTokAdapter:
             provider_timestamp=timestamp,
             canonical_url=url,
             author_handle=nested_text(item, "authorMeta", "name", "nickName"),
+            observed_public_metrics=observed_metrics(
+                item,
+                {
+                    "likes": ("diggCount", "likes", "likeCount"),
+                    "comments": ("commentCount", "comments"),
+                    "shares": ("shareCount", "shares"),
+                    "plays": ("playCount", "views"),
+                },
+            ),
             comments_dataset_url=comments_url,
         )
 
     @staticmethod
-    def parse_comment(item: dict[str, object], *, parent_url: str) -> ParsedProviderSignal:
+    def parse_comment(
+        item: dict[str, object],
+        *,
+        parent: ParentContext | None = None,
+        parent_url: str | None = None,
+    ) -> ParsedProviderSignal:
         content = required_text(item, "text", "commentText")
         timestamp = exact_datetime(
             item.get("createTimeISO") or item.get("createTime"),
             field="createTimeISO/createTime",
         )
-        canonical_parent = canonical_http_url(parent_url, field="parent_url", required=True)
+        if parent is None:
+            canonical_parent = canonical_http_url(parent_url, field="parent_url", required=True)
+            parent = ParentContext(
+                platform="tiktok",
+                content_kind="video",
+                author_handle=None,
+                excerpt=None,
+                canonical_url=canonical_parent,
+                published_at=None,
+            )
         comment_url = canonical_http_url(item.get("commentUrl"), field="commentUrl")
         return ParsedProviderSignal(
             platform="tiktok",
@@ -181,7 +317,23 @@ class TikTokAdapter:
             content=content,
             provider_timestamp=timestamp,
             canonical_url=comment_url,
-            parent_url=canonical_parent,
+            parent_context=parent,
             author_handle=optional_text(item, "uniqueId", "username")
             or nested_text(item, "user", "uniqueId", "nickname"),
+            observed_public_metrics=observed_metrics(
+                item, {"likes": ("diggCount", "likes"), "replies": ("replyCount",)}
+            ),
         )
+
+    def parse_path_result(
+        self,
+        *,
+        path: SourcePath,
+        item: dict[str, object],
+        parent: ParentContext | None = None,
+    ) -> ParsedProviderSignal:
+        if path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+            if parent is None:
+                raise ParserError("TikTok comment parsing requires its associated parent context")
+            return self.parse_comment(item, parent=parent)
+        return self.parse_video(item)

@@ -2,34 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from resound.social.apify_adapters.common import (
     ActorRunPlan,
+    AdapterPathPlan,
+    ParentContext,
     ParsedProviderSignal,
+    TypedSelector,
     actor_minimum_charge,
     canonical_http_url,
     clean_strings,
     exact_datetime,
     identity_for,
+    observed_metrics,
     optional_text,
     positive_quotient,
     required_text,
 )
-from resound.social.contracts import SourcePath
+from resound.social.contracts import SelectorKind, SourcePath
 from resound.social.registry import ACTOR_REGISTRY
-
-
-@dataclass(frozen=True)
-class InstagramMentionSelector:
-    value: str
-    search_type: str = "hashtag"
-
-    def __post_init__(self) -> None:
-        if self.search_type not in {"hashtag", "user", "place", "profile"}:
-            raise ValueError("Instagram supports only hashtag/profile/place/user selectors")
-        if not self.value.strip():
-            raise ValueError("Instagram selector cannot be empty")
 
 
 class InstagramAdapter:
@@ -64,7 +54,7 @@ class InstagramAdapter:
         )
 
     def plan_mentions(
-        self, *, selectors: list[InstagramMentionSelector], item_cap: int
+        self, *, selectors: list[TypedSelector], item_cap: int
     ) -> tuple[ActorRunPlan, ...]:
         if len(selectors) > self.max_mention_selectors:
             raise ValueError("Instagram mention selectors exceed hard cap 6")
@@ -73,13 +63,20 @@ class InstagramAdapter:
         results_limit = positive_quotient(item_cap, len(selectors), label="mention discovery")
         plans = []
         for selector in selectors:
+            if selector.kind not in {
+                SelectorKind.HASHTAG,
+                SelectorKind.PROFILE,
+                SelectorKind.PLACE,
+                SelectorKind.USER,
+            }:
+                raise ValueError("Instagram supports only hashtag/profile/place/user selectors")
             plans.append(
                 ActorRunPlan(
                     SourcePath.MENTION_DISCOVERY,
                     self.discovery_actor,
                     {
-                        "search": selector.value.strip(),
-                        "searchType": selector.search_type,
+                        "search": selector.value,
+                        "searchType": selector.kind.value,
                         "searchLimit": 1,
                         "resultsType": "posts",
                         "resultsLimit": results_limit,
@@ -90,6 +87,50 @@ class InstagramAdapter:
                 )
             )
         return tuple(plans)
+
+    def plan_path(
+        self,
+        *,
+        path: SourcePath,
+        selectors: tuple[TypedSelector, ...] = (),
+        parents: tuple[ParsedProviderSignal, ...] = (),
+        item_cap: int,
+        max_parents: int,
+        max_comments_per_parent: int,
+        max_comments: int,
+    ) -> AdapterPathPlan:
+        if path == SourcePath.OFFICIAL_DISCOVERY:
+            urls = self._selector_values(selectors, {SelectorKind.URL})
+            return AdapterPathPlan(
+                path, actor_runs=self.plan_official(direct_urls=urls, item_cap=item_cap)
+            )
+        if path == SourcePath.MENTION_DISCOVERY:
+            return AdapterPathPlan(
+                path, actor_runs=self.plan_mentions(selectors=list(selectors), item_cap=item_cap)
+            )
+        parent_urls = [
+            parent.canonical_url for parent in parents[:max_parents] if parent.canonical_url
+        ]
+        plans = self.plan_comments(
+            path=path,
+            parent_urls=parent_urls,
+            path_comment_cap=max_comments,
+            max_comments_per_parent=max_comments_per_parent,
+        )
+        return AdapterPathPlan(
+            path,
+            actor_runs=plans,
+            empty_reason="no_eligible_parents" if not plans else None,
+        )
+
+    @staticmethod
+    def _selector_values(
+        selectors: tuple[TypedSelector, ...], allowed: set[SelectorKind]
+    ) -> list[str]:
+        invalid = [selector.kind.value for selector in selectors if selector.kind not in allowed]
+        if invalid:
+            raise ValueError(f"unsupported Instagram selector kind(s): {', '.join(invalid)}")
+        return [selector.value for selector in selectors]
 
     def plan_comments(
         self,
@@ -145,14 +186,39 @@ class InstagramAdapter:
             provider_timestamp=timestamp,
             canonical_url=url,
             author_handle=optional_text(item, "ownerUsername", "username"),
+            observed_public_metrics=observed_metrics(
+                item,
+                {
+                    "likes": ("likesCount", "likeCount"),
+                    "comments": ("commentsCount",),
+                    "views": ("videoViewCount", "videoPlayCount"),
+                },
+            ),
         )
 
     @staticmethod
-    def parse_comment(item: dict[str, object]) -> ParsedProviderSignal:
+    def parse_comment(
+        item: dict[str, object], *, parent: ParentContext | None = None
+    ) -> ParsedProviderSignal:
         content = required_text(item, "text", "commentText")
         timestamp = exact_datetime(item.get("timestamp"), field="timestamp")
         comment_url = canonical_http_url(item.get("commentUrl"), field="commentUrl", required=True)
         parent_url = canonical_http_url(item.get("postUrl"), field="postUrl", required=True)
+        parent_context = parent or ParentContext(
+            platform="instagram",
+            content_kind="post",
+            author_handle=optional_text(item, "postOwnerUsername", "parentAuthorUsername"),
+            excerpt=optional_text(item, "postCaption", "parentCaption"),
+            canonical_url=parent_url,
+            published_at=(
+                exact_datetime(item.get("postTimestamp"), field="postTimestamp")
+                if item.get("postTimestamp") is not None
+                else None
+            ),
+            provider_native_id=optional_text(item, "postId", "parentId"),
+        )
+        if parent_context.canonical_url != parent_url:
+            raise ValueError("Instagram postUrl does not match the associated parent")
         return ParsedProviderSignal(
             platform="instagram",
             content_kind="comment",
@@ -167,6 +233,30 @@ class InstagramAdapter:
             content=content,
             provider_timestamp=timestamp,
             canonical_url=comment_url,
-            parent_url=parent_url,
+            parent_context=parent_context,
             author_handle=optional_text(item, "ownerUsername", "username"),
+            observed_public_metrics=observed_metrics(
+                item, {"likes": ("likesCount", "likeCount"), "replies": ("repliesCount",)}
+            ),
         )
+
+    def parse_path_result(
+        self,
+        *,
+        path: SourcePath,
+        item: dict[str, object],
+        parent: ParentContext | None = None,
+    ) -> ParsedProviderSignal:
+        if path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+            return self.parse_comment(item, parent=parent)
+        return self.parse_post(item)
+
+
+def InstagramMentionSelector(value: str, search_type: str = "hashtag") -> TypedSelector:  # noqa: N802
+    """Compatibility constructor returning the shared typed selector contract."""
+
+    try:
+        kind = SelectorKind(search_type)
+    except ValueError as exc:
+        raise ValueError("Instagram supports only hashtag/profile/place/user selectors") from exc
+    return TypedSelector(kind=kind, value=value)
