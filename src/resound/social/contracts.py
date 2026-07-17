@@ -121,6 +121,21 @@ SOURCE_ALIASES = {
 }
 
 
+def canonical_public_source(value: str) -> str:
+    """Canonicalize known public-source aliases and preserve other source names."""
+
+    normalized = value.strip().lower()
+    return SOURCE_ALIASES.get(normalized, normalized)
+
+
+def public_source_aliases(value: str) -> tuple[str, ...]:
+    """Return all stored aliases matching a canonical public source."""
+
+    canonical = canonical_public_source(value)
+    aliases = tuple(alias for alias, target in SOURCE_ALIASES.items() if target == canonical)
+    return aliases or (canonical,)
+
+
 def canonical_json(value: Any) -> str:
     """Serialize behavior-bearing values deterministically for fingerprints."""
 
@@ -457,6 +472,11 @@ class ResolvedSourceConfigSnapshot(FrozenModel):
     processing: ResolvedProcessingConfigSnapshot
     approval_fingerprint: ApprovedSourceConfigFingerprint
 
+    @field_validator("storage_platform")
+    @classmethod
+    def canonical_storage_platform(cls, value: str) -> str:
+        return canonical_public_source(value)
+
     def evidence_for(
         self,
         path: SourcePath,
@@ -607,6 +627,11 @@ class AdapterResult(FrozenModel):
     issues: tuple[AdapterIssue, ...] = ()
     cap_reached: bool = False
     config_fingerprint: ApprovedSourceConfigFingerprint
+
+    @field_validator("platform")
+    @classmethod
+    def canonical_platform(cls, value: str) -> str:
+        return canonical_public_source(value)
 
 
 class PublicListeningSyncResult(FrozenModel):

@@ -43,7 +43,16 @@ from resound.social.apify_adapters.common import (
     ParsedProviderSignal,
     TypedSelector,
 )
-from resound.social.common import ProviderBudget, UnresolvedActorStartError
+from resound.social.common import (
+    ProviderAuthError,
+    ProviderBudget,
+    ProviderBudgetInvariantError,
+    ProviderBuildMismatchError,
+    ProviderConfigError,
+    ProviderDefiniteRejectionError,
+    ProviderUsageError,
+    UnresolvedActorStartError,
+)
 from resound.social.config import SourceConfigError
 from resound.social.registry import ActorRegistration, actor_role_for_path
 from resound.tenancy import TenantContext
@@ -278,6 +287,12 @@ NON_RETRYABLE_ACTIVITY_ERRORS = (
     "LeaseLostError",
     "LLMGatewayAuthError",
     "LLMGatewayConfigError",
+    "ProviderAuthError",
+    "ProviderBudgetInvariantError",
+    "ProviderBuildMismatchError",
+    "ProviderConfigError",
+    "ProviderDefiniteRejectionError",
+    "ProviderUsageError",
     "SourceConfigError",
     "UnresolvedActorStartError",
     "ValueError",
@@ -631,10 +646,26 @@ def _usage_total(run: Mapping[str, Any]) -> Decimal:
     try:
         usage = Decimal(str(run.get("usageTotalUsd")))
     except (DecimalException, ValueError) as exc:
-        raise RuntimeError("terminal Apify Run has missing or malformed usageTotalUsd") from exc
+        raise ProviderUsageError(
+            "terminal Apify Run has missing or malformed usageTotalUsd"
+        ) from exc
     if not usage.is_finite() or usage < 0:
-        raise RuntimeError("terminal Apify Run has missing or malformed usageTotalUsd")
+        raise ProviderUsageError("terminal Apify Run has missing or malformed usageTotalUsd")
     return usage
+
+
+def _component_status(
+    *,
+    issues: list[AdapterIssue],
+    processed: int,
+    resumed: int,
+    duplicates: int,
+) -> str:
+    """Derive path status once from typed issues and preserved usable work."""
+
+    if not issues:
+        return "ok"
+    return "partial" if processed + resumed + duplicates > 0 else "failed"
 
 
 def _abort_provider_run(client: Any, run_id: str) -> None:
@@ -853,6 +884,16 @@ def execute_public_listening_source(
                 if processing.status == "failed":
                     skipped += 1
                     processing_state = "failed"
+                    issues.append(
+                        AdapterIssue(
+                            path=path,
+                            code="signal_processing_failed",
+                            issue_class=processing.error_class or "SignalProcessingError",
+                            message=processing.error_message or "signal processing failed",
+                            preserved_work=processed + resumed + duplicates > 0,
+                            dataset_id=dataset_id,
+                        )
+                    )
                 else:
                     accepted_identities.add(identity_key)
                     state.processed_identities.append(identity_key)
@@ -912,18 +953,24 @@ def execute_public_listening_source(
                         state,
                         f"before_actor_start:{reservation_id}",
                     )
-                    run = client.run_actor(
-                        plan.actor.actor_id,
-                        plan.actor_input,
-                        build_number=plan.actor.build_number,
-                        expected_build_id=plan.actor.build_id,
-                        max_total_charge_usd=charge_cap,
-                        reservation_callback=reserve_start,
-                        deadline_context=deadline_context,
-                        deadline_monotonic=deadline,
-                        deadline_reserve_seconds=snapshot.limits.deadline_reserve_seconds,
-                        cancellation_requested=_cancellation_requested,
-                    )
+                    try:
+                        run = client.run_actor(
+                            plan.actor.actor_id,
+                            plan.actor_input,
+                            build_number=plan.actor.build_number,
+                            expected_build_id=plan.actor.build_id,
+                            max_total_charge_usd=charge_cap,
+                            reservation_callback=reserve_start,
+                            deadline_context=deadline_context,
+                            deadline_monotonic=deadline,
+                            deadline_reserve_seconds=snapshot.limits.deadline_reserve_seconds,
+                            cancellation_requested=_cancellation_requested,
+                        )
+                    except ProviderDefiniteRejectionError:
+                        budget.resolve_start(reservation_id)
+                        state.reservations.pop(reservation_id, None)
+                        _heartbeat(request, state, f"actor_rejected:{reservation_id}")
+                        raise
                     run_id = str(run.get("id") or "").strip()
                     if not run_id:
                         raise UnresolvedActorStartError(
@@ -1092,12 +1139,17 @@ def execute_public_listening_source(
                 }
                 state.pages[dataset_key] = len(items)
                 _heartbeat(request, state, f"dataset_complete:{dataset_key}")
-            component_status = "partial" if issues else "ok"
         except (
             AdapterBlockedError,
             LeaseLostError,
             LLMGatewayAuthError,
             LLMGatewayConfigError,
+            ProviderAuthError,
+            ProviderBudgetInvariantError,
+            ProviderBuildMismatchError,
+            ProviderConfigError,
+            ProviderDefiniteRejectionError,
+            ProviderUsageError,
             SourceConfigError,
             UnresolvedActorStartError,
             ValueError,
@@ -1111,7 +1163,6 @@ def execute_public_listening_source(
                 for run_id in active_run_ids:
                     _abort_provider_run(client, run_id)
                 raise asyncio.CancelledError from exc
-            component_status = "partial" if processed or duplicates else "failed"
             issues.append(
                 AdapterIssue(
                     path=path,
@@ -1119,9 +1170,15 @@ def execute_public_listening_source(
                     issue_class=type(exc).__name__,
                     message=str(exc),
                     retryable=True,
-                    preserved_work=bool(processed or duplicates),
+                    preserved_work=bool(processed or resumed or duplicates),
                 )
             )
+        component_status = _component_status(
+            issues=issues,
+            processed=processed,
+            resumed=resumed,
+            duplicates=duplicates,
+        )
         component = AdapterComponentResult(
             path=path,
             status=component_status,

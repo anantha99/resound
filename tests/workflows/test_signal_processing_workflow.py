@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -220,6 +219,18 @@ class BlockingSplitStageAgent(SplitStageAgent):
             response=_response("classification"),
         )
 
+
+class ClaimObservedMemory(SqlMemory):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.classification_waiter_observed = Event()
+
+    def acquire_signal_processing_claim(self, **kwargs):
+        acquired = super().acquire_signal_processing_claim(**kwargs)
+        if kwargs["stage"] == "classification" and not acquired:
+            self.classification_waiter_observed.set()
+        return acquired
+
 def test_process_signal_uses_agentic_triage_by_default(tmp_path):
     memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'agentic-process.db'}")
     org = memory.ensure_organization("org-a", "Org A")
@@ -330,7 +341,7 @@ def test_process_signal_retries_signal_row_without_classification_or_route(tmp_p
 
 
 def test_concurrent_workers_claim_external_stages_once(tmp_path):
-    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'stage-claims.db'}")
+    memory = ClaimObservedMemory(database_url=f"sqlite:///{tmp_path / 'stage-claims.db'}")
     org = memory.ensure_organization("org-a", "Org A")
     brand = memory.ensure_brand(org, "acme", "Acme")
     request = _processing_request(org=org, brand_id=brand.id, external_id="claim-race-1")
@@ -340,14 +351,14 @@ def test_concurrent_workers_claim_external_stages_once(tmp_path):
         first = executor.submit(process_signal, request, memory=memory, triage_agent=agent)
         assert agent.classification_entered.wait(timeout=5)
         second = executor.submit(process_signal, request, memory=memory, triage_agent=agent)
-        time.sleep(0.2)
+        assert memory.classification_waiter_observed.wait(timeout=5)
         assert agent.classification_calls == 1
         agent.release_classification.set()
         results = [first.result(timeout=5), second.result(timeout=5)]
 
     assert agent.classification_calls == 1
     assert agent.route_calls == 1
-    assert sorted(result.processing_state for result in results) == ["duplicate", "processed"]
+    assert sorted(result.processing_state for result in results) == ["processed", "resumed"]
 
 
 def test_classification_commit_resume_routes_once_with_original_inline_config(tmp_path):

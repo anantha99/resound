@@ -7,7 +7,13 @@ from decimal import Decimal
 
 import pytest
 
-from resound.social.common import UnresolvedActorStartError
+from resound.social.common import (
+    ProviderBudgetInvariantError,
+    ProviderBuildMismatchError,
+    ProviderConfigError,
+    ProviderUsageError,
+    UnresolvedActorStartError,
+)
 from resound.social.contracts import (
     ActorRole,
     AdapterComponentResult,
@@ -569,3 +575,231 @@ def test_cancellation_aborts_only_acknowledged_run_and_stops_later_effects(monke
 
     assert aborts == [("acknowledged-run", {"timeout_seconds": 5.0})]
     assert later_effects == []
+
+
+def _two_run_snapshot() -> ResolvedSourceConfigSnapshot:
+    path = SourcePath.MENTION_DISCOVERY
+    return _snapshot(
+        PublicSource.INSTAGRAM,
+        (
+            _path(
+                path,
+                (
+                    ResolvedSelector(kind=SelectorKind.HASHTAG, value="acme"),
+                    ResolvedSelector(kind=SelectorKind.PROFILE, value="acme-profile"),
+                ),
+            ),
+        ),
+        (_evidence(PublicSource.INSTAGRAM, path, ActorRole.DISCOVERY, "discovery"),),
+    )
+
+
+def test_definite_actor_rejection_releases_reservation_but_remains_fatal(
+    runtime_boundaries,
+) -> None:
+    starts = 0
+
+    class Client:
+        def run_actor(self, _actor_id, _actor_input, **kwargs):
+            nonlocal starts
+            starts += 1
+            kwargs["reservation_callback"]()
+            raise ProviderConfigError(422, "definite rejection")
+
+    with pytest.raises(ProviderConfigError):
+        execute_public_listening_source(
+            _request(_two_run_snapshot()), memory=Memory(), apify_client=Client()
+        )
+
+    assert starts == 1
+    assert runtime_boundaries[-1]["reservations"] == {}
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        UnresolvedActorStartError("mention_discovery:0"),
+        ProviderBuildMismatchError("wrong immutable build"),
+    ],
+)
+def test_ambiguous_or_build_failure_retains_reservation_and_prevents_later_runs(
+    runtime_boundaries,
+    error: Exception,
+) -> None:
+    starts = 0
+
+    class Client:
+        def run_actor(self, _actor_id, _actor_input, **kwargs):
+            nonlocal starts
+            starts += 1
+            kwargs["reservation_callback"]()
+            raise error
+
+    with pytest.raises(type(error)):
+        execute_public_listening_source(
+            _request(_two_run_snapshot()), memory=Memory(), apify_client=Client()
+        )
+
+    assert starts == 1
+    assert runtime_boundaries[-1]["reservations"] == {"mention_discovery:0": "2.00"}
+
+
+@pytest.mark.parametrize(
+    ("usage", "error_type"),
+    [("NaN", ProviderUsageError), ("3.00", ProviderBudgetInvariantError)],
+)
+def test_usage_and_budget_safety_failures_are_fatal_and_prevent_later_runs(
+    usage: str,
+    error_type: type[Exception],
+) -> None:
+    starts = 0
+
+    class Client:
+        def run_actor(self, _actor_id, _actor_input, **kwargs):
+            nonlocal starts
+            starts += 1
+            kwargs["reservation_callback"]()
+            return {"id": "run-1"}
+
+        def wait_for_run(self, run, **_kwargs):
+            return {
+                **run,
+                "status": "SUCCEEDED",
+                "usageTotalUsd": usage,
+                "defaultDatasetId": "dataset",
+            }
+
+    with pytest.raises(error_type):
+        execute_public_listening_source(
+            _request(_two_run_snapshot()), memory=Memory(), apify_client=Client()
+        )
+
+    assert starts == 1
+
+
+def test_failed_signal_processing_emits_typed_issue_and_failed_component(monkeypatch) -> None:
+    path = SourcePath.OFFICIAL_DISCOVERY
+    snapshot = _snapshot(
+        PublicSource.INSTAGRAM,
+        (
+            _path(
+                path,
+                (ResolvedSelector(kind=SelectorKind.URL, value="https://instagram.com/acme"),),
+            ),
+        ),
+        (_evidence(PublicSource.INSTAGRAM, path, ActorRole.DISCOVERY, "discovery"),),
+    )
+    monkeypatch.setattr(
+        public_listening,
+        "process_signal",
+        lambda *_args, **_kwargs: SignalProcessingResult(
+            "failed",
+            "failed-key",
+            signal_id=11,
+            processing_state="failed",
+            error_class="ClassificationFailure",
+            error_message="classification failed",
+        ),
+    )
+
+    class Client:
+        def run_actor(self, _actor_id, _actor_input, **kwargs):
+            kwargs["reservation_callback"]()
+            return {"id": "run"}
+
+        def wait_for_run(self, run, **_kwargs):
+            return {
+                **run,
+                "status": "SUCCEEDED",
+                "usageTotalUsd": "0.10",
+                "defaultDatasetId": "dataset",
+            }
+
+        def fetch_dataset_items(self, _dataset_id, **_kwargs):
+            return [
+                {
+                    "id": "post",
+                    "caption": "post",
+                    "timestamp": "2026-07-17T01:02:03Z",
+                    "url": "https://www.instagram.com/p/post/",
+                }
+            ]
+
+    component = execute_public_listening_source(
+        _request(snapshot), memory=Memory(), apify_client=Client()
+    ).paths[0]
+
+    assert component.status == "failed"
+    assert component.issues[0].code == "signal_processing_failed"
+    assert component.issues[0].issue_class == "ClassificationFailure"
+    assert component.associations[0].processing_state == "failed"
+
+
+def test_resumed_work_plus_failed_processing_is_partial(monkeypatch) -> None:
+    path = SourcePath.OFFICIAL_DISCOVERY
+    snapshot = _snapshot(
+        PublicSource.INSTAGRAM,
+        (
+            _path(
+                path,
+                (ResolvedSelector(kind=SelectorKind.URL, value="https://instagram.com/acme"),),
+            ),
+        ),
+        (_evidence(PublicSource.INSTAGRAM, path, ActorRole.DISCOVERY, "discovery"),),
+    )
+    results = iter(
+        (
+            SignalProcessingResult(
+                "resumed",
+                "resumed-key",
+                signal_id=1,
+                processing_state="resumed",
+                resumed_count=1,
+            ),
+            SignalProcessingResult(
+                "failed",
+                "failed-key",
+                signal_id=2,
+                processing_state="failed",
+                error_class="RouteFailure",
+                error_message="route failed",
+            ),
+        )
+    )
+    monkeypatch.setattr(public_listening, "process_signal", lambda *_args, **_kwargs: next(results))
+
+    class Client:
+        def run_actor(self, _actor_id, _actor_input, **kwargs):
+            kwargs["reservation_callback"]()
+            return {"id": "run"}
+
+        def wait_for_run(self, run, **_kwargs):
+            return {
+                **run,
+                "status": "SUCCEEDED",
+                "usageTotalUsd": "0.10",
+                "defaultDatasetId": "dataset",
+            }
+
+        def fetch_dataset_items(self, _dataset_id, **_kwargs):
+            return [
+                {
+                    "id": f"post-{index}",
+                    "caption": f"post {index}",
+                    "timestamp": "2026-07-17T01:02:03Z",
+                    "url": f"https://www.instagram.com/p/post-{index}/",
+                }
+                for index in (1, 2)
+            ]
+
+    component = execute_public_listening_source(
+        _request(snapshot), memory=Memory(), apify_client=Client()
+    ).paths[0]
+
+    assert component.status == "partial"
+    assert component.resumed_count == 1
+    assert component.processed_count == 0
+    assert [association.processing_state for association in component.associations] == [
+        "resumed",
+        "failed",
+    ]

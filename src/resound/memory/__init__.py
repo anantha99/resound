@@ -45,6 +45,7 @@ from resound.db import (
 from resound.gateway import LLMGatewayError, LLMResponse
 from resound.models import Classification, FeedbackEvent, RawSignal, Route
 from resound.social import ListeningProfile
+from resound.social.contracts import canonical_public_source
 from resound.tenancy import TenantContext
 
 
@@ -57,11 +58,6 @@ def _sha256(text: str) -> str:
 
 def _normalize_slug(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
-
-
-def canonical_public_platform(value: str) -> str:
-    normalized = value.strip().lower()
-    return "x" if normalized in {"twitter", "x_public", "x"} else normalized.removesuffix("_public")
 
 
 def signal_provider_identity(
@@ -89,7 +85,7 @@ def signal_provider_identity(
                 "canonical provider rows require platform, content kind, and exactly one identity"
             )
         return None, None, None, None
-    platform = canonical_public_platform(str(platform_value))
+    platform = canonical_public_source(str(platform_value))
     return (
         platform,
         str(content_kind).strip().lower(),
@@ -1056,7 +1052,7 @@ class SqlMemory(Memory):
         checked_at: datetime | None = None,
     ) -> int:
         checked_at = checked_at or datetime.utcnow()
-        canonical_source = canonical_public_platform(canonical_source or source_type)
+        canonical_source = canonical_public_source(canonical_source or source_type)
         if path not in {
             "official_discovery",
             "mention_discovery",
@@ -1836,6 +1832,24 @@ class SqlMemory(Memory):
         organization_id: int | None = None,
         brand_id: int | None = None,
     ) -> int:
+        signal_id, _ = self.record_signal_with_state(
+            brand_slug,
+            raw,
+            organization_id=organization_id,
+            brand_id=brand_id,
+        )
+        return signal_id
+
+    def record_signal_with_state(
+        self,
+        brand_slug: str,
+        raw: RawSignal,
+        *,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
+    ) -> tuple[int, bool]:
+        """Return the signal ID and whether this call inserted the row."""
+
         canonical_platform, content_kind, native_id, fallback_hash = signal_provider_identity(raw)
         with self.session() as s:
             row = SignalRow(
@@ -1867,7 +1881,7 @@ class SqlMemory(Memory):
                     s.add(row)
                     s.flush()
                 s.commit()
-                return row.id
+                return row.id, True
             except IntegrityError:
                 s.rollback()
                 identity_filters = [
@@ -1887,7 +1901,7 @@ class SqlMemory(Memory):
                 ).scalar_one_or_none()
                 if existing is None:
                     raise
-                return existing
+                return existing, False
 
     def load_classification(self, signal_id: int) -> tuple[int, Classification] | None:
         with self.session() as s:

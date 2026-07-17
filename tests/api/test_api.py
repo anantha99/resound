@@ -109,6 +109,32 @@ def test_signal_source_aliases_normalize_to_x(client, seeded_route):
     assert response.json()["signals"][0]["signal"]["contentKind"] == "post"
 
 
+def test_signal_source_aliases_normalize_legacy_youtube_and_preserve_g2(
+    client, seeded_route
+):
+    memory = SqlMemory()
+    with memory.session() as session:
+        signal = session.get(SignalRow, seeded_route["signal_id"])
+        signal.source = "youtube_comments"
+        session.commit()
+
+    youtube = client.get(
+        "/api/signals", params={"source": "youtube", "period": "qtd"}
+    )
+    assert youtube.status_code == 200
+    projected = youtube.json()["signals"][0]["signal"]
+    assert projected["canonicalPlatform"] == "youtube"
+    assert projected["contentKind"] == "video"
+
+    with memory.session() as session:
+        signal = session.get(SignalRow, seeded_route["signal_id"])
+        signal.source = "g2"
+        session.commit()
+    g2 = client.get("/api/signals", params={"source": "g2", "period": "qtd"})
+    assert g2.status_code == 200
+    assert g2.json()["signals"][0]["signal"]["canonicalPlatform"] == "g2"
+
+
 def test_comment_signal_projects_parent_context_metrics_and_path(client, seeded_route):
     memory = SqlMemory()
     with memory.session() as session:

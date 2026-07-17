@@ -11,7 +11,13 @@ import httpx
 
 from resound.config import env
 from resound.social import ApifyQueryConfig
-from resound.social.common import UnresolvedActorStartError
+from resound.social.common import (
+    ProviderAuthError,
+    ProviderBuildMismatchError,
+    ProviderConfigError,
+    ProviderDefiniteRejectionError,
+    UnresolvedActorStartError,
+)
 from resound.social.contracts import ProviderDeadlineContext, ProviderOverReturn
 
 
@@ -126,10 +132,17 @@ class ApifyClient:
                 )
                 response.raise_for_status()
                 payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise _provider_http_error(exc, operation="actor start") from exc
         except httpx.RequestError as exc:
             raise UnresolvedActorStartError(
                 reservation_id,
                 "Apify actor start transport failed after reservation; reconcile before retry",
+            ) from exc
+        except (TypeError, ValueError) as exc:
+            raise UnresolvedActorStartError(
+                reservation_id,
+                "Apify actor start response was malformed after reservation",
             ) from exc
         data = payload.get("data", payload)
         if not isinstance(data, dict):
@@ -211,10 +224,13 @@ class ApifyClient:
         timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         url = f"https://api.apify.com/v2/actor-runs/{run_id}"
-        with self._client(timeout_seconds=timeout_seconds) as client:
-            response = client.get(url, headers=self._headers())
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            with self._client(timeout_seconds=timeout_seconds) as client:
+                response = client.get(url, headers=self._headers())
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise _provider_http_error(exc, operation="actor polling") from exc
         data = payload.get("data", payload)
         if not isinstance(data, dict):
             raise RuntimeError(f"Apify run status response was invalid (run_id={run_id})")
@@ -297,10 +313,13 @@ class ApifyClient:
         params = {"clean": "true"}
         if limit is not None:
             params.update({"offset": str(offset), "limit": str(limit)})
-        with self._client(timeout_seconds=timeout) as client:
-            response = client.get(url, params=params, headers=self._headers())
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            with self._client(timeout_seconds=timeout) as client:
+                response = client.get(url, params=params, headers=self._headers())
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise _provider_http_error(exc, operation="dataset fetch") from exc
         if not isinstance(payload, list):
             raise RuntimeError("Apify dataset response was not a list")
         return [item for item in payload if isinstance(item, dict)]
@@ -379,11 +398,27 @@ def _verify_run_build(
     if expected_build_id is not None:
         actual_id = str(run.get("buildId") or run.get("build_id") or "")
         if actual_id != expected_build_id:
-            raise RuntimeError("Apify Run returned an unexpected immutable build ID")
+            raise ProviderBuildMismatchError("Apify Run returned an unexpected immutable build ID")
     if expected_build_number is not None:
         actual_number = str(run.get("buildNumber") or run.get("build_number") or "")
         if actual_number != expected_build_number:
-            raise RuntimeError("Apify Run returned an unexpected immutable build number")
+            raise ProviderBuildMismatchError(
+                "Apify Run returned an unexpected immutable build number"
+            )
+
+
+def _provider_http_error(
+    error: httpx.HTTPStatusError,
+    *,
+    operation: str,
+) -> ProviderDefiniteRejectionError:
+    status_code = error.response.status_code
+    message = f"Apify {operation} was rejected with HTTP {status_code}"
+    if status_code in {401, 403}:
+        return ProviderAuthError(status_code, message)
+    if status_code in {400, 404, 409, 422}:
+        return ProviderConfigError(status_code, message)
+    return ProviderDefiniteRejectionError(status_code, message)
 
 
 def apify_actor_path_id(actor_id: str) -> str:

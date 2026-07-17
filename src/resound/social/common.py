@@ -9,7 +9,39 @@ from decimal import ROUND_FLOOR, Decimal
 from resound.social.contracts import CanonicalIdentity, sha256_value
 
 
-class UnresolvedActorStartError(RuntimeError):
+class ProviderError(RuntimeError):
+    """Base class for provider failures with explicit retry/safety semantics."""
+
+
+class ProviderDefiniteRejectionError(ProviderError):
+    """The provider definitely rejected a request before accepting work."""
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class ProviderAuthError(ProviderDefiniteRejectionError):
+    """Provider authentication or authorization was rejected."""
+
+
+class ProviderConfigError(ProviderDefiniteRejectionError):
+    """Provider rejected immutable actor input or request configuration."""
+
+
+class ProviderBuildMismatchError(ProviderError):
+    """An acknowledged Run did not use the approved immutable build."""
+
+
+class ProviderUsageError(ProviderError):
+    """Terminal provider usage was missing, malformed, negative, or non-finite."""
+
+
+class ProviderBudgetInvariantError(ProviderError):
+    """Provider spend reservation or reconciliation violated a hard invariant."""
+
+
+class UnresolvedActorStartError(ProviderError):
     """A reserved actor start may have reached Apify but has no reconciled Run ID."""
 
     def __init__(self, reservation_id: str, message: str | None = None):
@@ -105,10 +137,13 @@ class ProviderBudget:
 
     def remaining_charge_cap(self) -> Decimal:
         reserved = sum((item.amount_usd for item in self.reservations.values()), Decimal("0"))
-        return floor_to_quantum(
+        remaining = floor_to_quantum(
             self.ceiling_usd - self.reconciled_spend_usd - reserved,
             self.charge_quantum_usd,
         )
+        if remaining < 0:
+            raise ProviderBudgetInvariantError("provider budget remaining charge cap is negative")
+        return remaining
 
     def reserve(self, reservation_id: str) -> ActorStartReservation:
         if self.unresolved_start:
@@ -120,7 +155,9 @@ class ProviderBudget:
         remaining = self.remaining_charge_cap()
         required = max(self.minimum_call_charge_usd, self.conservative_request_cost_usd)
         if remaining < required:
-            raise RuntimeError("remaining provider budget is below the safe call minimum")
+            raise ProviderBudgetInvariantError(
+                "remaining provider budget is below the safe call minimum"
+            )
         reservation = ActorStartReservation(reservation_id, remaining)
         self.reservations[reservation_id] = reservation
         self.unresolved_start = True
@@ -131,8 +168,13 @@ class ProviderBudget:
         self.unresolved_start = False
 
     def reconcile(self, reservation_id: str, usage_total_usd: Decimal) -> None:
-        if usage_total_usd < 0:
-            raise ValueError("usageTotalUsd cannot be negative")
+        if not usage_total_usd.is_finite() or usage_total_usd < 0:
+            raise ProviderUsageError("usageTotalUsd must be finite and non-negative")
+        if reservation_id not in self.reservations and self.unresolved_start:
+            raise ProviderBudgetInvariantError(
+                "provider usage reconciliation does not match the unresolved reservation"
+            )
+        if self.reconciled_spend_usd + usage_total_usd > self.ceiling_usd:
+            raise ProviderBudgetInvariantError("provider usage exceeded the source cost ceiling")
         self.reconciled_spend_usd += usage_total_usd
         self.resolve_start(reservation_id)
-

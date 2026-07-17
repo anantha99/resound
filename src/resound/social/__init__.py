@@ -110,6 +110,9 @@ from resound.social.contracts import (
 from resound.social.contracts import (
     SourceSyncInput as SourceSyncInput,
 )
+from resound.social.contracts import (
+    canonical_public_source as canonical_public_source,
+)
 from resound.social.registry import get_source_adapter as get_source_adapter
 from resound.social.resolver import parse_cli_request as parse_cli_request
 from resound.social.resolver import (
@@ -133,15 +136,6 @@ APIFY_ACTORS: dict[SourceType, str] = {
     "x_public": "apidojo/twitter-scraper-lite",
     "youtube_comments": "streamers/youtube-scraper",
 }
-
-SOURCE_NAMES: dict[str, str] = {
-    "instagram_public": "instagram",
-    "reddit": "reddit",
-    "tiktok": "tiktok",
-    "x_public": "x",
-    "youtube_comments": "youtube",
-}
-
 
 @dataclass(frozen=True)
 class ListeningProfile:
@@ -301,7 +295,7 @@ def normalize_apify_item(
     actor_id: str,
     run_id: str | None,
 ) -> RawSignal:
-    if source_type not in SOURCE_NAMES:
+    if source_type not in V1_PUBLIC_SOURCE_TYPES:
         raise ValueError(f"Unsupported Apify public source type: {source_type}")
 
     content = _content_for_source(source_type, item)
@@ -331,7 +325,7 @@ def normalize_apify_item(
     )
 
     return RawSignal(
-        source=SOURCE_NAMES[source_type],
+        source=canonical_public_source(source_type),
         source_mode="public_listening",
         provider="apify",
         external_id=str(external_id),

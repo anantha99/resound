@@ -81,4 +81,5 @@ def test_worker_aligns_executor_and_concurrency_and_always_shuts_down(monkeypatc
     worker_kwargs = next(item[1] for item in events if item[0] == "worker")
     assert worker_kwargs["max_concurrent_activities"] == 7
     assert worker_kwargs["activity_executor"].__class__ is FakeExecutor
+    assert worker_kwargs["workflow_runner"].__class__.__name__ == "UnsandboxedWorkflowRunner"
     assert events[-1] == ("shutdown", True, True)

@@ -7,7 +7,6 @@ from typing import Any
 
 from resound.social.contracts import (
     CANONICAL_PATH_ORDER,
-    SOURCE_ALIASES,
     AdapterLimits,
     PublicSource,
     ResolvedProviderEvidence,
@@ -15,6 +14,7 @@ from resound.social.contracts import (
     SelectorKind,
     SourcePath,
     canonical_json,
+    canonical_public_source,
     sha256_value,
 )
 
@@ -34,11 +34,10 @@ class SourceConfigError(ValueError):
 
 
 def canonical_source(value: str) -> str:
-    normalized = value.strip().lower()
-    try:
-        return SOURCE_ALIASES[normalized]
-    except KeyError as exc:
-        raise SourceConfigError(f"unsupported public source: {value}") from exc
+    canonical = canonical_public_source(value)
+    if canonical not in SOURCE_CAPABILITIES:
+        raise SourceConfigError(f"unsupported public source: {value}")
+    return canonical
 
 
 def normalize_source_mapping(sources: dict[str, Any]) -> dict[str, dict[str, Any]]:

@@ -8,7 +8,13 @@ import httpx
 import pytest
 
 from resound.social.apify import ApifyClient, serialize_start_urls, validate_apify_dataset_url
-from resound.social.common import UnresolvedActorStartError
+from resound.social.common import (
+    ProviderAuthError,
+    ProviderBuildMismatchError,
+    ProviderConfigError,
+    ProviderDefiniteRejectionError,
+    UnresolvedActorStartError,
+)
 from resound.social.contracts import AdapterLimits, ProviderDatasetRef, SourcePath
 
 
@@ -246,7 +252,7 @@ def test_actor_start_rejects_returned_build_mismatch() -> None:
             )
         ),
     )
-    with pytest.raises(RuntimeError, match="unexpected immutable build ID"):
+    with pytest.raises(ProviderBuildMismatchError, match="unexpected immutable build ID"):
         client.run_actor(
             "owner/actor",
             {},
@@ -323,6 +329,57 @@ def test_actor_start_transport_failure_preserves_unresolved_reservation_id() -> 
             reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-7"),
         )
     assert exc_info.value.reservation_id == "reservation-7"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    [
+        (401, ProviderAuthError),
+        (403, ProviderAuthError),
+        (400, ProviderConfigError),
+        (422, ProviderConfigError),
+        (500, ProviderDefiniteRejectionError),
+    ],
+)
+def test_actor_start_http_rejection_has_explicit_taxonomy(
+    status_code: int,
+    error_type: type[ProviderDefiniteRejectionError],
+) -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(lambda _request: httpx.Response(status_code, json={})),
+    )
+
+    with pytest.raises(error_type) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-http"),
+        )
+
+    assert exc_info.value.status_code == status_code
+
+
+def test_actor_start_malformed_success_is_ambiguous() -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(lambda _request: httpx.Response(201, content=b"not-json")),
+    )
+
+    with pytest.raises(UnresolvedActorStartError) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-json"),
+        )
+
+    assert exc_info.value.reservation_id == "reservation-json"
 
 
 def test_bounded_dataset_paging_never_requests_more_than_remaining_limit() -> None:

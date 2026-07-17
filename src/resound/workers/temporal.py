@@ -53,7 +53,7 @@ def worker_components() -> WorkerComponents:
 
 async def run_worker(config: WorkflowRuntimeConfig | None = None) -> None:
     from temporalio.client import Client
-    from temporalio.worker import Worker
+    from temporalio.worker import UnsandboxedWorkflowRunner, Worker
 
     runtime = config or WorkflowRuntimeConfig.from_env()
     executor = ThreadPoolExecutor(
@@ -75,6 +75,7 @@ async def run_worker(config: WorkflowRuntimeConfig | None = None) -> None:
             activity_executor=executor,
             max_concurrent_activities=runtime.activity_threads,
             identity=runtime.worker_identity,
+            workflow_runner=UnsandboxedWorkflowRunner(),
         )
         await worker.run()
     finally:

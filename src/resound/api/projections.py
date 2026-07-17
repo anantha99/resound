@@ -23,8 +23,7 @@ from resound.memory import (
     SqlMemory,
 )
 from resound.models import FeedbackEvent as DomainFeedbackEvent
-from resound.social.config import SourceConfigError, canonical_source
-from resound.social.contracts import SOURCE_ALIASES
+from resound.social.contracts import canonical_public_source, public_source_aliases
 from resound.tenancy import TenantContext
 
 BRANDS_DIR = Path("brands")
@@ -716,20 +715,11 @@ def _last_ingested(
 def _source_aliases(source: str | None) -> tuple[str, ...] | None:
     if not source:
         return None
-    normalized = source.strip().lower()
-    try:
-        canonical = canonical_source(normalized)
-    except SourceConfigError:
-        return (normalized,)
-    return tuple(alias for alias, target in SOURCE_ALIASES.items() if target == canonical)
+    return public_source_aliases(source)
 
 
 def _canonical_platform(row: SignalRow) -> str:
-    value = (row.canonical_platform or row.source or "unknown").strip().lower()
-    try:
-        return canonical_source(value)
-    except SourceConfigError:
-        return value
+    return canonical_public_source(row.canonical_platform or row.source or "unknown")
 
 
 def _content_kind(row: SignalRow) -> str:

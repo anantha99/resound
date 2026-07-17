@@ -5,7 +5,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from resound.memory import SignalProcessingClaimRow, SignalRow, SqlMemory, WorkflowLeaseRow
+from resound.memory import (
+    SignalProcessingClaimRow,
+    SignalRow,
+    SourceHealthRow,
+    SqlMemory,
+    WorkflowLeaseRow,
+    signal_provider_identity,
+)
 from resound.models import RawSignal
 from resound.workflows.leases import public_listening_workflow_id
 from resound.workflows.result_persistence import bounded_result_summary
@@ -39,13 +46,78 @@ def test_native_identity_is_unique_across_x_aliases_on_sqlite(tmp_path):
             organization_id=organization_id,
             brand_id=brand_id,
         )
-        for source, platform in (("twitter", "twitter"), ("x", "x"))
+        for source, platform in (
+            ("twitter", "twitter"),
+            ("x", "x"),
+            ("x_public", "x_public"),
+        )
     ]
 
     with memory.session() as session:
         count = session.scalar(select(func.count()).select_from(SignalRow))
     assert ids[0] == ids[1]
     assert count == 1
+
+
+def test_mixed_public_aliases_canonicalize_without_rewriting_non_public_sources(tmp_path):
+    memory, organization_id, brand_id = _memory(tmp_path)
+    timestamp = datetime.now(UTC)
+
+    youtube_ids = [
+        memory.record_signal(
+            "acme",
+            RawSignal(
+                source=platform,
+                external_id=f"legacy-{platform}",
+                content="Same video",
+                posted_at=timestamp,
+                raw_metadata={
+                    "canonical_platform": platform,
+                    "content_kind": "video",
+                    "provider_native_id": "video-123",
+                },
+            ),
+            organization_id=organization_id,
+            brand_id=brand_id,
+        )
+        for platform in ("youtube_comments", "youtube")
+    ]
+    assert youtube_ids[0] == youtube_ids[1]
+
+    identity = signal_provider_identity(
+        RawSignal(
+            source="g2",
+            external_id="review-1",
+            content="Review",
+            posted_at=timestamp,
+            raw_metadata={
+                "canonical_platform": "g2",
+                "content_kind": "review",
+                "provider_native_id": "review-1",
+            },
+        )
+    )
+    assert identity[0] == "g2"
+
+    first_health = memory.record_source_health(
+        organization_id=organization_id,
+        brand_id=brand_id,
+        source_type="youtube_comments",
+        provider="apify",
+        status="ok",
+    )
+    second_health = memory.record_source_health(
+        organization_id=organization_id,
+        brand_id=brand_id,
+        source_type="youtube",
+        provider="apify",
+        status="partial",
+    )
+    assert first_health == second_health
+    with memory.session() as session:
+        health = session.get(SourceHealthRow, first_health)
+        assert health is not None
+        assert health.canonical_source == "youtube"
 
 
 def test_canonical_identity_contract_rejects_partial_rows(tmp_path):

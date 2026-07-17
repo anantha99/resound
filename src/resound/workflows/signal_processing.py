@@ -129,12 +129,13 @@ def process_signal(
 
     if existing is None:
         _assert_owner(request, memory)
-        signal_id = memory.record_signal(
+        signal_id, inserted = memory.record_signal_with_state(
             request.brand_slug,
             request.raw_signal,
             organization_id=request.organization_id,
             brand_id=request.brand_id,
         )
+        entered_with_committed_stage = not inserted
         _checkpoint(heartbeat, "signal_committed", signal_id)
         _trip_failpoint(request, "after_signal_commit")
         existing = _existing_signal_state(memory, dedupe_key, signal_id=signal_id)
@@ -200,13 +201,15 @@ def process_signal(
 
     state = _existing_signal_state(memory, dedupe_key, signal_id=signal_id)
     if state and state.route_id is not None:
+        resumed = entered_with_committed_stage
         return SignalProcessingResult(
-            status="duplicate",
+            status="resumed" if resumed else "duplicate",
             dedupe_key=dedupe_key,
             signal_id=signal_id,
             classification_id=classification_id,
             route_id=state.route_id,
-            processing_state="duplicate",
+            processing_state="resumed" if resumed else "duplicate",
+            resumed_count=1 if resumed else 0,
         )
 
     claimed, route_id = _claim_or_wait_for_route(
@@ -332,6 +335,17 @@ def _claim_or_wait(
             owner_token=owner_token,
             ttl_seconds=ttl_seconds,
         ):
+            # The previous owner may have committed and released after our
+            # pre-acquire reload but before this claim insert. Recheck after
+            # acquiring so claim handoff never repeats the external side effect.
+            committed = load_committed()
+            if committed is not None:
+                memory.release_signal_processing_claim(
+                    signal_id=signal_id,
+                    stage=stage,
+                    owner_token=owner_token,
+                )
+                return False, committed
             return True, None
         if time.monotonic() >= deadline:
             raise TimeoutError(f"timed out waiting for {stage} processing claim")
