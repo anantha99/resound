@@ -308,6 +308,9 @@ def _resolve_path(
     if source == "instagram" and path == "mention_discovery":
         runs = len(selectors)
         mode = "one_search_per_run"
+    elif source == "tiktok" and is_comment:
+        runs = 0
+        mode = "comments_dataset"
     else:
         runs = 1
         mode = {

@@ -415,3 +415,38 @@ def _tenant(organization_id):
 
     return TenantContext(organization_id, "acme-org", team_id=None, user_id=None)
 
+
+
+def test_tiktok_comment_paths_do_not_consume_actor_runs() -> None:
+    tiktok = _approved_source(source="tiktok")
+    tiktok["paths"]["official_comments"] = {"enabled": True}
+    tiktok["paths"]["mention_comments"] = {"enabled": True}
+    tiktok["approved_envelope_fingerprint"] = approval_envelope_fingerprint(tiktok)
+
+    resolved = resolve_public_listening_request(
+        _request(
+            selected_sources=("tiktok",),
+            selected_paths=(
+                SelectedPathInput(
+                    source="tiktok",
+                    paths=(
+                        "official_discovery",
+                        "mention_discovery",
+                        "official_comments",
+                        "mention_comments",
+                    ),
+                ),
+            ),
+            limits=SourceLimitOverrides(max_runs_per_source=2),
+        ),
+        brand_config=_brand({"tiktok": tiktok}),
+        environment={},
+    )
+
+    paths = resolved.sources[0].paths
+    assert [(path.path, path.derived_run_count, path.actor_input_mode) for path in paths] == [
+        (SourcePath.OFFICIAL_DISCOVERY, 1, "string_urls"),
+        (SourcePath.MENTION_DISCOVERY, 1, "string_urls"),
+        (SourcePath.OFFICIAL_COMMENTS, 0, "comments_dataset"),
+        (SourcePath.MENTION_COMMENTS, 0, "comments_dataset"),
+    ]
