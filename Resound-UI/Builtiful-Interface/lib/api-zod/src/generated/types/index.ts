@@ -77,7 +77,6 @@ export * from './signalList';
 export * from './signalProvenance';
 export * from './signalProvenancePath';
 export * from './sourceHealth';
-export * from './sourceHealthIssuesItem';
 export * from './sourceHealthPath';
 export * from './sourceHealthProvenance';
 export * from './sourceLimitOverrides';

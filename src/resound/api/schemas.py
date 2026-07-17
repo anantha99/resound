@@ -288,7 +288,7 @@ class WorkflowResultIssue(ApiModel):
     path: SourcePath | None = None
     code: str
     issue_class: str
-    message: str
+    message: str = Field(max_length=1000)
     retryable: bool = False
     preserved_work: bool = False
     run_id: str | None = None
@@ -506,7 +506,7 @@ class SourceHealth(ApiModel):
     duplicate_count: int
     cost_usd: float
     provenance: dict[str, Any]
-    issues: list[dict[str, Any]]
+    issues: list[WorkflowResultIssue]
     error_message: str | None = None
 
 

@@ -423,6 +423,7 @@ export interface WorkflowResultIssue {
   path?: WorkflowResultIssuePath;
   code: string;
   issueClass: string;
+  /** @maxLength 1000 */
   message: string;
   retryable?: boolean;
   preservedWork?: boolean;
@@ -697,8 +698,6 @@ export const SourceHealthPath = {
 
 export type SourceHealthProvenance = { [key: string]: unknown };
 
-export type SourceHealthIssuesItem = { [key: string]: unknown };
-
 export interface SourceHealth {
   sourceType: string;
   canonicalSource: string;
@@ -714,7 +713,7 @@ export interface SourceHealth {
   duplicateCount: number;
   costUsd: number;
   provenance: SourceHealthProvenance;
-  issues: SourceHealthIssuesItem[];
+  issues: WorkflowResultIssue[];
   errorMessage?: string | null;
 }
 

@@ -665,6 +665,8 @@ export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDuplicat
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
@@ -680,6 +682,8 @@ export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociat
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
 export const startSourceSyncResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
 export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
 export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
 export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
@@ -731,7 +735,7 @@ export const StartSourceSyncResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -790,7 +794,7 @@ export const StartSourceSyncResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -845,6 +849,8 @@ export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemDuplicateCou
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
@@ -860,6 +866,8 @@ export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociations
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
 export const getWorkflowResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
 export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
 export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
 export const getWorkflowResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
@@ -911,7 +919,7 @@ export const GetWorkflowResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -970,7 +978,7 @@ export const GetWorkflowResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -1034,6 +1042,8 @@ export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsI
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
@@ -1049,6 +1059,8 @@ export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsI
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
 export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
@@ -1100,7 +1112,7 @@ export const StartListeningProfileSetupResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -1159,7 +1171,7 @@ export const StartListeningProfileSetupResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -1229,6 +1241,11 @@ export const ListSourceHealthHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const listSourceHealthResponseIssuesItemMessageMax = 1000;
+
+export const listSourceHealthResponseIssuesItemRetryableDefault = false;
+export const listSourceHealthResponseIssuesItemPreservedWorkDefault = false;
+
 export const ListSourceHealthResponseItem = zod.object({
   "sourceType": zod.string(),
   "canonicalSource": zod.string(),
@@ -1244,7 +1261,17 @@ export const ListSourceHealthResponseItem = zod.object({
   "duplicateCount": zod.number(),
   "costUsd": zod.number(),
   "provenance": zod.record(zod.string(), zod.unknown()),
-  "issues": zod.array(zod.record(zod.string(), zod.unknown())),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(listSourceHealthResponseIssuesItemMessageMax),
+  "retryable": zod.boolean().default(listSourceHealthResponseIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(listSourceHealthResponseIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})),
   "errorMessage": zod.union([zod.string(),zod.null()]).optional()
 })
 export const ListSourceHealthResponse = zod.array(ListSourceHealthResponseItem)
@@ -1364,6 +1391,8 @@ export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDu
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
@@ -1379,6 +1408,8 @@ export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAs
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
 export const startReportGenerationResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
 export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
 export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
 export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
@@ -1430,7 +1461,7 @@ export const StartReportGenerationResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),
@@ -1489,7 +1520,7 @@ export const StartReportGenerationResponse = zod.object({
   "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
   "code": zod.string(),
   "issueClass": zod.string(),
-  "message": zod.string(),
+  "message": zod.string().max(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
   "retryable": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
   "preservedWork": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
   "runId": zod.union([zod.string(),zod.null()]).optional(),

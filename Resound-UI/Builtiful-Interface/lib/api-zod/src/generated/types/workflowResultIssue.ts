@@ -11,6 +11,7 @@ export interface WorkflowResultIssue {
   path?: WorkflowResultIssuePath;
   code: string;
   issueClass: string;
+  /** @maxLength 1000 */
   message: string;
   retryable?: boolean;
   preservedWork?: boolean;

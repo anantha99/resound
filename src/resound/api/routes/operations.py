@@ -37,19 +37,16 @@ def list_source_health(
             duplicate_count=row.duplicate_count,
             cost_usd=row.cost_usd,
             provenance=row.provenance or {},
-            issues=[_safe_issue(issue) for issue in (row.issues or [])],
+            issues=[_source_health_issue(issue) for issue in (row.issues or [])],
             error_message=row.error_message,
         )
         for row in memory.list_source_health(tenant.organization_id, brand.id)
     ]
 
 
-def _safe_issue(issue: dict) -> dict:
-    return {
-        key: issue[key]
-        for key in ("path", "code", "issue_class", "message", "retryable", "preserved_work")
-        if key in issue
-    }
+def _source_health_issue(issue: dict) -> schemas.WorkflowResultIssue:
+    bounded = {**issue, "message": str(issue.get("message", ""))[:1000]}
+    return schemas.WorkflowResultIssue.model_validate(bounded)
 
 
 @router.get("/telemetry/llm", operation_id="getLlmTelemetry", response_model=schemas.LLMTelemetry)

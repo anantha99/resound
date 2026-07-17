@@ -2609,8 +2609,7 @@ components:
           title: Provenance
         issues:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowResultIssue'
           type: array
           title: Issues
         errorMessage:
@@ -3067,6 +3066,7 @@ components:
           title: Issueclass
         message:
           type: string
+          maxLength: 1000
           title: Message
         retryable:
           type: boolean
