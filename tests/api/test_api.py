@@ -363,6 +363,46 @@ def test_brand_stats_emerging_velocity_cooling(stats_memory):
     assert stats.top_emerging_issue.velocity_state == "cooling"
 
 
+def _seed_counts(stats_memory, now, *, current_count, previous_count):
+    for i in range(previous_count):
+        _seed_signal(
+            stats_memory,
+            external_id=f"prev-{i}",
+            ingested_at=now - timedelta(hours=30),
+            sentiment=Sentiment.NEGATIVE,
+            severity=Severity.HIGH,
+        )
+    for i in range(current_count):
+        _seed_signal(
+            stats_memory,
+            external_id=f"cur-{i}",
+            ingested_at=now - timedelta(hours=2),
+            sentiment=Sentiment.NEGATIVE,
+            severity=Severity.HIGH,
+        )
+
+
+@pytest.mark.parametrize(
+    ("current_count", "previous_count", "expected_state"),
+    [
+        (105, 100, "steady"),  # raw 1.05 is inclusive-steady (classify BEFORE rounding)
+        (95, 100, "steady"),  # raw 0.95 is inclusive-steady
+        (94, 100, "cooling"),  # raw 0.94 < 0.95
+        (106, 100, "accelerating"),  # raw 1.06 > 1.05
+    ],
+)
+def test_brand_stats_emerging_velocity_thresholds(
+    stats_memory, current_count, previous_count, expected_state,
+):
+    now = datetime(2026, 7, 17, 12, 0, 0)
+    _seed_counts(
+        stats_memory, now, current_count=current_count, previous_count=previous_count,
+    )
+
+    stats = projections.brand_stats(stats_memory, "liquiddeath", "24h", now=now)
+    assert stats.top_emerging_issue.velocity_state == expected_state
+
+
 @pytest.mark.parametrize(
     ("period", "expected_buckets"),
     [("24h", 12), ("7d", 7), ("30d", 10), ("qtd", 13)],
@@ -395,6 +435,44 @@ def test_brand_stats_trend_all_empty_period(stats_memory):
     assert all(
         p.volume == 0 and p.critical_count == 0 and p.net_sentiment == 0 for p in stats.trend
     )
+
+
+def test_brand_stats_trend_volume_matches_total_at_window_boundaries(stats_memory):
+    # Rows exactly at `since`, on an internal bucket boundary, and exactly at `now`
+    # must all be consistently accounted for: sum(trend volume) == total_volume.
+    now = datetime(2026, 7, 17, 12, 0, 0)
+    period = "24h"
+    since = projections.period_since(period, now)
+    span = now - since
+    width = span / projections._trend_buckets(period)
+
+    _seed_signal(
+        stats_memory,
+        external_id="at-since",
+        ingested_at=since,
+        sentiment=Sentiment.NEUTRAL,
+        severity=Severity.LOW,
+    )
+    _seed_signal(
+        stats_memory,
+        external_id="at-bucket-boundary",
+        ingested_at=since + width * 3,
+        sentiment=Sentiment.NEUTRAL,
+        severity=Severity.LOW,
+    )
+    _seed_signal(
+        stats_memory,
+        external_id="at-now",
+        ingested_at=now,
+        sentiment=Sentiment.NEUTRAL,
+        severity=Severity.LOW,
+    )
+
+    stats = projections.brand_stats(stats_memory, "liquiddeath", period, now=now)
+    # Half-open [since, now): the row exactly at `now` is excluded from BOTH
+    # total_volume and the trend, so the invariant still holds.
+    assert sum(p.volume for p in stats.trend) == stats.total_volume
+    assert stats.total_volume == 2
 
 
 def test_exported_openapi_schema_matches_react_client_base_path():

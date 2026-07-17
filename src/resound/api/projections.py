@@ -153,7 +153,9 @@ def brand_stats(
     now = now if now is not None else datetime.utcnow()
     since = period_since(period, now)
     previous_since = since - (now - since)
-    current = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
+    current = _joined_rows(
+        memory, brand_slug, tenant=tenant, since=since, before=now, limit=None, offset=0,
+    )
     previous = _joined_rows(
         memory,
         brand_slug,
@@ -172,7 +174,7 @@ def brand_stats(
     current_critical = _critical_count(current_classes)
     previous_critical = _critical_count(previous_classes)
     source_mix = _source_mix(row.signal.source for row in current)
-    patterns = list_patterns(memory, brand_slug, area=None, since=since, tenant=tenant)
+    patterns = list_patterns(memory, brand_slug, area=None, since=since, before=now, tenant=tenant)
     top_pattern = (
         _emerging_summary(patterns[0], current, previous)
         if patterns
@@ -376,8 +378,11 @@ def list_patterns(
     area: str | None,
     tenant: TenantContext | None = None,
     since: datetime | None = None,
+    before: datetime | None = None,
 ) -> list[schemas.Pattern]:
-    rows = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
+    rows = _joined_rows(
+        memory, brand_slug, tenant=tenant, since=since, before=before, limit=None, offset=0,
+    )
     if area:
         rows = [row for row in rows if row.classification.area == area]
     groups = _group_by_pattern(rows)
@@ -892,14 +897,18 @@ def _emerging_summary(
         # _pattern_summary already defaults velocity_state to "no_baseline".
         return summary
 
-    ratio = round(current_count / previous_count, 1)
-    if ratio > 1.05:
+    raw_ratio = current_count / previous_count
+    velocity_multiple = round(raw_ratio, 1)
+    # Classify on the RAW ratio (rounding first shifts boundary cases like 1.05/0.95).
+    if raw_ratio > 1.05:
         state = "accelerating"
-    elif ratio < 0.95:
+    elif raw_ratio < 0.95:
         state = "cooling"
     else:
         state = "steady"
-    return summary.model_copy(update={"velocity_multiple": ratio, "velocity_state": state})
+    return summary.model_copy(
+        update={"velocity_multiple": velocity_multiple, "velocity_state": state}
+    )
 
 
 def _pattern_id(brand_slug: str, key: str) -> int:
