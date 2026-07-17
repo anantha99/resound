@@ -100,3 +100,26 @@ ACTOR_REGISTRY = {
     ),
 }
 
+
+def get_source_adapter(source: str):
+    """Construct an actor-specific adapter without introducing registry import cycles."""
+
+    from resound.social.apify_adapters import (
+        InstagramAdapter,
+        RedditAdapter,
+        TikTokAdapter,
+        XAdapter,
+        YouTubeAdapter,
+    )
+
+    adapters = {
+        "reddit": RedditAdapter,
+        "instagram": InstagramAdapter,
+        "tiktok": TikTokAdapter,
+        "x": XAdapter,
+        "youtube": YouTubeAdapter,
+    }
+    try:
+        return adapters[source]()
+    except KeyError as exc:
+        raise ValueError(f"Unsupported public source adapter: {source}") from exc

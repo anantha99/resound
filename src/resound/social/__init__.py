@@ -92,6 +92,7 @@ from resound.social.contracts import (
 from resound.social.contracts import (
     SourceSyncInput as SourceSyncInput,
 )
+from resound.social.registry import get_source_adapter as get_source_adapter
 from resound.social.resolver import parse_cli_request as parse_cli_request
 from resound.social.resolver import (
     resolve_public_listening_request as resolve_public_listening_request,

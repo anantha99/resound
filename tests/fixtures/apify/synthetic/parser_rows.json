@@ -1,0 +1,24 @@
+{
+  "synthetic_only": true,
+  "instagram_comment": {
+    "id": "synthetic-ig-comment-1",
+    "text": "Synthetic comment text",
+    "timestamp": "2026-07-17T01:02:03Z",
+    "commentUrl": "https://www.instagram.com/p/synthetic/c/synthetic-ig-comment-1/",
+    "postUrl": "https://www.instagram.com/p/synthetic/",
+    "ownerUsername": "synthetic_user"
+  },
+  "tiktok_video": {
+    "id": "synthetic-tt-video-1",
+    "text": "Synthetic video text",
+    "createTimeISO": "2026-07-17T01:02:03Z",
+    "webVideoUrl": "https://www.tiktok.com/@synthetic/video/1",
+    "commentsDatasetUrl": "https://api.apify.com/v2/datasets/synthetic-comments/items"
+  },
+  "youtube_video": {
+    "videoId": "synthetic-yt-video-1",
+    "title": "Synthetic video title",
+    "publishedAt": "2026-07-17T01:02:03Z",
+    "url": "https://www.youtube.com/watch?v=synthetic"
+  }
+}
