@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from alembic import command
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, make_url, text
 
 from resound.memory import SqlMemory
 from resound.models import RawSignal
@@ -24,9 +24,11 @@ ALIASES = (
 
 
 def test_fresh_postgres_migration(postgres_migration_harness):
-    database_url, config = postgres_migration_harness
+    database_url, config, schema = postgres_migration_harness
     command.upgrade(config, "head")
-    engine = create_engine(database_url, future=True)
+    engine = create_engine(
+        database_url, future=True, connect_args={"options": f"-csearch_path={schema}"}
+    )
     try:
         with engine.connect() as connection:
             assert (
@@ -42,9 +44,11 @@ def test_fresh_postgres_migration(postgres_migration_harness):
 
 
 def test_populated_postgres_reset_and_collision_merge(postgres_migration_harness):
-    database_url, config = postgres_migration_harness
+    database_url, config, schema = postgres_migration_harness
     command.upgrade(config, "20260702_0005")
-    engine = create_engine(database_url, future=True)
+    engine = create_engine(
+        database_url, future=True, connect_args={"options": f"-csearch_path={schema}"}
+    )
     now = datetime(2026, 7, 17, 12, 0, 0)
     metadata = json.dumps({"provider_native_id": "tweet-1", "content_kind": "post"})
     with engine.begin() as connection:
@@ -77,6 +81,14 @@ def test_populated_postgres_reset_and_collision_merge(postgres_migration_harness
                     "now": now,
                 },
             )
+        connection.execute(
+            text(
+                "INSERT INTO source_health "
+                "(organization_id,brand_id,source_type,provider,status,item_count,updated_at) "
+                "VALUES (1,1,'g2','direct','ok',3,:now)"
+            ),
+            {"now": now},
+        )
         for signal_id, source in ((1, "twitter"), (2, "x")):
             connection.execute(
                 text(
@@ -125,7 +137,14 @@ def test_populated_postgres_reset_and_collision_merge(postgres_migration_harness
     command.upgrade(config, "head")
     try:
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT count(*) FROM source_health")) == 0
+            assert connection.scalar(text("SELECT count(*) FROM source_health")) == 1
+            retained_health = connection.execute(
+                text(
+                    "SELECT source_type, canonical_source, path, item_count "
+                    "FROM source_health"
+                )
+            ).one()
+            assert retained_health == ("g2", None, None, 3)
             assert connection.scalar(text("SELECT count(*) FROM signals")) == 1
             assert connection.scalar(text("SELECT id FROM signals")) == 2
             assert connection.scalar(text("SELECT signal_id FROM llm_calls WHERE id=1")) == 2
@@ -134,9 +153,14 @@ def test_populated_postgres_reset_and_collision_merge(postgres_migration_harness
 
 
 def test_concurrent_postgres_alias_insert_has_one_identity(postgres_migration_harness):
-    database_url, config = postgres_migration_harness
+    database_url, config, schema = postgres_migration_harness
     command.upgrade(config, "head")
-    memory = SqlMemory(database_url=database_url, create_schema=False)
+    scoped_url = (
+        make_url(database_url)
+        .update_query_dict({"options": f"-csearch_path={schema}"})
+        .render_as_string(hide_password=False)
+    )
+    memory = SqlMemory(database_url=scoped_url, create_schema=False)
     organization_id = memory.ensure_organization("org", "Org")
     brand = memory.ensure_brand(organization_id, "acme", "Acme")
     now = datetime.now().astimezone()

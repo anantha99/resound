@@ -137,6 +137,22 @@ def _add_workflow_runtime() -> None:
     ):
         op.create_index(f"ix_workflow_leases_{column}", "workflow_leases", [column])
 
+    op.create_table(
+        "signal_processing_claims",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("signal_id", sa.Integer(), sa.ForeignKey("signals.id"), nullable=False),
+        sa.Column("stage", sa.String(length=32), nullable=False),
+        sa.Column("owner_token", sa.String(length=128), nullable=False),
+        sa.Column("acquired_at", sa.DateTime(), nullable=False),
+        sa.Column("renewed_at", sa.DateTime(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint("signal_id", "stage", name="uq_signal_processing_claim_stage"),
+    )
+    for column in ("signal_id", "stage", "owner_token", "expires_at"):
+        op.create_index(
+            f"ix_signal_processing_claims_{column}", "signal_processing_claims", [column]
+        )
+
 
 def _add_signal_identity() -> None:
     for column in (
@@ -296,15 +312,10 @@ def _reset_and_flatten_health(connection) -> None:
         ).bindparams(sa.bindparam("aliases", expanding=True)),
         {"aliases": PUBLIC_HEALTH_ALIASES},
     )
-    remaining = connection.execute(sa.text("SELECT count(*) FROM source_health")).scalar_one()
-    if remaining:
-        raise RuntimeError(
-            "source_health contains legacy rows whose flat path cannot be inferred safely"
-        )
     with op.batch_alter_table("source_health") as batch:
         batch.drop_constraint("uq_source_health_scope", type_="unique")
-        batch.add_column(sa.Column("canonical_source", sa.String(length=32), nullable=False))
-        batch.add_column(sa.Column("path", sa.String(length=32), nullable=False))
+        batch.add_column(sa.Column("canonical_source", sa.String(length=32), nullable=True))
+        batch.add_column(sa.Column("path", sa.String(length=32), nullable=True))
         batch.add_column(
             sa.Column("fetched_count", sa.Integer(), nullable=False, server_default="0")
         )
@@ -317,9 +328,13 @@ def _reset_and_flatten_health(connection) -> None:
         batch.add_column(sa.Column("cost_usd", sa.Float(), nullable=False, server_default="0"))
         batch.add_column(sa.Column("provenance", sa.JSON(), nullable=False, server_default="{}"))
         batch.add_column(sa.Column("issues", sa.JSON(), nullable=False, server_default="[]"))
-        batch.create_unique_constraint(
-            "uq_source_health_flat_path",
-            ["organization_id", "brand_id", "canonical_source", "path"],
-        )
+    op.create_index(
+        "uq_source_health_flat_path",
+        "source_health",
+        ["organization_id", "brand_id", "canonical_source", "path"],
+        unique=True,
+        postgresql_where=sa.text("canonical_source IS NOT NULL AND path IS NOT NULL"),
+        sqlite_where=sa.text("canonical_source IS NOT NULL AND path IS NOT NULL"),
+    )
     for column in ("canonical_source", "path"):
         op.create_index(f"ix_source_health_{column}", "source_health", [column])

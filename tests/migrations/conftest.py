@@ -20,16 +20,16 @@ def postgres_migration_harness(monkeypatch):
     admin = create_engine(database_url, future=True)
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    test_url = (
-        make_url(database_url)
-        .update_query_dict({"options": f"-csearch_path={schema}"})
-        .render_as_string(hide_password=False)
-    )
-    monkeypatch.setenv("RESOUND_DATABASE_URL", test_url)
+    test_url = make_url(database_url).render_as_string(hide_password=False)
     config = Config("alembic.ini")
+    connection = admin.connect()
+    connection.execute(text(f'SET search_path TO "{schema}"'))
+    connection.commit()
+    config.attributes["connection"] = connection
     try:
-        yield test_url, config
+        yield test_url, config, schema
     finally:
-        with admin.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        connection.close()
+        with admin.begin() as cleanup:
+            cleanup.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         admin.dispose()

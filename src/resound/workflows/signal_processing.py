@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,7 +30,8 @@ from resound.tenancy import TenantContext
 from resound.workflows.leases import PUBLIC_LISTENING_WORKFLOW_KIND
 from resound.workflows.temporal_compat import activity, workflow
 
-SignalProcessingStatus = Literal["processed", "duplicate", "ignored", "failed"]
+SignalProcessingStatus = Literal["processed", "resumed", "duplicate", "ignored", "failed"]
+SignalProcessingState = Literal["processed", "resumed", "duplicate", "failed"]
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,8 @@ class SignalProcessingResult:
     signal_id: int | None = None
     classification_id: int | None = None
     route_id: int | None = None
+    processing_state: SignalProcessingState = "processed"
+    resumed_count: int = 0
     error_class: str | None = None
     error_message: str | None = None
 
@@ -72,6 +76,12 @@ class LeaseLostError(RuntimeError):
 
 class SignalProcessingFailpointError(RuntimeError):
     pass
+
+
+def signal_processing_is_resume(result: SignalProcessingResult) -> bool:
+    """Compatibility predicate used by source aggregation in Task 4."""
+
+    return result.processing_state == "resumed" or result.status == "resumed"
 
 
 def signal_processing_steps(_: SignalProcessingRequest) -> list[str]:
@@ -104,6 +114,9 @@ def process_signal(
     )
 
     existing = _existing_signal_state(memory, dedupe_key)
+    entered_with_committed_stage = existing is not None
+    claim_owner = secrets.token_urlsafe(24)
+    claim_ttl = _claim_ttl_seconds(request)
     if existing and existing.classification_id is not None and existing.route_id is not None:
         return SignalProcessingResult(
             status="duplicate",
@@ -111,6 +124,7 @@ def process_signal(
             signal_id=existing.signal_id,
             classification_id=existing.classification_id,
             route_id=existing.route_id,
+            processing_state="duplicate",
         )
 
     if existing is None:
@@ -130,27 +144,57 @@ def process_signal(
     classification_record = memory.load_classification(signal_id)
     cached_route = None
     if classification_record is None:
-        _assert_owner(request, memory)
-        try:
-            if classifier is not None:
-                classification = _classify_with_legacy_classifier(
-                    request, memory, signal_id, classifier
+        claimed, classification_record = _claim_or_wait_for_classification(
+            request,
+            memory,
+            signal_id,
+            claim_owner,
+            claim_ttl,
+        )
+        if claimed:
+            try:
+                _assert_owner(request, memory)
+                try:
+                    if classifier is not None:
+                        classification = _classify_with_legacy_classifier(
+                            request, memory, signal_id, classifier
+                        )
+                    else:
+                        classification, cached_route = _classify_with_agent(
+                            request, memory, signal_id, triage_agent
+                        )
+                except (LLMGatewayConfigError, LLMGatewayAuthError):
+                    raise
+                except LLMGatewayError as exc:
+                    return _failed_processing_result(dedupe_key, signal_id, exc)
+                if not memory.renew_signal_processing_claim(
+                    signal_id=signal_id,
+                    stage="classification",
+                    owner_token=claim_owner,
+                    ttl_seconds=claim_ttl,
+                ):
+                    reclaimed, classification_record = _claim_or_wait_for_classification(
+                        request, memory, signal_id, claim_owner, claim_ttl
+                    )
+                    if reclaimed:
+                        memory.record_classification(signal_id, classification)
+                        classification_record = memory.load_classification(signal_id)
+                else:
+                    memory.record_classification(signal_id, classification)
+                    classification_record = memory.load_classification(signal_id)
+                    _checkpoint(heartbeat, "classification_committed", signal_id)
+                    _trip_failpoint(request, "after_classification_commit")
+            finally:
+                memory.release_signal_processing_claim(
+                    signal_id=signal_id,
+                    stage="classification",
+                    owner_token=claim_owner,
                 )
-            else:
-                classification, cached_route = _classify_with_agent(
-                    request, memory, signal_id, triage_agent
-                )
-        except (LLMGatewayConfigError, LLMGatewayAuthError):
-            raise
-        except LLMGatewayError as exc:
-            return _failed_processing_result(dedupe_key, signal_id, exc)
-        classification_id = memory.record_classification(signal_id, classification)
-        classification_record = memory.load_classification(signal_id)
+        if classification_record is None:
+            classification_record = memory.load_classification(signal_id)
         if classification_record is None:
             raise RuntimeError("classification commit could not be reloaded")
         classification_id, classification = classification_record
-        _checkpoint(heartbeat, "classification_committed", signal_id)
-        _trip_failpoint(request, "after_classification_commit")
     else:
         classification_id, classification = classification_record
 
@@ -162,34 +206,141 @@ def process_signal(
             signal_id=signal_id,
             classification_id=classification_id,
             route_id=state.route_id,
+            processing_state="duplicate",
         )
 
-    _assert_owner(request, memory)
+    claimed, route_id = _claim_or_wait_for_route(
+        request, memory, signal_id, claim_owner, claim_ttl
+    )
+    if not claimed:
+        return SignalProcessingResult(
+            status="resumed" if entered_with_committed_stage else "duplicate",
+            dedupe_key=dedupe_key,
+            signal_id=signal_id,
+            classification_id=classification_id,
+            route_id=route_id,
+            processing_state="resumed" if entered_with_committed_stage else "duplicate",
+            resumed_count=1 if entered_with_committed_stage else 0,
+        )
     try:
-        if cached_route is not None:
-            route = cached_route
-        elif classifier is not None:
-            route = router.route(request.raw_signal, classification)
-        else:
-            route = _route_with_agent(request, memory, signal_id, classification, triage_agent)
-    except (LLMGatewayConfigError, LLMGatewayAuthError):
-        raise
-    except LLMGatewayError as exc:
-        return _failed_processing_result(dedupe_key, signal_id, exc)
-    _trip_failpoint(request, "after_route_response")
-    route_id = memory.record_route(signal_id, classification_id, route)
-    _checkpoint(heartbeat, "route_committed", signal_id)
-    _trip_failpoint(request, "after_route_commit")
+        _assert_owner(request, memory)
+        try:
+            if cached_route is not None:
+                route = cached_route
+            elif classifier is not None:
+                route = router.route(request.raw_signal, classification)
+            else:
+                route = _route_with_agent(request, memory, signal_id, classification, triage_agent)
+        except (LLMGatewayConfigError, LLMGatewayAuthError):
+            raise
+        except LLMGatewayError as exc:
+            return _failed_processing_result(dedupe_key, signal_id, exc)
+        _trip_failpoint(request, "after_route_response")
+        if not memory.renew_signal_processing_claim(
+            signal_id=signal_id,
+            stage="route",
+            owner_token=claim_owner,
+            ttl_seconds=claim_ttl,
+        ):
+            reclaimed, route_id = _claim_or_wait_for_route(
+                request, memory, signal_id, claim_owner, claim_ttl
+            )
+            if not reclaimed:
+                return SignalProcessingResult(
+                    status="resumed" if entered_with_committed_stage else "duplicate",
+                    dedupe_key=dedupe_key,
+                    signal_id=signal_id,
+                    classification_id=classification_id,
+                    route_id=route_id,
+                    processing_state="resumed" if entered_with_committed_stage else "duplicate",
+                    resumed_count=1 if entered_with_committed_stage else 0,
+                )
+        route_id = memory.record_route(signal_id, classification_id, route)
+        _checkpoint(heartbeat, "route_committed", signal_id)
+        _trip_failpoint(request, "after_route_commit")
+    finally:
+        memory.release_signal_processing_claim(
+            signal_id=signal_id,
+            stage="route",
+            owner_token=claim_owner,
+        )
     status: SignalProcessingStatus = (
         "ignored" if route.matched_rule == "ignored_by_classifier" else "processed"
     )
+    resumed = entered_with_committed_stage
     return SignalProcessingResult(
-        status=status,
+        status="resumed" if resumed else status,
         dedupe_key=dedupe_key,
         signal_id=signal_id,
         classification_id=classification_id,
         route_id=route_id,
+        processing_state="resumed" if resumed else "processed",
+        resumed_count=1 if resumed else 0,
     )
+
+
+def _claim_ttl_seconds(request: SignalProcessingRequest) -> float:
+    value = float(request.metadata.get("stage_claim_ttl_seconds", 300))
+    if value <= 0 or value > 600:
+        raise ValueError("stage claim TTL must be greater than zero and at most 600 seconds")
+    return value
+
+
+def _claim_or_wait_for_classification(request, memory, signal_id, owner_token, ttl_seconds):
+    return _claim_or_wait(
+        request,
+        memory,
+        signal_id,
+        "classification",
+        owner_token,
+        ttl_seconds,
+        lambda: memory.load_classification(signal_id),
+    )
+
+
+def _claim_or_wait_for_route(request, memory, signal_id, owner_token, ttl_seconds):
+    claimed, route_id = _claim_or_wait(
+        request,
+        memory,
+        signal_id,
+        "route",
+        owner_token,
+        ttl_seconds,
+        lambda: _committed_route_id(memory, signal_id),
+    )
+    return claimed, route_id
+
+
+def _claim_or_wait(
+    request,
+    memory,
+    signal_id,
+    stage,
+    owner_token,
+    ttl_seconds,
+    load_committed,
+):
+    deadline = time.monotonic() + ttl_seconds + 5
+    while True:
+        _assert_owner(request, memory)
+        committed = load_committed()
+        if committed is not None:
+            return False, committed
+        if memory.acquire_signal_processing_claim(
+            signal_id=signal_id,
+            stage=stage,
+            owner_token=owner_token,
+            ttl_seconds=ttl_seconds,
+        ):
+            return True, None
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"timed out waiting for {stage} processing claim")
+        time.sleep(0.05)
+
+
+def _committed_route_id(memory: SqlMemory, signal_id: int) -> int | None:
+    state = _existing_signal_state(memory, "", signal_id=signal_id)
+    return state.route_id if state is not None else None
 
 
 def _assert_owner(request: SignalProcessingRequest, memory: SqlMemory) -> None:

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from threading import Event, Lock
 
 import pytest
 from sqlalchemy import select
@@ -191,6 +194,32 @@ class SplitStageAgent:
         )
 
 
+class BlockingSplitStageAgent(SplitStageAgent):
+    def __init__(self):
+        super().__init__()
+        self.classification_entered = Event()
+        self.release_classification = Event()
+        self._lock = Lock()
+
+    def classify_only(self, request):
+        with self._lock:
+            self.classification_calls += 1
+        self.classification_entered.set()
+        assert self.release_classification.wait(timeout=5)
+        return SignalClassificationResult(
+            classification=Classification(
+                is_about_brand=True,
+                area="engineering",
+                sentiment=Sentiment.NEGATIVE,
+                severity=Severity.HIGH,
+                action_class=ActionClass.SPRINT,
+                summary="Checkout broken",
+                confidence=0.92,
+            ),
+            prompt="classify",
+            response=_response("classification"),
+        )
+
 def test_process_signal_uses_agentic_triage_by_default(tmp_path):
     memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'agentic-process.db'}")
     org = memory.ensure_organization("org-a", "Org A")
@@ -293,8 +322,31 @@ def test_process_signal_retries_signal_row_without_classification_or_route(tmp_p
 
     result = process_signal(request, memory=memory, triage_agent=FakeTriageAgent())
 
-    assert result.status == "processed"
+    assert result.status == "resumed"
+    assert result.processing_state == "resumed"
+    assert result.resumed_count == 1
     assert result.signal_id is not None
+
+
+def test_concurrent_workers_claim_external_stages_once(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'stage-claims.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    request = _processing_request(org=org, brand_id=brand.id, external_id="claim-race-1")
+    agent = BlockingSplitStageAgent()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(process_signal, request, memory=memory, triage_agent=agent)
+        assert agent.classification_entered.wait(timeout=5)
+        second = executor.submit(process_signal, request, memory=memory, triage_agent=agent)
+        time.sleep(0.2)
+        assert agent.classification_calls == 1
+        agent.release_classification.set()
+        results = [first.result(timeout=5), second.result(timeout=5)]
+
+    assert agent.classification_calls == 1
+    assert agent.route_calls == 1
+    assert sorted(result.processing_state for result in results) == ["duplicate", "processed"]
 
 
 def test_classification_commit_resume_routes_once_with_original_inline_config(tmp_path):
@@ -320,7 +372,7 @@ def test_classification_commit_resume_routes_once_with_original_inline_config(tm
         triage_agent=agent,
     )
 
-    assert result.status == "processed"
+    assert result.status == "resumed"
     assert agent.classification_calls == 1
     assert agent.route_calls == 1
     assert agent.route_configs == [
@@ -345,7 +397,7 @@ def test_route_response_without_commit_is_retried_but_route_commit_is_not(tmp_pa
             memory=memory,
             triage_agent=agent,
         )
-    assert process_signal(request, memory=memory, triage_agent=agent).status == "processed"
+    assert process_signal(request, memory=memory, triage_agent=agent).status == "resumed"
     assert process_signal(request, memory=memory, triage_agent=agent).status == "duplicate"
     assert agent.classification_calls == 1
     assert agent.route_calls == 2

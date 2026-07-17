@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from resound.memory import SignalRow, SqlMemory, WorkflowLeaseRow
+from resound.memory import SignalProcessingClaimRow, SignalRow, SqlMemory, WorkflowLeaseRow
 from resound.models import RawSignal
 from resound.workflows.leases import public_listening_workflow_id
 from resound.workflows.result_persistence import bounded_result_summary
@@ -128,6 +128,61 @@ def test_workflow_lease_takeover_and_owner_checked_finalization(tmp_path):
     with memory.session() as session:
         lease = session.execute(select(WorkflowLeaseRow)).scalar_one()
     assert lease.status == "completed"
+
+
+def test_processing_claim_owner_release_and_expired_takeover(tmp_path):
+    memory, organization_id, brand_id = _memory(tmp_path)
+    signal_id = memory.record_signal(
+        "acme",
+        RawSignal(
+            source="reddit",
+            external_id="claim-1",
+            content="claim",
+            posted_at=datetime.now(UTC),
+        ),
+        organization_id=organization_id,
+        brand_id=brand_id,
+    )
+    started = datetime(2026, 7, 17, 12, 0, 0)
+    assert memory.acquire_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="first",
+        ttl_seconds=30,
+        now=started,
+    )
+    assert not memory.acquire_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="second",
+        ttl_seconds=30,
+        now=started + timedelta(seconds=29),
+    )
+    assert not memory.release_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="second",
+    )
+    assert memory.acquire_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="second",
+        ttl_seconds=30,
+        now=started + timedelta(seconds=30),
+    )
+    assert not memory.renew_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="first",
+        now=started + timedelta(seconds=31),
+    )
+    assert memory.release_signal_processing_claim(
+        signal_id=signal_id,
+        stage="classification",
+        owner_token="second",
+    )
+    with memory.session() as session:
+        assert session.execute(select(SignalProcessingClaimRow)).scalars().all() == []
 
 
 def test_result_projection_has_independent_collection_bounds():

@@ -62,7 +62,7 @@ SOURCE_TABLE_ORDER = (
     "route_handoffs",
     "report_citations",
 )
-TABLE_ORDER = (*SOURCE_TABLE_ORDER, "workflow_leases")
+TABLE_ORDER = (*SOURCE_TABLE_ORDER, "workflow_leases", "signal_processing_claims")
 NEW_COLUMNS = {
     "signals": {
         "canonical_platform",
@@ -193,6 +193,7 @@ def _read_source(source_path: Path) -> tuple[str, dict[str, list[dict[str, Any]]
             row for row in source_rows["source_health"] if row is not None
         ]
         source_rows["workflow_leases"] = []
+        source_rows["signal_processing_claims"] = []
     finally:
         connection.close()
 
@@ -235,8 +236,15 @@ def _transform_source_row(table_name: str, table, row: dict[str, Any]) -> dict[s
             or transformed.get("source_type") in PUBLIC_HEALTH_ALIASES
         ):
             return None
-        raise SystemExit(
-            "Source snapshot contains legacy health whose flat path cannot be inferred safely."
+        transformed.update(
+            canonical_source=None,
+            path=None,
+            fetched_count=transformed.get("item_count", 0),
+            processed_count=transformed.get("item_count", 0),
+            duplicate_count=0,
+            cost_usd=0.0,
+            provenance={},
+            issues=[],
         )
     return transformed
 

@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    delete,
     func,
     select,
     text,
@@ -255,12 +256,15 @@ class ListeningProfileRevisionRow(Base):
 class SourceHealthRow(Base):
     __tablename__ = "source_health"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_source_health_flat_path",
             "organization_id",
             "brand_id",
             "canonical_source",
             "path",
-            name="uq_source_health_flat_path",
+            unique=True,
+            postgresql_where=text("canonical_source IS NOT NULL AND path IS NOT NULL"),
+            sqlite_where=text("canonical_source IS NOT NULL AND path IS NOT NULL"),
         ),
     )
 
@@ -268,8 +272,8 @@ class SourceHealthRow(Base):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
     source_type: Mapped[str] = mapped_column(String(64), index=True)
-    canonical_source: Mapped[str] = mapped_column(String(32), index=True)
-    path: Mapped[str] = mapped_column(String(32), index=True)
+    canonical_source: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    path: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(64), default="apify", index=True)
     status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
@@ -418,6 +422,21 @@ class WorkflowLeaseRow(Base):
     owner_token: Mapped[str] = mapped_column(String(128), index=True)
     workflow_job_id: Mapped[int] = mapped_column(ForeignKey("workflow_jobs.id"), index=True)
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime)
+    renewed_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class SignalProcessingClaimRow(Base):
+    __tablename__ = "signal_processing_claims"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "stage", name="uq_signal_processing_claim_stage"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int] = mapped_column(ForeignKey("signals.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)
+    owner_token: Mapped[str] = mapped_column(String(128), index=True)
     acquired_at: Mapped[datetime] = mapped_column(DateTime)
     renewed_at: Mapped[datetime] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -1473,6 +1492,103 @@ class SqlMemory(Memory):
             lease.expires_at = database_now
             s.commit()
             return True
+
+    def acquire_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+        ttl_seconds: float = 300,
+        now: datetime | None = None,
+    ) -> bool:
+        """Claim one external processing stage or take over its expired claim."""
+
+        if stage not in {"classification", "route"}:
+            raise ValueError(f"Unsupported signal processing claim stage: {stage}")
+        if ttl_seconds <= 0:
+            raise ValueError("signal processing claim TTL must be positive")
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            expires_at = database_now + timedelta(seconds=ttl_seconds)
+            row = SignalProcessingClaimRow(
+                signal_id=signal_id,
+                stage=stage,
+                owner_token=owner_token,
+                acquired_at=database_now,
+                renewed_at=database_now,
+                expires_at=expires_at,
+            )
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return True
+            except IntegrityError:
+                s.rollback()
+            result = s.execute(
+                update(SignalProcessingClaimRow)
+                .where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    (SignalProcessingClaimRow.expires_at <= database_now)
+                    | (SignalProcessingClaimRow.owner_token == owner_token),
+                )
+                .values(
+                    owner_token=owner_token,
+                    acquired_at=database_now,
+                    renewed_at=database_now,
+                    expires_at=expires_at,
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
+
+    def renew_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+        ttl_seconds: float = 300,
+        now: datetime | None = None,
+    ) -> bool:
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            result = s.execute(
+                update(SignalProcessingClaimRow)
+                .where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    SignalProcessingClaimRow.owner_token == owner_token,
+                    SignalProcessingClaimRow.expires_at > database_now,
+                )
+                .values(
+                    renewed_at=database_now,
+                    expires_at=database_now + timedelta(seconds=ttl_seconds),
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
+
+    def release_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+    ) -> bool:
+        with self.session() as s:
+            result = s.execute(
+                delete(SignalProcessingClaimRow).where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    SignalProcessingClaimRow.owner_token == owner_token,
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
 
     def get_workflow_job(self, workflow_id: str) -> WorkflowJobRow | None:
         with self.session() as s:
