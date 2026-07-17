@@ -20,6 +20,8 @@ type Period = "24h" | "7d" | "30d" | "QTD";
 type ActivePane = "sentiment" | "critical" | "emerging" | "volume";
 
 const PERIODS: Period[] = ["24h", "7d", "30d", "QTD"];
+// Number of rows rendered in the Volume pane list (a capped, recency-ordered view).
+const VOLUME_PANE_ROWS = 6;
 const CG = "'Cormorant Garamond', serif";
 const MONO = "'JetBrains Mono', monospace";
 
@@ -111,7 +113,7 @@ export default function Dashboard() {
     critical: criticalSignals,
     sentiment: negativeSignals,
     emerging: emergingSignals,
-    volume: brandSignals.slice(0, 6),
+    volume: brandSignals.slice(0, VOLUME_PANE_ROWS),
   };
 
   const paneTitles: Record<ActivePane, { title: string; sub: string; blurb: string }> = {
@@ -138,7 +140,7 @@ export default function Dashboard() {
     },
     volume: {
       title: "Conversation volume · " + period,
-      sub: `Top ${brandSignals.length} of ${totalVolume.toLocaleString()} · sorted by reach`,
+      sub: `Top ${Math.min(VOLUME_PANE_ROWS, brandSignals.length)} of ${totalVolume.toLocaleString()} · sorted by recency`,
       blurb:
         volumeDelta === 0
           ? "Volume was unchanged vs the previous period."
