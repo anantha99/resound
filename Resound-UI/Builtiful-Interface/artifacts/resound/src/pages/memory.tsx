@@ -46,7 +46,7 @@ export default function MemoryPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#f4f1ec", color: "#1a1815" }}>
-      <div className="max-w-[1320px] mx-auto px-14">
+      <div className="resound-page-shell max-w-[1320px] mx-auto px-14">
         <Masthead />
         <div className="border-t mt-1 pt-8" style={{ borderColor: "#1a1815" }}>
           <h1 style={{ fontFamily: CG, fontSize: 56, fontWeight: 300, letterSpacing: "-0.025em", lineHeight: 0.9 }}>
@@ -70,7 +70,7 @@ export default function MemoryPage() {
           </div>
         </div>
         <div className="pb-16">
-          <div className="grid py-3 border-b" style={{ gridTemplateColumns: "80px 1fr 140px 100px 80px 100px", borderColor: "#1a1815", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8b857a" }}>
+          <div className="resound-memory-row grid py-3 border-b" style={{ gridTemplateColumns: "138px 1fr 160px 90px 90px 100px", borderColor: "#1a1815", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8b857a" }}>
             <span>Source</span><span>Summary</span><span>Routed to</span><span>Conf</span><span>Area</span><span>Feedback</span>
           </div>
           {brandSignals.length === 0 ? (
@@ -83,7 +83,7 @@ export default function MemoryPage() {
             </div>
           ) : brandSignals.map((signal, i) => (
             <motion.div key={signal.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: i * 0.03 }}
-              className="grid py-4 border-b items-start" style={{ gridTemplateColumns: "80px 1fr 140px 100px 80px 100px", borderColor: "#e3ddd1" }}>
+              className="resound-memory-row grid py-4 border-b items-start" style={{ gridTemplateColumns: "138px 1fr 160px 90px 90px 100px", borderColor: "#e3ddd1" }}>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, textTransform: "uppercase", color: "#1a1815", fontWeight: 500 }}>{signal.source}</div>
               <div>
                 <div style={{ fontFamily: CG, fontSize: 15, lineHeight: 1.4, color: "#1a1815", marginBottom: 4 }}>{signal.summary}</div>
@@ -101,7 +101,7 @@ export default function MemoryPage() {
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: severityColor[signal.severity], marginTop: 2 }}>{signal.severity}</div>
               </div>
               <div className="flex flex-col gap-1">
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: feedbackColor(feedbacks[signal.id]), letterSpacing: "0.04em" }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: feedbackColor(feedbacks[signal.routeId]), letterSpacing: "0.04em" }}>
                   {feedbackLabel(feedbacks[signal.routeId])}
                 </div>
                 {feedbacks[signal.routeId] === undefined && (

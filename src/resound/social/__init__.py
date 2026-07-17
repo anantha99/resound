@@ -9,6 +9,115 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Literal
 
 from resound.models import RawSignal
+from resound.social.common import (
+    ProviderBudget as ProviderBudget,
+)
+from resound.social.common import (
+    UnresolvedActorStartError as UnresolvedActorStartError,
+)
+from resound.social.common import (
+    allocate_signal_cap as allocate_signal_cap,
+)
+from resound.social.common import (
+    fallback_identity as fallback_identity,
+)
+from resound.social.common import (
+    floor_to_quantum as floor_to_quantum,
+)
+from resound.social.common import (
+    provider_native_identity as provider_native_identity,
+)
+from resound.social.config import SourceConfigError as SourceConfigError
+from resound.social.config import canonical_source as canonical_source
+from resound.social.contracts import (
+    ActorRole as ActorRole,
+)
+from resound.social.contracts import (
+    AdapterComponentResult as AdapterComponentResult,
+)
+from resound.social.contracts import (
+    AdapterIssue as AdapterIssue,
+)
+from resound.social.contracts import (
+    AdapterLimits as AdapterLimits,
+)
+from resound.social.contracts import (
+    AdapterResult as AdapterResult,
+)
+from resound.social.contracts import (
+    ApprovedSourceConfigFingerprint as ApprovedSourceConfigFingerprint,
+)
+from resound.social.contracts import (
+    CanonicalIdentity as CanonicalIdentity,
+)
+from resound.social.contracts import (
+    ProviderDatasetRef as ProviderDatasetRef,
+)
+from resound.social.contracts import (
+    ProviderDeadlineContext as ProviderDeadlineContext,
+)
+from resound.social.contracts import (
+    ProviderEvidenceManifest as ProviderEvidenceManifest,
+)
+from resound.social.contracts import (
+    ProviderEvidenceRecord as ProviderEvidenceRecord,
+)
+from resound.social.contracts import (
+    ProviderOverReturn as ProviderOverReturn,
+)
+from resound.social.contracts import (
+    ProviderRunRef as ProviderRunRef,
+)
+from resound.social.contracts import (
+    PublicListeningSyncResult as PublicListeningSyncResult,
+)
+from resound.social.contracts import (
+    PublicSource as PublicSource,
+)
+from resound.social.contracts import (
+    ResolvedPathConfig as ResolvedPathConfig,
+)
+from resound.social.contracts import (
+    ResolvedProcessingConfigSnapshot as ResolvedProcessingConfigSnapshot,
+)
+from resound.social.contracts import (
+    ResolvedProviderEvidence as ResolvedProviderEvidence,
+)
+from resound.social.contracts import (
+    ResolvedPublicListeningRequest as ResolvedPublicListeningRequest,
+)
+from resound.social.contracts import (
+    ResolvedSelector as ResolvedSelector,
+)
+from resound.social.contracts import (
+    ResolvedSourceConfigSnapshot as ResolvedSourceConfigSnapshot,
+)
+from resound.social.contracts import (
+    SelectedPathInput as SelectedPathInput,
+)
+from resound.social.contracts import (
+    SelectorKind as SelectorKind,
+)
+from resound.social.contracts import (
+    SignalAssociation as SignalAssociation,
+)
+from resound.social.contracts import (
+    SourceLimitOverrides as SourceLimitOverrides,
+)
+from resound.social.contracts import (
+    SourcePath as SourcePath,
+)
+from resound.social.contracts import (
+    SourceSyncInput as SourceSyncInput,
+)
+from resound.social.contracts import (
+    canonical_public_source as canonical_public_source,
+)
+from resound.social.registry import get_source_adapter as get_source_adapter
+from resound.social.resolver import parse_cli_request as parse_cli_request
+from resound.social.resolver import (
+    resolve_public_listening_request as resolve_public_listening_request,
+)
 
 SourceType = Literal["instagram_public", "reddit", "tiktok", "x_public", "youtube_comments"]
 
@@ -27,15 +136,6 @@ APIFY_ACTORS: dict[SourceType, str] = {
     "x_public": "apidojo/twitter-scraper-lite",
     "youtube_comments": "streamers/youtube-scraper",
 }
-
-SOURCE_NAMES: dict[str, str] = {
-    "instagram_public": "instagram",
-    "reddit": "reddit",
-    "tiktok": "tiktok",
-    "x_public": "x",
-    "youtube_comments": "youtube",
-}
-
 
 @dataclass(frozen=True)
 class ListeningProfile:
@@ -195,7 +295,7 @@ def normalize_apify_item(
     actor_id: str,
     run_id: str | None,
 ) -> RawSignal:
-    if source_type not in SOURCE_NAMES:
+    if source_type not in V1_PUBLIC_SOURCE_TYPES:
         raise ValueError(f"Unsupported Apify public source type: {source_type}")
 
     content = _content_for_source(source_type, item)
@@ -225,7 +325,7 @@ def normalize_apify_item(
     )
 
     return RawSignal(
-        source=SOURCE_NAMES[source_type],
+        source=canonical_public_source(source_type),
         source_mode="public_listening",
         provider="apify",
         external_id=str(external_id),
@@ -315,3 +415,6 @@ def _parse_datetime(value: str | None) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+PublicSourceAlias = str

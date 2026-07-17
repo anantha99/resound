@@ -1,0 +1,45 @@
+{
+  "synthetic_only": true,
+  "instagram_comment": {
+    "id": "synthetic-ig-comment-1",
+    "text": "Synthetic comment text",
+    "timestamp": "2026-07-17T01:02:03Z",
+    "commentUrl": "https://www.instagram.com/p/synthetic/c/synthetic-ig-comment-1/",
+    "postUrl": "https://www.instagram.com/p/synthetic/",
+    "ownerUsername": "synthetic_user",
+    "likesCount": 3,
+    "postId": "synthetic-ig-post-1",
+    "postOwnerUsername": "synthetic_parent",
+    "postCaption": "Synthetic parent post",
+    "postTimestamp": "2026-07-16T01:02:03Z"
+  },
+  "tiktok_video": {
+    "id": "synthetic-tt-video-1",
+    "text": "Synthetic video text",
+    "createTimeISO": "2026-07-17T01:02:03Z",
+    "webVideoUrl": "https://www.tiktok.com/@synthetic/video/1",
+    "commentsDatasetUrl": "https://api.apify.com/v2/datasets/synthetic-comments/items",
+    "diggCount": 12,
+    "commentCount": 4,
+    "shareCount": 2,
+    "playCount": 101,
+    "authorMeta": {"name": "synthetic_parent"}
+  },
+  "tiktok_comment": {
+    "cid": "synthetic-tt-comment-1",
+    "text": "Synthetic TikTok comment",
+    "createTimeISO": "2026-07-17T02:03:04Z",
+    "commentUrl": "https://www.tiktok.com/@synthetic/video/1?comment=1",
+    "diggCount": 7,
+    "replyCount": 2,
+    "uniqueId": "synthetic_commenter"
+  },
+  "youtube_video": {
+    "videoId": "synthetic-yt-video-1",
+    "title": "Synthetic video title",
+    "publishedAt": "2026-07-17T01:02:03Z",
+    "url": "https://www.youtube.com/watch?v=synthetic",
+    "viewCount": 42,
+    "likes": 5
+  }
+}

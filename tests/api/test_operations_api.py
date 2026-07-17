@@ -46,7 +46,30 @@ def test_source_health_telemetry_and_evaluation_are_tenant_scoped(operations_cli
         source_type="reddit",
         provider="apify",
         status="failed",
+        issues=[{
+            "path": "official_discovery",
+            "code": "provider_timeout",
+            "issue_class": "ProviderTimeout",
+            "message": "provider timed out",
+            "retryable": True,
+            "preserved_work": True,
+            "run_id": "run-health-1",
+            "dataset_id": "dataset-health-1",
+            "parent_identity_value": "parent-health-1",
+            "unsafe_provider_payload": "must not be exposed",
+        }],
         error_message="rate limited",
+        checked_at=datetime.now(tz=UTC),
+    )
+    memory.record_source_health(
+        organization_id=org,
+        brand_id=brand.id,
+        source_type="reddit",
+        canonical_source="reddit",
+        path="mention_discovery",
+        provider="apify",
+        status="partial",
+        error_message="bounded result preserved",
         checked_at=datetime.now(tz=UTC),
     )
     memory.record_llm_call(
@@ -110,7 +133,24 @@ def test_source_health_telemetry_and_evaluation_are_tenant_scoped(operations_cli
     )
 
     assert health.status_code == 200
-    assert health.json()[0]["status"] == "failed"
+    assert {row["status"] for row in health.json()} == {"failed", "partial"}
+    assert {row["canonicalSource"] for row in health.json()} == {"reddit"}
+    assert {row["path"] for row in health.json()} == {
+        "official_discovery", "mention_discovery",
+    }
+    assert all(row["fetchedCount"] == 0 for row in health.json())
+    failed = next(row for row in health.json() if row["status"] == "failed")
+    assert failed["issues"] == [{
+        "path": "official_discovery",
+        "code": "provider_timeout",
+        "issueClass": "ProviderTimeout",
+        "message": "provider timed out",
+        "retryable": True,
+        "preservedWork": True,
+        "runId": "run-health-1",
+        "datasetId": "dataset-health-1",
+        "parentIdentityValue": "parent-health-1",
+    }]
     assert telemetry.status_code == 200
     assert telemetry.json()["costs"][0]["total_cost_usd"] == 0.25
     assert evaluation.status_code == 200

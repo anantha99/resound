@@ -118,7 +118,7 @@ def _clean_terms(values: list[str]) -> list[str]:
 
 
 @activity.defn
-async def listening_profile_setup_activity(
+def listening_profile_setup_activity(
     request: ListeningProfileSetupRequest,
 ) -> ListeningProfileSetupResult:
     return setup_listening_profile(request)

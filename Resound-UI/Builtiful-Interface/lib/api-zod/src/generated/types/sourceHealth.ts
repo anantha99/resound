@@ -5,14 +5,25 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+import type { SourceHealthPath } from './sourceHealthPath';
+import type { SourceHealthProvenance } from './sourceHealthProvenance';
+import type { WorkflowResultIssue } from './workflowResultIssue';
 
 export interface SourceHealth {
   sourceType: string;
+  canonicalSource: string;
+  path: SourceHealthPath;
   provider: string;
   status: string;
   lastSuccessAt?: string | null;
   lastFailureAt?: string | null;
   lastRunId?: string | null;
   itemCount: number;
+  fetchedCount: number;
+  processedCount: number;
+  duplicateCount: number;
+  costUsd: number;
+  provenance: SourceHealthProvenance;
+  issues: WorkflowResultIssue[];
   errorMessage?: string | null;
 }

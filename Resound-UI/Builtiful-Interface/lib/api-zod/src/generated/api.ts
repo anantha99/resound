@@ -128,6 +128,8 @@ export const ListSignalsHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const listSignalsResponseSignalsItemSignalMetricsMetricTypeDefault = `observed_public`;
+
 export const ListSignalsResponse = zod.object({
   "signals": zod.array(zod.object({
   "signal": zod.object({
@@ -139,6 +141,32 @@ export const ListSignalsResponse = zod.object({
   "authorHandle": zod.string(),
   "authorMeta": zod.union([zod.string(),zod.null()]).optional(),
   "reach": zod.union([zod.number(),zod.null()]).optional(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
+  "metrics": zod.object({
+  "metricType": zod.literal("observed_public").default(listSignalsResponseSignalsItemSignalMetricsMetricTypeDefault),
+  "views": zod.union([zod.number(),zod.null()]).optional(),
+  "plays": zod.union([zod.number(),zod.null()]).optional(),
+  "likes": zod.union([zod.number(),zod.null()]).optional(),
+  "replies": zod.union([zod.number(),zod.null()]).optional(),
+  "comments": zod.union([zod.number(),zod.null()]).optional(),
+  "shares": zod.union([zod.number(),zod.null()]).optional(),
+  "reposts": zod.union([zod.number(),zod.null()]).optional(),
+  "upvotes": zod.union([zod.number(),zod.null()]).optional()
+}),
+  "parentContext": zod.union([zod.object({
+  "platform": zod.string(),
+  "contentKind": zod.enum(['post', 'video']),
+  "url": zod.union([zod.string(),zod.null()]).optional(),
+  "authorHandle": zod.union([zod.string(),zod.null()]).optional(),
+  "excerpt": zod.union([zod.string(),zod.null()]).optional(),
+  "publishedAt": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "provenance": zod.object({
+  "provider": zod.union([zod.string(),zod.null()]).optional(),
+  "sourceMode": zod.string(),
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional()
+}),
   "content": zod.string(),
   "postedAt": zod.string(),
   "createdAt": zod.string()
@@ -189,6 +217,8 @@ export const GetCriticalSignalsHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const getCriticalSignalsResponseSignalMetricsMetricTypeDefault = `observed_public`;
+
 export const GetCriticalSignalsResponseItem = zod.object({
   "signal": zod.object({
   "id": zod.number(),
@@ -199,6 +229,32 @@ export const GetCriticalSignalsResponseItem = zod.object({
   "authorHandle": zod.string(),
   "authorMeta": zod.union([zod.string(),zod.null()]).optional(),
   "reach": zod.union([zod.number(),zod.null()]).optional(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
+  "metrics": zod.object({
+  "metricType": zod.literal("observed_public").default(getCriticalSignalsResponseSignalMetricsMetricTypeDefault),
+  "views": zod.union([zod.number(),zod.null()]).optional(),
+  "plays": zod.union([zod.number(),zod.null()]).optional(),
+  "likes": zod.union([zod.number(),zod.null()]).optional(),
+  "replies": zod.union([zod.number(),zod.null()]).optional(),
+  "comments": zod.union([zod.number(),zod.null()]).optional(),
+  "shares": zod.union([zod.number(),zod.null()]).optional(),
+  "reposts": zod.union([zod.number(),zod.null()]).optional(),
+  "upvotes": zod.union([zod.number(),zod.null()]).optional()
+}),
+  "parentContext": zod.union([zod.object({
+  "platform": zod.string(),
+  "contentKind": zod.enum(['post', 'video']),
+  "url": zod.union([zod.string(),zod.null()]).optional(),
+  "authorHandle": zod.union([zod.string(),zod.null()]).optional(),
+  "excerpt": zod.union([zod.string(),zod.null()]).optional(),
+  "publishedAt": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "provenance": zod.object({
+  "provider": zod.union([zod.string(),zod.null()]).optional(),
+  "sourceMode": zod.string(),
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional()
+}),
   "content": zod.string(),
   "postedAt": zod.string(),
   "createdAt": zod.string()
@@ -245,6 +301,8 @@ export const GetSignalHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const getSignalResponseSignalMetricsMetricTypeDefault = `observed_public`;
+
 export const GetSignalResponse = zod.object({
   "signal": zod.object({
   "id": zod.number(),
@@ -255,6 +313,32 @@ export const GetSignalResponse = zod.object({
   "authorHandle": zod.string(),
   "authorMeta": zod.union([zod.string(),zod.null()]).optional(),
   "reach": zod.union([zod.number(),zod.null()]).optional(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
+  "metrics": zod.object({
+  "metricType": zod.literal("observed_public").default(getSignalResponseSignalMetricsMetricTypeDefault),
+  "views": zod.union([zod.number(),zod.null()]).optional(),
+  "plays": zod.union([zod.number(),zod.null()]).optional(),
+  "likes": zod.union([zod.number(),zod.null()]).optional(),
+  "replies": zod.union([zod.number(),zod.null()]).optional(),
+  "comments": zod.union([zod.number(),zod.null()]).optional(),
+  "shares": zod.union([zod.number(),zod.null()]).optional(),
+  "reposts": zod.union([zod.number(),zod.null()]).optional(),
+  "upvotes": zod.union([zod.number(),zod.null()]).optional()
+}),
+  "parentContext": zod.union([zod.object({
+  "platform": zod.string(),
+  "contentKind": zod.enum(['post', 'video']),
+  "url": zod.union([zod.string(),zod.null()]).optional(),
+  "authorHandle": zod.union([zod.string(),zod.null()]).optional(),
+  "excerpt": zod.union([zod.string(),zod.null()]).optional(),
+  "publishedAt": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "provenance": zod.object({
+  "provider": zod.union([zod.string(),zod.null()]).optional(),
+  "sourceMode": zod.string(),
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional()
+}),
   "content": zod.string(),
   "postedAt": zod.string(),
   "createdAt": zod.string()
@@ -313,6 +397,8 @@ export const ListRoutesResponseItem = zod.object({
   "severity": zod.string(),
   "sentiment": zod.string(),
   "source": zod.string(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
   "content": zod.string(),
   "summary": zod.string(),
   "confidence": zod.number(),
@@ -352,6 +438,8 @@ export const RerouteSignalResponse = zod.object({
   "severity": zod.string(),
   "sentiment": zod.string(),
   "source": zod.string(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
   "content": zod.string(),
   "summary": zod.string(),
   "confidence": zod.number(),
@@ -432,6 +520,8 @@ export const GetPatternHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const getPatternResponseSignalsItemSignalMetricsMetricTypeDefault = `observed_public`;
+
 export const GetPatternResponse = zod.object({
   "pattern": zod.object({
   "id": zod.number(),
@@ -454,6 +544,32 @@ export const GetPatternResponse = zod.object({
   "authorHandle": zod.string(),
   "authorMeta": zod.union([zod.string(),zod.null()]).optional(),
   "reach": zod.union([zod.number(),zod.null()]).optional(),
+  "canonicalPlatform": zod.string(),
+  "contentKind": zod.string(),
+  "metrics": zod.object({
+  "metricType": zod.literal("observed_public").default(getPatternResponseSignalsItemSignalMetricsMetricTypeDefault),
+  "views": zod.union([zod.number(),zod.null()]).optional(),
+  "plays": zod.union([zod.number(),zod.null()]).optional(),
+  "likes": zod.union([zod.number(),zod.null()]).optional(),
+  "replies": zod.union([zod.number(),zod.null()]).optional(),
+  "comments": zod.union([zod.number(),zod.null()]).optional(),
+  "shares": zod.union([zod.number(),zod.null()]).optional(),
+  "reposts": zod.union([zod.number(),zod.null()]).optional(),
+  "upvotes": zod.union([zod.number(),zod.null()]).optional()
+}),
+  "parentContext": zod.union([zod.object({
+  "platform": zod.string(),
+  "contentKind": zod.enum(['post', 'video']),
+  "url": zod.union([zod.string(),zod.null()]).optional(),
+  "authorHandle": zod.union([zod.string(),zod.null()]).optional(),
+  "excerpt": zod.union([zod.string(),zod.null()]).optional(),
+  "publishedAt": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "provenance": zod.object({
+  "provider": zod.union([zod.string(),zod.null()]).optional(),
+  "sourceMode": zod.string(),
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional()
+}),
   "content": zod.string(),
   "postedAt": zod.string(),
   "createdAt": zod.string()
@@ -496,9 +612,90 @@ export const StartSourceSyncHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const startSourceSyncBodyLimitsMaxSignalsPerSourceOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxItemsPerPathOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxParentsPerPathOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxCommentsPerParentOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxCommentsPerPathOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxCommentsPerSourceOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxRunsPerSourceOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxCostUsdPerSourceOneExclusiveMin = 0;
+
+export const startSourceSyncBodyLimitsMaxCostUsdPerSourceTwoRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+
+
 export const StartSourceSyncBody = zod.object({
-  "brandId": zod.string()
+  "brandId": zod.string(),
+  "selectedSources": zod.union([zod.array(zod.string()),zod.null()]).optional(),
+  "selectedPaths": zod.union([zod.array(zod.object({
+  "source": zod.string(),
+  "paths": zod.array(zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']))
+})),zod.null()]).optional(),
+  "limits": zod.object({
+  "maxSignalsPerSource": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxSignalsPerSourceOneExclusiveMin),zod.null()]).optional(),
+  "maxItemsPerPath": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxItemsPerPathOneExclusiveMin),zod.null()]).optional(),
+  "maxParentsPerPath": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxParentsPerPathOneExclusiveMin),zod.null()]).optional(),
+  "maxCommentsPerParent": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxCommentsPerParentOneExclusiveMin),zod.null()]).optional(),
+  "maxCommentsPerPath": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxCommentsPerPathOneExclusiveMin),zod.null()]).optional(),
+  "maxCommentsPerSource": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxCommentsPerSourceOneExclusiveMin),zod.null()]).optional(),
+  "maxRunsPerSource": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxRunsPerSourceOneExclusiveMin),zod.null()]).optional(),
+  "maxCostUsdPerSource": zod.union([zod.number().gt(startSourceSyncBodyLimitsMaxCostUsdPerSourceOneExclusiveMin),zod.string().regex(startSourceSyncBodyLimitsMaxCostUsdPerSourceTwoRegExp),zod.null()]).optional()
+}).optional()
 })
+
+export const startSourceSyncResponseResultSummaryOneSourcesItemFetchedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemProcessedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemResumedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemDuplicateCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemSkippedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemCostUsdDefault = `0`;
+export const startSourceSyncResponseResultSummaryOneSourcesItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startSourceSyncResponseResultSummaryOneSourcesItemCapReachedDefault = false;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneFetchedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneProcessedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneResumedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneDuplicateCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneSkippedCountDefault = 0;
+export const startSourceSyncResponseResultSummaryOneCostUsdDefault = `0`;
+export const startSourceSyncResponseResultSummaryOneCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+
 
 export const StartSourceSyncResponse = zod.object({
   "id": zod.number(),
@@ -507,6 +704,303 @@ export const StartSourceSyncResponse = zod.object({
   "workflowType": zod.string(),
   "status": zod.string(),
   "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "resultSchemaVersion": zod.union([zod.number(),zod.null()]).optional(),
+  "resultSummary": zod.union([zod.object({
+  "schemaVersion": zod.number(),
+  "status": zod.enum(['completed', 'partial', 'failed', 'cancelled']),
+  "selectedSources": zod.array(zod.string()).optional(),
+  "selectedPaths": zod.record(zod.string(), zod.array(zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']))).optional(),
+  "sources": zod.array(zod.object({
+  "source": zod.string(),
+  "platform": zod.string(),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "maxSignalsPerSource": zod.number(),
+  "fetchedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemFetchedCountDefault),
+  "processedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startSourceSyncResponseResultSummaryOneSourcesItemCostUsdRegExp).default(startSourceSyncResponseResultSummaryOneSourcesItemCostUsdDefault),
+  "capReached": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemCapReachedDefault),
+  "paths": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "fetchedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault),
+  "processedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp).default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault),
+  "runs": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "actorId": zod.string(),
+  "buildId": zod.string(),
+  "buildNumber": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedRowMaximum": zod.number(),
+  "maxTotalChargeUsd": zod.string().regex(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp),
+  "usageTotalUsd": zod.union([zod.string().regex(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp),zod.null()]).optional(),
+  "status": zod.string(),
+  "inputSchemaReference": zod.string(),
+  "outputSchemaReference": zod.union([zod.string(),zod.null()]).optional(),
+  "fixtureShapeReference": zod.string(),
+  "datasetIds": zod.array(zod.string()).optional()
+})).optional(),
+  "runsOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault),
+  "runsTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault),
+  "datasets": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "datasetId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedLimit": zod.number(),
+  "fetchedCount": zod.number(),
+  "processedCount": zod.number(),
+  "rawFetchedCount": zod.union([zod.number(),zod.null()]).optional(),
+  "providerOverReturnCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault),
+  "provenance": zod.record(zod.string(), zod.unknown()).optional()
+})).optional(),
+  "datasetsOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault),
+  "datasetsTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault),
+  "associations": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "identity": zod.object({
+  "kind": zod.enum(['provider_native_id', 'fallback_identity_hash']),
+  "value": zod.string()
+}),
+  "signalId": zod.union([zod.number(),zod.null()]).optional(),
+  "parentId": zod.union([zod.number(),zod.null()]).optional(),
+  "processingState": zod.enum(['processed', 'resumed', 'duplicate', 'skipped', 'failed'])
+})).optional(),
+  "associationsOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault),
+  "associationsTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault)
+})),
+  "pathsOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsOriginalCountDefault),
+  "pathsTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault)
+})),
+  "sourcesOriginalCount": zod.number(),
+  "sourcesTruncatedCount": zod.number(),
+  "effectiveSignalCaps": zod.record(zod.string(), zod.number()).optional(),
+  "fetchedCount": zod.number().default(startSourceSyncResponseResultSummaryOneFetchedCountDefault),
+  "processedCount": zod.number().default(startSourceSyncResponseResultSummaryOneProcessedCountDefault),
+  "resumedCount": zod.number().default(startSourceSyncResponseResultSummaryOneResumedCountDefault),
+  "duplicateCount": zod.number().default(startSourceSyncResponseResultSummaryOneDuplicateCountDefault),
+  "skippedCount": zod.number().default(startSourceSyncResponseResultSummaryOneSkippedCountDefault),
+  "costUsd": zod.string().regex(startSourceSyncResponseResultSummaryOneCostUsdRegExp).default(startSourceSyncResponseResultSummaryOneCostUsdDefault),
+  "leaseOutcome": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "requestFingerprintSummary": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
+  "startReconciliationDiagnostics": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Get Workflow
+ */
+export const GetWorkflowParams = zod.object({
+  "workflowId": zod.coerce.string()
+})
+
+export const GetWorkflowHeader = zod.object({
+  "X-Resound-Organization": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-Team": zod.union([zod.string(),zod.null()]).optional(),
+  "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
+})
+
+export const getWorkflowResponseResultSummaryOneSourcesItemFetchedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemProcessedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemResumedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemDuplicateCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemSkippedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemCostUsdDefault = `0`;
+export const getWorkflowResponseResultSummaryOneSourcesItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const getWorkflowResponseResultSummaryOneSourcesItemCapReachedDefault = false;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneFetchedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneProcessedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneResumedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneDuplicateCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneSkippedCountDefault = 0;
+export const getWorkflowResponseResultSummaryOneCostUsdDefault = `0`;
+export const getWorkflowResponseResultSummaryOneCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+
+
+export const GetWorkflowResponse = zod.object({
+  "id": zod.number(),
+  "workflowId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "workflowType": zod.string(),
+  "status": zod.string(),
+  "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "resultSchemaVersion": zod.union([zod.number(),zod.null()]).optional(),
+  "resultSummary": zod.union([zod.object({
+  "schemaVersion": zod.number(),
+  "status": zod.enum(['completed', 'partial', 'failed', 'cancelled']),
+  "selectedSources": zod.array(zod.string()).optional(),
+  "selectedPaths": zod.record(zod.string(), zod.array(zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']))).optional(),
+  "sources": zod.array(zod.object({
+  "source": zod.string(),
+  "platform": zod.string(),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "maxSignalsPerSource": zod.number(),
+  "fetchedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemFetchedCountDefault),
+  "processedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemProcessedCountDefault),
+  "resumedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemResumedCountDefault),
+  "duplicateCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemSkippedCountDefault),
+  "costUsd": zod.string().regex(getWorkflowResponseResultSummaryOneSourcesItemCostUsdRegExp).default(getWorkflowResponseResultSummaryOneSourcesItemCostUsdDefault),
+  "capReached": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemCapReachedDefault),
+  "paths": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "fetchedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault),
+  "processedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault),
+  "resumedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault),
+  "duplicateCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault),
+  "costUsd": zod.string().regex(getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp).default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault),
+  "runs": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "actorId": zod.string(),
+  "buildId": zod.string(),
+  "buildNumber": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedRowMaximum": zod.number(),
+  "maxTotalChargeUsd": zod.string().regex(getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp),
+  "usageTotalUsd": zod.union([zod.string().regex(getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp),zod.null()]).optional(),
+  "status": zod.string(),
+  "inputSchemaReference": zod.string(),
+  "outputSchemaReference": zod.union([zod.string(),zod.null()]).optional(),
+  "fixtureShapeReference": zod.string(),
+  "datasetIds": zod.array(zod.string()).optional()
+})).optional(),
+  "runsOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault),
+  "runsTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault),
+  "datasets": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "datasetId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedLimit": zod.number(),
+  "fetchedCount": zod.number(),
+  "processedCount": zod.number(),
+  "rawFetchedCount": zod.union([zod.number(),zod.null()]).optional(),
+  "providerOverReturnCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault),
+  "provenance": zod.record(zod.string(), zod.unknown()).optional()
+})).optional(),
+  "datasetsOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault),
+  "datasetsTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault),
+  "associations": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "identity": zod.object({
+  "kind": zod.enum(['provider_native_id', 'fallback_identity_hash']),
+  "value": zod.string()
+}),
+  "signalId": zod.union([zod.number(),zod.null()]).optional(),
+  "parentId": zod.union([zod.number(),zod.null()]).optional(),
+  "processingState": zod.enum(['processed', 'resumed', 'duplicate', 'skipped', 'failed'])
+})).optional(),
+  "associationsOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault),
+  "associationsTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault)
+})),
+  "pathsOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsOriginalCountDefault),
+  "pathsTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(getWorkflowResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault)
+})),
+  "sourcesOriginalCount": zod.number(),
+  "sourcesTruncatedCount": zod.number(),
+  "effectiveSignalCaps": zod.record(zod.string(), zod.number()).optional(),
+  "fetchedCount": zod.number().default(getWorkflowResponseResultSummaryOneFetchedCountDefault),
+  "processedCount": zod.number().default(getWorkflowResponseResultSummaryOneProcessedCountDefault),
+  "resumedCount": zod.number().default(getWorkflowResponseResultSummaryOneResumedCountDefault),
+  "duplicateCount": zod.number().default(getWorkflowResponseResultSummaryOneDuplicateCountDefault),
+  "skippedCount": zod.number().default(getWorkflowResponseResultSummaryOneSkippedCountDefault),
+  "costUsd": zod.string().regex(getWorkflowResponseResultSummaryOneCostUsdRegExp).default(getWorkflowResponseResultSummaryOneCostUsdDefault),
+  "leaseOutcome": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "requestFingerprintSummary": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
+  "startReconciliationDiagnostics": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 
@@ -533,6 +1027,53 @@ export const StartListeningProfileSetupBody = zod.object({
   "setupNotes": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemFetchedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemProcessedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemResumedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemDuplicateCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemSkippedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemCostUsdDefault = `0`;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemCapReachedDefault = false;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneFetchedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneProcessedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneResumedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneDuplicateCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneSkippedCountDefault = 0;
+export const startListeningProfileSetupResponseResultSummaryOneCostUsdDefault = `0`;
+export const startListeningProfileSetupResponseResultSummaryOneCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+
+
 export const StartListeningProfileSetupResponse = zod.object({
   "id": zod.number(),
   "workflowId": zod.string(),
@@ -540,6 +1081,119 @@ export const StartListeningProfileSetupResponse = zod.object({
   "workflowType": zod.string(),
   "status": zod.string(),
   "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "resultSchemaVersion": zod.union([zod.number(),zod.null()]).optional(),
+  "resultSummary": zod.union([zod.object({
+  "schemaVersion": zod.number(),
+  "status": zod.enum(['completed', 'partial', 'failed', 'cancelled']),
+  "selectedSources": zod.array(zod.string()).optional(),
+  "selectedPaths": zod.record(zod.string(), zod.array(zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']))).optional(),
+  "sources": zod.array(zod.object({
+  "source": zod.string(),
+  "platform": zod.string(),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "maxSignalsPerSource": zod.number(),
+  "fetchedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemFetchedCountDefault),
+  "processedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startListeningProfileSetupResponseResultSummaryOneSourcesItemCostUsdRegExp).default(startListeningProfileSetupResponseResultSummaryOneSourcesItemCostUsdDefault),
+  "capReached": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemCapReachedDefault),
+  "paths": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "fetchedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault),
+  "processedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp).default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault),
+  "runs": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "actorId": zod.string(),
+  "buildId": zod.string(),
+  "buildNumber": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedRowMaximum": zod.number(),
+  "maxTotalChargeUsd": zod.string().regex(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp),
+  "usageTotalUsd": zod.union([zod.string().regex(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp),zod.null()]).optional(),
+  "status": zod.string(),
+  "inputSchemaReference": zod.string(),
+  "outputSchemaReference": zod.union([zod.string(),zod.null()]).optional(),
+  "fixtureShapeReference": zod.string(),
+  "datasetIds": zod.array(zod.string()).optional()
+})).optional(),
+  "runsOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault),
+  "runsTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault),
+  "datasets": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "datasetId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedLimit": zod.number(),
+  "fetchedCount": zod.number(),
+  "processedCount": zod.number(),
+  "rawFetchedCount": zod.union([zod.number(),zod.null()]).optional(),
+  "providerOverReturnCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault),
+  "provenance": zod.record(zod.string(), zod.unknown()).optional()
+})).optional(),
+  "datasetsOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault),
+  "datasetsTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault),
+  "associations": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "identity": zod.object({
+  "kind": zod.enum(['provider_native_id', 'fallback_identity_hash']),
+  "value": zod.string()
+}),
+  "signalId": zod.union([zod.number(),zod.null()]).optional(),
+  "parentId": zod.union([zod.number(),zod.null()]).optional(),
+  "processingState": zod.enum(['processed', 'resumed', 'duplicate', 'skipped', 'failed'])
+})).optional(),
+  "associationsOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault),
+  "associationsTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault)
+})),
+  "pathsOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsOriginalCountDefault),
+  "pathsTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault)
+})),
+  "sourcesOriginalCount": zod.number(),
+  "sourcesTruncatedCount": zod.number(),
+  "effectiveSignalCaps": zod.record(zod.string(), zod.number()).optional(),
+  "fetchedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneFetchedCountDefault),
+  "processedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneProcessedCountDefault),
+  "resumedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneResumedCountDefault),
+  "duplicateCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneDuplicateCountDefault),
+  "skippedCount": zod.number().default(startListeningProfileSetupResponseResultSummaryOneSkippedCountDefault),
+  "costUsd": zod.string().regex(startListeningProfileSetupResponseResultSummaryOneCostUsdRegExp).default(startListeningProfileSetupResponseResultSummaryOneCostUsdDefault),
+  "leaseOutcome": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "requestFingerprintSummary": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
+  "startReconciliationDiagnostics": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 
@@ -587,14 +1241,37 @@ export const ListSourceHealthHeader = zod.object({
   "X-Resound-User": zod.union([zod.string(),zod.null()]).optional()
 })
 
+export const listSourceHealthResponseIssuesItemMessageMax = 1000;
+
+export const listSourceHealthResponseIssuesItemRetryableDefault = false;
+export const listSourceHealthResponseIssuesItemPreservedWorkDefault = false;
+
 export const ListSourceHealthResponseItem = zod.object({
   "sourceType": zod.string(),
+  "canonicalSource": zod.string(),
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
   "provider": zod.string(),
   "status": zod.string(),
   "lastSuccessAt": zod.union([zod.string(),zod.null()]).optional(),
   "lastFailureAt": zod.union([zod.string(),zod.null()]).optional(),
   "lastRunId": zod.union([zod.string(),zod.null()]).optional(),
   "itemCount": zod.number(),
+  "fetchedCount": zod.number(),
+  "processedCount": zod.number(),
+  "duplicateCount": zod.number(),
+  "costUsd": zod.number(),
+  "provenance": zod.record(zod.string(), zod.unknown()),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(listSourceHealthResponseIssuesItemMessageMax),
+  "retryable": zod.boolean().default(listSourceHealthResponseIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(listSourceHealthResponseIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})),
   "errorMessage": zod.union([zod.string(),zod.null()]).optional()
 })
 export const ListSourceHealthResponse = zod.array(ListSourceHealthResponseItem)
@@ -699,6 +1376,53 @@ export const StartReportGenerationBody = zod.object({
   "reportConfigId": zod.union([zod.number(),zod.null()]).optional()
 })
 
+export const startReportGenerationResponseResultSummaryOneSourcesItemFetchedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemProcessedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemResumedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemDuplicateCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemSkippedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemCostUsdDefault = `0`;
+export const startReportGenerationResponseResultSummaryOneSourcesItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startReportGenerationResponseResultSummaryOneSourcesItemCapReachedDefault = false;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault = `0`;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax = 1000;
+
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault = false;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault = false;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemMessageMax = 1000;
+
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault = false;
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault = false;
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneFetchedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneProcessedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneResumedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneDuplicateCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneSkippedCountDefault = 0;
+export const startReportGenerationResponseResultSummaryOneCostUsdDefault = `0`;
+export const startReportGenerationResponseResultSummaryOneCostUsdRegExp = new RegExp('^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$');
+
+
 export const StartReportGenerationResponse = zod.object({
   "id": zod.number(),
   "workflowId": zod.string(),
@@ -706,6 +1430,119 @@ export const StartReportGenerationResponse = zod.object({
   "workflowType": zod.string(),
   "status": zod.string(),
   "taskQueue": zod.union([zod.string(),zod.null()]).optional(),
+  "resultSchemaVersion": zod.union([zod.number(),zod.null()]).optional(),
+  "resultSummary": zod.union([zod.object({
+  "schemaVersion": zod.number(),
+  "status": zod.enum(['completed', 'partial', 'failed', 'cancelled']),
+  "selectedSources": zod.array(zod.string()).optional(),
+  "selectedPaths": zod.record(zod.string(), zod.array(zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']))).optional(),
+  "sources": zod.array(zod.object({
+  "source": zod.string(),
+  "platform": zod.string(),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "maxSignalsPerSource": zod.number(),
+  "fetchedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemFetchedCountDefault),
+  "processedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startReportGenerationResponseResultSummaryOneSourcesItemCostUsdRegExp).default(startReportGenerationResponseResultSummaryOneSourcesItemCostUsdDefault),
+  "capReached": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemCapReachedDefault),
+  "paths": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "status": zod.enum(['ok', 'partial', 'failed']),
+  "fetchedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemFetchedCountDefault),
+  "processedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemProcessedCountDefault),
+  "resumedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemResumedCountDefault),
+  "duplicateCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDuplicateCountDefault),
+  "skippedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemSkippedCountDefault),
+  "costUsd": zod.string().regex(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdRegExp).default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemCostUsdDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemIssuesTruncatedCountDefault),
+  "runs": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "actorId": zod.string(),
+  "buildId": zod.string(),
+  "buildNumber": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedRowMaximum": zod.number(),
+  "maxTotalChargeUsd": zod.string().regex(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsItemMaxTotalChargeUsdRegExp),
+  "usageTotalUsd": zod.union([zod.string().regex(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsItemUsageTotalUsdOneRegExp),zod.null()]).optional(),
+  "status": zod.string(),
+  "inputSchemaReference": zod.string(),
+  "outputSchemaReference": zod.union([zod.string(),zod.null()]).optional(),
+  "fixtureShapeReference": zod.string(),
+  "datasetIds": zod.array(zod.string()).optional()
+})).optional(),
+  "runsOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsOriginalCountDefault),
+  "runsTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemRunsTruncatedCountDefault),
+  "datasets": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "datasetId": zod.string(),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional(),
+  "requestedLimit": zod.number(),
+  "fetchedCount": zod.number(),
+  "processedCount": zod.number(),
+  "rawFetchedCount": zod.union([zod.number(),zod.null()]).optional(),
+  "providerOverReturnCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsItemProviderOverReturnCountDefault),
+  "provenance": zod.record(zod.string(), zod.unknown()).optional()
+})).optional(),
+  "datasetsOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsOriginalCountDefault),
+  "datasetsTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemDatasetsTruncatedCountDefault),
+  "associations": zod.array(zod.object({
+  "path": zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),
+  "identity": zod.object({
+  "kind": zod.enum(['provider_native_id', 'fallback_identity_hash']),
+  "value": zod.string()
+}),
+  "signalId": zod.union([zod.number(),zod.null()]).optional(),
+  "parentId": zod.union([zod.number(),zod.null()]).optional(),
+  "processingState": zod.enum(['processed', 'resumed', 'duplicate', 'skipped', 'failed'])
+})).optional(),
+  "associationsOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAssociationsOriginalCountDefault),
+  "associationsTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsItemAssociationsTruncatedCountDefault)
+})),
+  "pathsOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsOriginalCountDefault),
+  "pathsTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemPathsTruncatedCountDefault),
+  "issues": zod.array(zod.object({
+  "path": zod.union([zod.enum(['official_discovery', 'mention_discovery', 'official_comments', 'mention_comments']),zod.null()]).optional(),
+  "code": zod.string(),
+  "issueClass": zod.string(),
+  "message": zod.string().max(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemMessageMax),
+  "retryable": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemRetryableDefault),
+  "preservedWork": zod.boolean().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesItemPreservedWorkDefault),
+  "runId": zod.union([zod.string(),zod.null()]).optional(),
+  "datasetId": zod.union([zod.string(),zod.null()]).optional(),
+  "parentIdentityValue": zod.union([zod.string(),zod.null()]).optional()
+})).optional(),
+  "issuesOriginalCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesOriginalCountDefault),
+  "issuesTruncatedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSourcesItemIssuesTruncatedCountDefault)
+})),
+  "sourcesOriginalCount": zod.number(),
+  "sourcesTruncatedCount": zod.number(),
+  "effectiveSignalCaps": zod.record(zod.string(), zod.number()).optional(),
+  "fetchedCount": zod.number().default(startReportGenerationResponseResultSummaryOneFetchedCountDefault),
+  "processedCount": zod.number().default(startReportGenerationResponseResultSummaryOneProcessedCountDefault),
+  "resumedCount": zod.number().default(startReportGenerationResponseResultSummaryOneResumedCountDefault),
+  "duplicateCount": zod.number().default(startReportGenerationResponseResultSummaryOneDuplicateCountDefault),
+  "skippedCount": zod.number().default(startReportGenerationResponseResultSummaryOneSkippedCountDefault),
+  "costUsd": zod.string().regex(startReportGenerationResponseResultSummaryOneCostUsdRegExp).default(startReportGenerationResponseResultSummaryOneCostUsdDefault),
+  "leaseOutcome": zod.union([zod.string(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "requestFingerprintSummary": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
+  "startReconciliationDiagnostics": zod.union([zod.record(zod.string(), zod.unknown()),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 

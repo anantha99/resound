@@ -1,20 +1,154 @@
 reddit:
   enabled: true
   subreddits:
-    - liquiddeath
+  - liquiddeath
   search_terms:
-    - "liquid death"
-    - "liquiddeath"
+  - liquid death
+  - liquiddeath
   limit: 25
-
+  preflight_required: true
+  approved_envelope_fingerprint: null
+  manifest_version: 2026-07-17.task1-incomplete
+  paths:
+    mention_discovery:
+      enabled: true
+  limits:
+    max_signals_per_source: 100
+    max_items_per_path: 25
+    max_parents_per_path: 10
+    max_comments_per_parent: 5
+    max_comments_per_path: 25
+    max_comments_per_source: 50
+    max_runs_per_source: 10
+    max_cost_usd_per_source: '1.00'
+    page_size: 100
+    deadline_reserve_seconds: 30
+  provider_capture:
+    actor_id: solidcode/reddit-scraper
+    build_id: LxJ3Vm9RHSEJcQEYK
+    build_number: 1.1.31
+    provider_declared_input_schema_sha256: 58ea3036200e494ef3e8405b8de3db9fe8b47abab4c3216e8d460c95ff33ddca
+    provider_declared_output_schema: null
+    canary_required: true
+    fixture_required: true
+    start_urls_shape: list[str]
+    subreddits_shape: list[str]
+    searches_shape: list[str]
 g2:
-  enabled: false  # not relevant for a DTC beverage brand
-  product_slug: ""
-
-twitter:
-  enabled: false  # turn on once TWITTER_BEARER_TOKEN is set
-  handles:
-    - "@LiquidDeath"
-  search_terms:
-    - "liquid death"
-  limit: 50
+  enabled: false
+  product_slug: ''
+instagram:
+  enabled: false
+  preflight_required: true
+  approved_envelope_fingerprint: null
+  manifest_version: 2026-07-17.task1-incomplete
+  paths:
+    mention_discovery:
+      enabled: true
+  limits:
+    max_signals_per_source: 100
+    max_items_per_path: 25
+    max_parents_per_path: 10
+    max_comments_per_parent: 5
+    max_comments_per_path: 25
+    max_comments_per_source: 50
+    max_runs_per_source: 10
+    max_cost_usd_per_source: '1.00'
+    page_size: 100
+    deadline_reserve_seconds: 30
+  provider_capture:
+    actor_id: apify/instagram-scraper
+    build_id: AnGYqGQjcKAa1VSUK
+    build_number: 0.0.690
+    input_schema_sha256_prefix: 599b69bc
+    output_schema_sha256_prefix: 20edc518
+    direct_urls_shape: list[str]
+    comments_actor:
+      actor_id: apify/instagram-comment-scraper
+      build_id: QnsnqzHndqNZTLqWw
+      build_number: 0.0.511
+      input_schema_sha256_prefix: 4b34f7eb
+      output_schema_sha256_prefix: 2b07394d
+      direct_urls_shape: list[str]
+tiktok:
+  enabled: false
+  preflight_required: true
+  approved_envelope_fingerprint: null
+  manifest_version: 2026-07-17.task1-incomplete
+  paths:
+    mention_discovery:
+      enabled: true
+  limits:
+    max_signals_per_source: 100
+    max_items_per_path: 25
+    max_parents_per_path: 10
+    max_comments_per_parent: 5
+    max_comments_per_path: 25
+    max_comments_per_source: 50
+    max_runs_per_source: 10
+    max_cost_usd_per_source: '1.00'
+    page_size: 100
+    deadline_reserve_seconds: 30
+  provider_capture:
+    actor_id: clockworks/tiktok-scraper
+    build_id: JYyRr8f5BczSjcmPO
+    build_number: 0.0.561
+    input_schema_sha256_prefix: 3c657f7b
+    output_schema_sha256_prefix: 84ba0128
+    minimal_max_total_charge_usd: '0.50'
+    comments_dataset_url_field: commentsDatasetUrl
+x:
+  enabled: false
+  preflight_required: true
+  approved_envelope_fingerprint: null
+  manifest_version: 2026-07-17.task1-incomplete
+  paths:
+    mention_discovery:
+      enabled: true
+  limits:
+    max_signals_per_source: 100
+    max_items_per_path: 25
+    max_parents_per_path: 10
+    max_comments_per_parent: 5
+    max_comments_per_path: 25
+    max_comments_per_source: 50
+    max_runs_per_source: 10
+    max_cost_usd_per_source: '1.00'
+    page_size: 100
+    deadline_reserve_seconds: 30
+  provider_capture:
+    actor_id: apidojo/twitter-scraper-lite
+    build_id: NqWYV0k5wlJ9R5bi6
+    build_number: 0.0.935
+    input_schema_sha256_prefix: f0138656
+    provider_declared_output_schema: null
+    canary_required: true
+    start_urls_shape: list[str]
+    twitter_handles_shape: list[str]
+    search_terms_shape: list[str]
+youtube:
+  enabled: false
+  preflight_required: true
+  approved_envelope_fingerprint: null
+  manifest_version: 2026-07-17.task1-incomplete
+  paths:
+    mention_discovery:
+      enabled: true
+  limits:
+    max_signals_per_source: 100
+    max_items_per_path: 25
+    max_parents_per_path: 10
+    max_comments_per_parent: 5
+    max_comments_per_path: 25
+    max_comments_per_source: 50
+    max_runs_per_source: 10
+    max_cost_usd_per_source: '1.00'
+    page_size: 100
+    deadline_reserve_seconds: 30
+  provider_capture:
+    actor_id: streamers/youtube-scraper
+    build_id: N0ksZ5khxS6TcgW8s
+    build_number: 0.0.273
+    input_schema_sha256_prefix: 3db1abc9
+    output_schema_sha256_prefix: 5e47e195
+    start_urls_shape: list[request_object]

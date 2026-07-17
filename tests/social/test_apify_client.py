@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
-from resound.social.apify import ApifyClient
+from resound.social.apify import ApifyClient, serialize_start_urls, validate_apify_dataset_url
+from resound.social.common import (
+    ProviderAuthError,
+    ProviderBuildMismatchError,
+    ProviderConfigError,
+    ProviderDefiniteRejectionError,
+    UnresolvedActorStartError,
+)
+from resound.social.contracts import AdapterLimits, ProviderDatasetRef, SourcePath
 
 
 class FakeClock:
@@ -39,7 +49,7 @@ def test_waits_for_actor_success_before_dataset_fetch() -> None:
         assert request.headers["Authorization"] == "Bearer secret-token"
         if request.url.path.endswith("/runs"):
             operations.append("start")
-            assert request.url.params["waitForFinish"] == "60"
+            assert request.url.params["waitForFinish"] == "10"
             return httpx.Response(
                 201,
                 json={
@@ -47,6 +57,8 @@ def test_waits_for_actor_success_before_dataset_fetch() -> None:
                         "id": "run-1",
                         "status": "RUNNING",
                         "defaultDatasetId": "dataset-initial",
+                        "buildId": "build-id",
+                        "buildNumber": "1.2.3",
                     }
                 },
             )
@@ -68,7 +80,14 @@ def test_waits_for_actor_success_before_dataset_fetch() -> None:
         transport=_transport(handler),
     )
 
-    run = client.run_actor("owner/actor", {"searches": ["brand"]})
+    run = client.run_actor(
+        "owner/actor",
+        {"searches": ["brand"]},
+        build_number="1.2.3",
+        expected_build_id="build-id",
+        max_total_charge_usd=Decimal("0.50"),
+        reservation_callback=lambda: None,
+    )
     completed = client.wait_for_run(run)
     items = client.fetch_dataset_items(completed["defaultDatasetId"])
 
@@ -149,3 +168,305 @@ def test_actor_poll_timeout_is_bounded_and_reports_latest_status() -> None:
 def test_actor_poll_settings_must_be_positive(value: float) -> None:
     with pytest.raises(RuntimeError, match="run_poll_timeout_seconds must be greater than zero"):
         ApifyClient("secret-token", run_poll_timeout_seconds=value)
+
+
+def test_actor_start_sends_exact_build_decimal_and_reservation_before_post() -> None:
+    operations: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        operations.append("post")
+        assert request.url.params["build"] == "0.0.561"
+        assert request.url.params["maxTotalChargeUsd"] == "0.500"
+        return httpx.Response(
+            201,
+            json={
+                "data": {
+                    "id": "run-1",
+                    "status": "READY",
+                    "buildId": "build-id",
+                    "buildNumber": "0.0.561",
+                }
+            },
+        )
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    run = client.run_actor(
+        "clockworks/tiktok-scraper",
+        {"searchQueries": ["Acme"]},
+        build_number="0.0.561",
+        expected_build_id="build-id",
+        max_total_charge_usd=Decimal("0.500"),
+        reservation_callback=lambda: operations.append("reserve"),
+    )
+
+    assert run["id"] == "run-1"
+    assert operations == ["reserve", "post"]
+
+
+def test_actor_start_request_timeout_is_shorter_than_activity_heartbeat() -> None:
+    request_timeouts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_timeouts.append(request.extensions["timeout"])
+        return httpx.Response(
+            201,
+            json={
+                "data": {
+                    "id": "run-1",
+                    "buildId": "build-id",
+                    "buildNumber": "1.2.3",
+                }
+            },
+        )
+
+    ApifyClient(
+        "secret-token",
+        timeout_seconds=70,
+        transport=_transport(handler),
+    ).run_actor(
+        "owner/actor",
+        {},
+        build_number="1.2.3",
+        expected_build_id="build-id",
+        max_total_charge_usd=Decimal("0.10"),
+        reservation_callback=lambda: None,
+    )
+
+    assert len(request_timeouts) == 1
+    assert set(request_timeouts[0].values()) == {20.0}
+
+
+def test_actor_start_rejects_returned_build_mismatch() -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(
+            lambda request: httpx.Response(
+                201,
+                json={
+                    "data": {
+                        "id": "run-1",
+                        "buildId": "wrong-build",
+                        "buildNumber": "1.2.3",
+                    }
+                },
+            )
+        ),
+    )
+    with pytest.raises(ProviderBuildMismatchError, match="unexpected immutable build ID"):
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="expected-build",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: None,
+        )
+
+
+def test_deadline_and_cancellation_prevent_provider_calls() -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(500)
+
+    client = ApifyClient("secret-token", monotonic=lambda: 10, transport=_transport(handler))
+    with pytest.raises(TimeoutError, match="before provider call"):
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: None,
+            deadline_monotonic=9,
+        )
+    with pytest.raises(RuntimeError, match="cancelled before provider call"):
+        client.fetch_dataset_items("dataset", limit=1, cancellation_requested=lambda: True)
+    assert called is False
+
+
+def test_deadline_context_preserves_finalization_reserve_without_provider_calls() -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(500)
+
+    limits = AdapterLimits(deadline_reserve_seconds=30)
+    context = limits.deadline_context(deadline_monotonic=40, monotonic=lambda: 10)
+    client = ApifyClient("secret-token", transport=_transport(handler))
+
+    with pytest.raises(TimeoutError, match="actor start deadline elapsed"):
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: None,
+            deadline_context=context,
+        )
+    with pytest.raises(TimeoutError, match="dataset fetch deadline elapsed"):
+        client.fetch_dataset_items("dataset", limit=1, deadline_context=context)
+    assert called is False
+
+
+def test_actor_start_transport_failure_preserves_unresolved_reservation_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("response lost", request=request)
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    with pytest.raises(UnresolvedActorStartError) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-7"),
+        )
+    assert exc_info.value.reservation_id == "reservation-7"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    [
+        (401, ProviderAuthError),
+        (403, ProviderAuthError),
+        (400, ProviderConfigError),
+        (422, ProviderConfigError),
+        (500, ProviderDefiniteRejectionError),
+    ],
+)
+def test_actor_start_http_rejection_has_explicit_taxonomy(
+    status_code: int,
+    error_type: type[ProviderDefiniteRejectionError],
+) -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(lambda _request: httpx.Response(status_code, json={})),
+    )
+
+    with pytest.raises(error_type) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-http"),
+        )
+
+    assert exc_info.value.status_code == status_code
+
+
+def test_actor_start_malformed_success_is_ambiguous() -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(lambda _request: httpx.Response(201, content=b"not-json")),
+    )
+
+    with pytest.raises(UnresolvedActorStartError) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-json"),
+        )
+
+    assert exc_info.value.reservation_id == "reservation-json"
+
+
+def test_bounded_dataset_paging_never_requests_more_than_remaining_limit() -> None:
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.url.params["offset"], request.url.params["limit"]))
+        requested = int(request.url.params["limit"])
+        return httpx.Response(200, json=[{"id": index} for index in range(requested)])
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    items = client.fetch_dataset_items("dataset", limit=5, page_size=2)
+
+    assert len(items) == 5
+    assert requests == [("0", "2"), ("2", "2"), ("4", "1")]
+
+
+def test_provider_over_return_is_bounded_and_preserves_raw_count_issue() -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(
+            lambda request: httpx.Response(200, json=[{"id": index} for index in range(4)])
+        ),
+    )
+    items = client.fetch_dataset_items("dataset", limit=2, page_size=2)
+
+    assert len(items) == 2
+    assert items.raw_count == 4
+    assert items.over_return is not None
+    issue = items.over_return.as_issue(
+        path=SourcePath.MENTION_DISCOVERY,
+        dataset_id="dataset",
+    )
+    assert issue.code == "provider_over_return"
+    assert issue.issue_class == "ProviderLimitViolation"
+    dataset = ProviderDatasetRef(
+        path=SourcePath.MENTION_DISCOVERY,
+        dataset_id="dataset",
+        requested_limit=2,
+        fetched_count=2,
+        processed_count=2,
+        raw_fetched_count=items.raw_count,
+        provider_over_return_count=items.raw_count - len(items),
+    )
+    assert dataset.raw_fetched_count == 4
+    assert dataset.provider_over_return_count == 2
+
+
+@pytest.mark.parametrize("wait_seconds", [30, 31])
+def test_actor_start_wait_must_fit_heartbeat_interval(wait_seconds: int) -> None:
+    with pytest.raises(RuntimeError, match="must not exceed the heartbeat interval"):
+        ApifyClient("secret-token", actor_start_wait_seconds=wait_seconds)
+
+
+def test_abort_run_uses_bounded_authenticated_abort_endpoint() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"id": "run-1", "status": "ABORTING"}})
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    client.abort_run("run-1", timeout_seconds=5.0)
+
+    assert len(requests) == 1
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/v2/actor-runs/run-1/abort"
+    assert requests[0].headers["Authorization"] == "Bearer secret-token"
+    assert set(requests[0].extensions["timeout"].values()) == {5.0}
+
+
+def test_source_specific_url_serialization_and_exact_tiktok_dataset_url() -> None:
+    assert serialize_start_urls("instagram", ["https://instagram.com/acme"]) == [
+        "https://instagram.com/acme"
+    ]
+    assert serialize_start_urls("youtube", ["https://youtube.com/@acme"]) == [
+        {"url": "https://youtube.com/@acme"}
+    ]
+    assert (
+        validate_apify_dataset_url(
+            "https://api.apify.com/v2/datasets/comments-1/items?token=redacted",
+            expected_dataset_id="comments-1",
+        )
+        == "https://api.apify.com/v2/datasets/comments-1/items"
+    )
+    with pytest.raises(ValueError, match="expected Apify dataset"):
+        validate_apify_dataset_url(
+            "https://example.com/v2/datasets/comments-1/items",
+            expected_dataset_id="comments-1",
+        )

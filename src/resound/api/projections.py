@@ -23,6 +23,7 @@ from resound.memory import (
     SqlMemory,
 )
 from resound.models import FeedbackEvent as DomainFeedbackEvent
+from resound.social.contracts import canonical_public_source, public_source_aliases
 from resound.tenancy import TenantContext
 
 BRANDS_DIR = Path("brands")
@@ -168,7 +169,7 @@ def brand_stats(
     previous_sentiment = _sentiment_stats(previous_classes)
     current_critical = _critical_count(current_classes)
     previous_critical = _critical_count(previous_classes)
-    source_mix = _source_mix(row.signal.source for row in current)
+    source_mix = _source_mix(_canonical_platform(row.signal) for row in current)
     patterns = list_patterns(memory, brand_slug, area=None, tenant=tenant)
     top_pattern = _pattern_summary(patterns[0]) if patterns else _empty_pattern_summary()
 
@@ -210,7 +211,7 @@ def list_signals(
         brand_slug,
         tenant=tenant,
         since=period_since(period),
-        source=_normalize_source(source),
+        sources=_source_aliases(source),
         area=area,
         severity=severity,
         sentiment=sentiment,
@@ -222,7 +223,7 @@ def list_signals(
         brand_slug,
         tenant=tenant,
         since=period_since(period),
-        source=_normalize_source(source),
+        sources=_source_aliases(source),
         area=area,
         severity=severity,
         sentiment=sentiment,
@@ -411,15 +412,25 @@ def signal_detail(
 
 
 def signal_schema(row: SignalRow) -> schemas.Signal:
+    metadata = row.raw_metadata or {}
     return schemas.Signal(
         id=row.id,
         brand_id=row.brand_slug,
-        source=row.source,
+        source=_canonical_platform(row),
         external_id=row.external_id,
         url=row.url or "",
         author_handle=row.author_handle or "unknown",
         author_meta=_author_meta(row),
         reach=_reach(row),
+        canonical_platform=_canonical_platform(row),
+        content_kind=_content_kind(row),
+        metrics=_observed_metrics(row),
+        parent_context=_parent_context(row),
+        provenance=schemas.SignalProvenance(
+            provider=row.provider,
+            source_mode=row.source_mode,
+            path=_source_path(metadata),
+        ),
         content=row.content,
         posted_at=_iso(row.posted_at),
         created_at=_iso(row.ingested_at),
@@ -470,7 +481,9 @@ def route_audit(
         area=row.classification.area,
         severity=row.classification.severity,
         sentiment=row.classification.sentiment,
-        source=row.signal.source,
+        source=_canonical_platform(row.signal),
+        canonical_platform=_canonical_platform(row.signal),
+        content_kind=_content_kind(row.signal),
         content=row.signal.content,
         summary=row.classification.summary,
         confidence=row.classification.confidence,
@@ -488,14 +501,14 @@ def _joined_rows(
     tenant: TenantContext | None = None,
     since: datetime | None = None,
     before: datetime | None = None,
-    source: str | None = None,
+    sources: tuple[str, ...] | None = None,
     area: str | None = None,
     severity: str | None = None,
     sentiment: str | None = None,
     severities: list[str] | None = None,
     signal_id: int | None = None,
-    limit: int | None,
-    offset: int,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[SignalJoinedRow]:
     with Session(memory.engine) as session:
         stmt = (
@@ -510,7 +523,7 @@ def _joined_rows(
             tenant=tenant,
             since=since,
             before=before,
-            source=source,
+            sources=sources,
             area=area,
             severity=severity,
             sentiment=sentiment,
@@ -529,11 +542,11 @@ def _joined_count(
     brand_slug: str | None,
     *,
     tenant: TenantContext | None = None,
-    since: datetime | None,
-    source: str | None,
-    area: str | None,
-    severity: str | None,
-    sentiment: str | None,
+    since: datetime | None = None,
+    sources: tuple[str, ...] | None = None,
+    area: str | None = None,
+    severity: str | None = None,
+    sentiment: str | None = None,
 ) -> int:
     with Session(memory.engine) as session:
         stmt = (
@@ -547,7 +560,7 @@ def _joined_count(
             tenant=tenant,
             since=since,
             before=None,
-            source=source,
+            sources=sources,
             area=area,
             severity=severity,
             sentiment=sentiment,
@@ -566,8 +579,8 @@ def _apply_join_filters(stmt, **filters):
         stmt = stmt.where(SignalRow.ingested_at >= filters["since"])
     if filters["before"]:
         stmt = stmt.where(SignalRow.ingested_at < filters["before"])
-    if filters["source"]:
-        stmt = stmt.where(SignalRow.source == filters["source"])
+    if filters["sources"]:
+        stmt = stmt.where(SignalRow.source.in_(filters["sources"]))
     if filters["area"]:
         stmt = stmt.where(ClassificationRow.area == filters["area"])
     if filters["severity"]:
@@ -699,10 +712,102 @@ def _last_ingested(
         return _iso(value) if value else None
 
 
-def _normalize_source(source: str | None) -> str | None:
+def _source_aliases(source: str | None) -> tuple[str, ...] | None:
     if not source:
         return None
-    return source.strip().lower()
+    return public_source_aliases(source)
+
+
+def _canonical_platform(row: SignalRow) -> str:
+    return canonical_public_source(row.canonical_platform or row.source or "unknown")
+
+
+def _content_kind(row: SignalRow) -> str:
+    if row.content_kind:
+        return row.content_kind
+    metadata = row.raw_metadata or {}
+    value = metadata.get("content_kind")
+    if isinstance(value, str) and value:
+        return value.lower()
+    if _canonical_platform(row) == "youtube":
+        return "video"
+    if row.source == "g2":
+        return "review"
+    return "post"
+
+
+def _source_path(metadata: dict) -> str | None:
+    value = metadata.get("path") or metadata.get("source_path")
+    if value in {
+        "official_discovery", "mention_discovery", "official_comments", "mention_comments",
+    }:
+        return value
+    return None
+
+
+def _observed_metrics(row: SignalRow) -> schemas.ObservedPublicMetrics:
+    metadata = row.raw_metadata or {}
+    metrics = next(
+        (
+            candidate
+            for candidate in (
+                metadata.get("metrics"),
+                metadata.get("observed_public_metrics"),
+            )
+            if isinstance(candidate, dict)
+        ),
+        metadata,
+    )
+
+    def metric(*names: str) -> int | None:
+        for name in names:
+            value = _int_or_none(metrics.get(name))
+            if value is not None:
+                return value
+        return None
+
+    return schemas.ObservedPublicMetrics(
+        views=metric("views", "view_count", "viewCount"),
+        plays=metric("plays", "play_count", "playCount"),
+        likes=metric("likes", "like_count", "likeCount"),
+        replies=metric("replies", "reply_count", "replyCount"),
+        comments=metric("comments", "comment_count", "commentCount", "num_comments"),
+        shares=metric("shares", "share_count", "shareCount"),
+        reposts=metric("reposts", "retweets", "repost_count"),
+        upvotes=metric("upvotes", "score"),
+    )
+
+
+def _parent_context(row: SignalRow) -> schemas.ParentContext | None:
+    if _content_kind(row) != "comment" or _canonical_platform(row) not in {"instagram", "tiktok"}:
+        return None
+    metadata = row.raw_metadata or {}
+    nested = (
+        metadata.get("parent_context")
+        if isinstance(metadata.get("parent_context"), dict)
+        else {}
+    )
+    platform = _canonical_platform(row)
+    return schemas.ParentContext(
+        platform=platform,
+        content_kind="video" if platform == "tiktok" else "post",
+        url=nested.get("url") or nested.get("canonical_url") or metadata.get("parent_url"),
+        author_handle=nested.get("author_handle") or metadata.get("parent_author_handle"),
+        excerpt=nested.get("excerpt") or metadata.get("parent_excerpt"),
+        published_at=_parent_published_at(nested, metadata),
+    )
+
+
+def _parent_published_at(nested: dict, metadata: dict) -> str | None:
+    value = (
+        nested.get("published_at")
+        or nested.get("publishedAt")
+        or metadata.get("parent_published_at")
+        or metadata.get("parentPublishedAt")
+    )
+    if isinstance(value, datetime):
+        return _iso(value)
+    return str(value) if value else None
 
 
 def _author_meta(row: SignalRow) -> str | None:

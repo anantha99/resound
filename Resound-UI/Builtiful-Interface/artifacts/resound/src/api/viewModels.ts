@@ -32,9 +32,25 @@ export interface SignalView {
   routeId: number;
   brandId: string;
   source: string;
+  platform: string;
+  contentKind: string;
   authorHandle: string;
   authorMeta: string;
   reach: string;
+  metrics: {
+    compact: string;
+    items: Array<{ label: string; value: number | null }>;
+  };
+  parentContext?: {
+    label: string;
+    sourceLabel: string;
+    excerpt: string;
+    url?: string | null;
+    authorHandle?: string | null;
+    publishedAt?: string | null;
+  };
+  provenancePath?: string;
+  canonicalUrl: string;
   content: string;
   postedAt: string;
   area: Area;
@@ -86,10 +102,28 @@ export function toSignalView(detail: SignalDetail): SignalView {
     id: detail.signal.id,
     routeId: detail.route.id,
     brandId: detail.signal.brandId,
-    source: formatSource(detail.signal.source),
+    source: formatSourceLabel(detail.signal.canonicalPlatform, detail.signal.contentKind),
+    platform: formatSource(detail.signal.canonicalPlatform),
+    contentKind: detail.signal.contentKind,
     authorHandle: detail.signal.authorHandle || "unknown",
     authorMeta: detail.signal.authorMeta || "source metadata unavailable",
     reach: formatReach(detail.signal.source, detail.signal.reach),
+    metrics: signalMetrics(detail.signal.metrics),
+    parentContext: detail.signal.parentContext ? {
+      label: `Parent ${detail.signal.parentContext.contentKind}`,
+      sourceLabel: formatSourceLabel(
+        detail.signal.parentContext.platform,
+        detail.signal.parentContext.contentKind,
+      ),
+      excerpt: detail.signal.parentContext.excerpt || "Parent content",
+      url: detail.signal.parentContext.url,
+      authorHandle: detail.signal.parentContext.authorHandle,
+      publishedAt: detail.signal.parentContext.publishedAt
+        ? relativeTime(detail.signal.parentContext.publishedAt)
+        : null,
+    } : undefined,
+    provenancePath: detail.signal.provenance.path ?? undefined,
+    canonicalUrl: detail.signal.url,
     content: detail.signal.content,
     postedAt: relativeTime(detail.signal.postedAt),
     area: normalizeArea(detail.classification.area),
@@ -111,10 +145,14 @@ export function routeAuditToSignalView(route: RouteAudit, brandId: string): Sign
     id: route.signalId,
     routeId: route.id,
     brandId,
-    source: formatSource(route.source),
+    source: formatSourceLabel(route.canonicalPlatform, route.contentKind),
+    platform: formatSource(route.canonicalPlatform),
+    contentKind: route.contentKind,
     authorHandle: "memory",
     authorMeta: "routing audit",
     reach: "recorded",
+    metrics: { compact: "", items: [] },
+    canonicalUrl: "",
     content: route.content,
     postedAt: relativeTime(route.createdAt),
     area: normalizeArea(route.area),
@@ -151,9 +189,43 @@ export function apiPeriod(period: "24h" | "7d" | "30d" | "QTD"): "24h" | "7d" | 
 export function formatSource(source: string): string {
   const normalized = source.toLowerCase();
   if (normalized === "g2") return "G2";
-  if (normalized === "twitter") return "Twitter";
+  if (["twitter", "x", "x_public"].includes(normalized)) return "X";
+  if (["youtube", "youtube_comments"].includes(normalized)) return "YouTube";
+  if (normalized === "tiktok") return "TikTok";
   if (normalized === "reddit") return "Reddit";
   return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+export function formatSourceLabel(platform: string, contentKind: string): string {
+  return `${formatSource(platform)} ${contentKind}`;
+}
+
+export function formatPath(path?: string | null): string {
+  if (!path) return "Unknown path";
+  return path.replaceAll("_", " ").replace(/^./, value => value.toUpperCase());
+}
+
+type Metrics = SignalDetail["signal"]["metrics"];
+
+function signalMetrics(metrics: Metrics): SignalView["metrics"] {
+  const values: Array<[number | null | undefined, string]> = [
+    [metrics.views, "views"], [metrics.plays, "plays"], [metrics.likes, "likes"],
+    [metrics.replies, "replies"], [metrics.comments, "comments"], [metrics.shares, "shares"],
+    [metrics.reposts, "reposts"], [metrics.upvotes, "upvotes"],
+  ];
+  const rendered = values.filter(([value]) => value != null).slice(0, 3)
+    .map(([value, label]) => `${Number(value).toLocaleString()} ${label}`);
+  return {
+    compact: rendered.length
+      ? `Observed · ${rendered.join(" · ")}`
+      : "Observed public metrics unavailable",
+    items: [
+      { label: "Likes", value: metrics.likes ?? null },
+      { label: "Replies", value: metrics.replies ?? null },
+      { label: "Views", value: metrics.views ?? metrics.plays ?? null },
+      { label: "Shares", value: metrics.shares ?? metrics.reposts ?? null },
+    ],
+  };
 }
 
 function formatReach(source: string, reach?: number | null): string {
@@ -176,7 +248,7 @@ function normalizeArea(area: string): Area {
   return allowed.includes(area as Area) ? (area as Area) : "other";
 }
 
-function relativeTime(value: string): string {
+export function relativeTime(value: string): string {
   const date = new Date(value);
   const diffMs = Date.now() - date.getTime();
   if (Number.isNaN(diffMs)) return value;

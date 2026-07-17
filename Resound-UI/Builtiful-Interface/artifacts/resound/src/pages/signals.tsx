@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useListSignals } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
 import Masthead from "@/components/Masthead";
 import SignalRow from "@/components/SignalRow";
 import { useBrand } from "@/context/BrandContext";
 import { toSignalView, type Area, type Severity, type Sentiment } from "@/api/viewModels";
 
-type SourceFilter = "All" | "Reddit" | "Twitter" | "G2";
+type SourceFilter = "All" | "Reddit" | "Instagram" | "TikTok" | "X" | "YouTube";
 type AreaFilter = "All" | Area;
 type SeverityFilter = "All" | Severity;
 type SentimentFilter = "All" | Sentiment;
@@ -22,6 +23,7 @@ const FilterBtn = ({ label, active, onClick }: { label: string; active: boolean;
 
 export default function SignalsPage() {
   const { activeBrand } = useBrand();
+  const [, setLocation] = useLocation();
   const [source, setSource] = useState<SourceFilter>("All");
   const [area, setArea] = useState<AreaFilter>("All");
   const [severity, setSeverity] = useState<SeverityFilter>("All");
@@ -43,7 +45,7 @@ export default function SignalsPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#f4f1ec", color: "#1a1815" }}>
-      <div className="max-w-[1320px] mx-auto px-14">
+      <div className="resound-page-shell max-w-[1320px] mx-auto px-14">
         <Masthead />
         <div className="border-t mt-1 pt-8 pb-8" style={{ borderColor: "#1a1815" }}>
           <div className="flex items-end justify-between mb-8">
@@ -57,7 +59,7 @@ export default function SignalsPage() {
             </div>
           </div>
           <div className="flex gap-6 flex-wrap">
-            <div className="flex gap-0.5 flex-wrap">{(["All","Reddit","Twitter","G2"] as SourceFilter[]).map(s => <FilterBtn key={s} label={s} active={source === s} onClick={() => setSource(s)} />)}</div>
+            <div className="flex gap-0.5 flex-wrap">{(["All","Reddit","Instagram","TikTok","X","YouTube"] as SourceFilter[]).map(s => <FilterBtn key={s} label={s} active={source === s} onClick={() => setSource(s)} />)}</div>
             <div className="flex gap-0.5 flex-wrap">{(["All","product","ops","billing","cs","marketing","engineering"] as AreaFilter[]).map(a => <FilterBtn key={a} label={a} active={area === a} onClick={() => setArea(a)} />)}</div>
             <div className="flex gap-0.5">{(["All","critical","high","medium","low"] as SeverityFilter[]).map(s => <FilterBtn key={s} label={s} active={severity === s} onClick={() => setSeverity(s)} />)}</div>
             <div className="flex gap-0.5">{(["All","negative","positive","neutral","mixed"] as SentimentFilter[]).map(s => <FilterBtn key={s} label={s} active={sentiment === s} onClick={() => setSentiment(s)} />)}</div>
@@ -80,6 +82,7 @@ export default function SignalsPage() {
                 signal={signal}
                 ownerOptions={activeBrand.ownerOptions}
                 index={i}
+                onOpen={(id) => setLocation(`/signals/${id}`)}
               />
             ))
           )}

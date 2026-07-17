@@ -5,6 +5,9 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicListeningResultSummary } from './publicListeningResultSummary';
+import type { WorkflowJobRequestFingerprintSummary } from './workflowJobRequestFingerprintSummary';
+import type { WorkflowJobStartReconciliationDiagnostics } from './workflowJobStartReconciliationDiagnostics';
 
 export interface WorkflowJob {
   id: number;
@@ -13,5 +16,9 @@ export interface WorkflowJob {
   workflowType: string;
   status: string;
   taskQueue?: string | null;
+  resultSchemaVersion?: number | null;
+  resultSummary?: PublicListeningResultSummary | null;
+  requestFingerprintSummary?: WorkflowJobRequestFingerprintSummary;
+  startReconciliationDiagnostics?: WorkflowJobStartReconciliationDiagnostics;
   createdAt: string;
 }

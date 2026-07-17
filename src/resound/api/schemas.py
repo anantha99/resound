@@ -6,7 +6,8 @@ They are the contract consumed by the React app and future mobile clients.
 
 from __future__ import annotations
 
-from typing import Literal
+from decimal import Decimal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,6 +73,16 @@ class SourceStat(ApiModel):
     pct: float
 
 
+CanonicalPlatform = Literal["reddit", "instagram", "tiktok", "x", "youtube", "g2"]
+ContentKind = Literal["post", "video", "comment", "review"]
+SourcePath = Literal[
+    "official_discovery",
+    "mention_discovery",
+    "official_comments",
+    "mention_comments",
+]
+
+
 class SentimentBreakdown(ApiModel):
     positive: float
     neutral: float
@@ -111,9 +122,41 @@ class Signal(ApiModel):
     author_handle: str
     author_meta: str | None = None
     reach: int | None = None
+    canonical_platform: str
+    content_kind: str
+    metrics: ObservedPublicMetrics
+    parent_context: ParentContext | None = None
+    provenance: SignalProvenance
     content: str
     posted_at: str
     created_at: str
+
+
+class ObservedPublicMetrics(ApiModel):
+    metric_type: Literal["observed_public"] = "observed_public"
+    views: int | None = None
+    plays: int | None = None
+    likes: int | None = None
+    replies: int | None = None
+    comments: int | None = None
+    shares: int | None = None
+    reposts: int | None = None
+    upvotes: int | None = None
+
+
+class ParentContext(ApiModel):
+    platform: str
+    content_kind: Literal["post", "video"]
+    url: str | None = None
+    author_handle: str | None = None
+    excerpt: str | None = None
+    published_at: str | None = None
+
+
+class SignalProvenance(ApiModel):
+    provider: str | None = None
+    source_mode: str
+    path: SourcePath | None = None
 
 
 class Classification(ApiModel):
@@ -162,6 +205,8 @@ class RouteAudit(ApiModel):
     severity: str
     sentiment: str
     source: str
+    canonical_platform: str
+    content_kind: str
     content: str
     summary: str
     confidence: float
@@ -209,8 +254,27 @@ class PatternDetail(ApiModel):
     signals: list[SignalDetail]
 
 
+class SelectedPathInput(ApiModel):
+    source: str
+    paths: list[SourcePath]
+
+
+class SourceLimitOverrides(ApiModel):
+    max_signals_per_source: int | None = Field(default=None, gt=0)
+    max_items_per_path: int | None = Field(default=None, gt=0)
+    max_parents_per_path: int | None = Field(default=None, gt=0)
+    max_comments_per_parent: int | None = Field(default=None, gt=0)
+    max_comments_per_path: int | None = Field(default=None, gt=0)
+    max_comments_per_source: int | None = Field(default=None, gt=0)
+    max_runs_per_source: int | None = Field(default=None, gt=0)
+    max_cost_usd_per_source: Decimal | None = Field(default=None, gt=0)
+
+
 class SourceSyncInput(ApiModel):
     brand_id: str
+    selected_sources: list[str] | None = None
+    selected_paths: list[SelectedPathInput] | None = None
+    limits: SourceLimitOverrides = Field(default_factory=SourceLimitOverrides)
 
 
 class ReportRunCreateInput(ApiModel):
@@ -220,6 +284,118 @@ class ReportRunCreateInput(ApiModel):
     report_config_id: int | None = None
 
 
+class WorkflowResultIssue(ApiModel):
+    path: SourcePath | None = None
+    code: str
+    issue_class: str
+    message: str = Field(max_length=1000)
+    retryable: bool = False
+    preserved_work: bool = False
+    run_id: str | None = None
+    dataset_id: str | None = None
+    parent_identity_value: str | None = None
+
+
+class WorkflowProviderRun(ApiModel):
+    path: SourcePath
+    actor_id: str
+    build_id: str
+    build_number: str
+    run_id: str | None = None
+    requested_row_maximum: int
+    max_total_charge_usd: Decimal
+    usage_total_usd: Decimal | None = None
+    status: str
+    input_schema_reference: str
+    output_schema_reference: str | None = None
+    fixture_shape_reference: str
+    dataset_ids: list[str] = Field(default_factory=list)
+
+
+class WorkflowProviderDataset(ApiModel):
+    path: SourcePath
+    dataset_id: str
+    run_id: str | None = None
+    parent_identity_value: str | None = None
+    requested_limit: int
+    fetched_count: int
+    processed_count: int
+    raw_fetched_count: int | None = None
+    provider_over_return_count: int = 0
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowCanonicalIdentity(ApiModel):
+    kind: Literal["provider_native_id", "fallback_identity_hash"]
+    value: str
+
+
+class WorkflowSignalAssociation(ApiModel):
+    path: SourcePath
+    identity: WorkflowCanonicalIdentity
+    signal_id: int | None = None
+    parent_id: int | None = None
+    processing_state: Literal["processed", "resumed", "duplicate", "skipped", "failed"]
+
+
+class WorkflowPathResult(ApiModel):
+    path: SourcePath
+    status: Literal["ok", "partial", "failed"]
+    fetched_count: int = 0
+    processed_count: int = 0
+    resumed_count: int = 0
+    duplicate_count: int = 0
+    skipped_count: int = 0
+    cost_usd: Decimal = Decimal("0")
+    issues: list[WorkflowResultIssue] = Field(default_factory=list)
+    issues_original_count: int = 0
+    issues_truncated_count: int = 0
+    runs: list[WorkflowProviderRun] = Field(default_factory=list)
+    runs_original_count: int = 0
+    runs_truncated_count: int = 0
+    datasets: list[WorkflowProviderDataset] = Field(default_factory=list)
+    datasets_original_count: int = 0
+    datasets_truncated_count: int = 0
+    associations: list[WorkflowSignalAssociation] = Field(default_factory=list)
+    associations_original_count: int = 0
+    associations_truncated_count: int = 0
+
+class WorkflowSourceResult(ApiModel):
+    source: str
+    platform: str
+    status: Literal["ok", "partial", "failed"]
+    max_signals_per_source: int
+    fetched_count: int = 0
+    processed_count: int = 0
+    resumed_count: int = 0
+    duplicate_count: int = 0
+    skipped_count: int = 0
+    cost_usd: Decimal = Decimal("0")
+    cap_reached: bool = False
+    paths: list[WorkflowPathResult]
+    paths_original_count: int = 0
+    paths_truncated_count: int = 0
+    issues: list[WorkflowResultIssue] = Field(default_factory=list)
+    issues_original_count: int = 0
+    issues_truncated_count: int = 0
+
+class PublicListeningResultSummary(ApiModel):
+    schema_version: Literal[1]
+    status: Literal["completed", "partial", "failed", "cancelled"]
+    selected_sources: list[str] = Field(default_factory=list)
+    selected_paths: dict[str, list[SourcePath]] = Field(default_factory=dict)
+    sources: list[WorkflowSourceResult]
+    sources_original_count: int
+    sources_truncated_count: int
+    effective_signal_caps: dict[str, int] = Field(default_factory=dict)
+    fetched_count: int = 0
+    processed_count: int = 0
+    resumed_count: int = 0
+    duplicate_count: int = 0
+    skipped_count: int = 0
+    cost_usd: Decimal = Decimal("0")
+    lease_outcome: str | None = None
+
 class WorkflowJob(ApiModel):
     id: int
     workflow_id: str
@@ -227,6 +403,10 @@ class WorkflowJob(ApiModel):
     workflow_type: str
     status: str
     task_queue: str | None = None
+    result_schema_version: int | None = None
+    result_summary: PublicListeningResultSummary | None = None
+    request_fingerprint_summary: dict[str, Any] | None = None
+    start_reconciliation_diagnostics: dict[str, Any] | None = None
     created_at: str
 
 
@@ -313,12 +493,20 @@ class PublicFeedModerationEvent(ApiModel):
 
 class SourceHealth(ApiModel):
     source_type: str
+    canonical_source: str
+    path: SourcePath
     provider: str
     status: str
     last_success_at: str | None = None
     last_failure_at: str | None = None
     last_run_id: str | None = None
     item_count: int
+    fetched_count: int
+    processed_count: int
+    duplicate_count: int
+    cost_usd: float
+    provenance: dict[str, Any]
+    issues: list[WorkflowResultIssue]
     error_message: str | None = None
 
 

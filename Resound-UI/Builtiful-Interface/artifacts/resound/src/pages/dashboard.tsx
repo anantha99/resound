@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useGetBrandStats, useListPatterns, useListSignals } from "@workspace/api-client-react";
+import { useGetBrandStats, useListPatterns, useListSignals, useListSourceHealth } from "@workspace/api-client-react";
 import Masthead from "@/components/Masthead";
 import SignalRow from "@/components/SignalRow";
 import { useBrand } from "@/context/BrandContext";
-import { apiPeriod, toPatternView, toSignalView, type SignalView } from "@/api/viewModels";
+import { apiPeriod, formatPath, formatSource, toPatternView, toSignalView, type SignalView } from "@/api/viewModels";
 
 type Period = "24h" | "7d" | "30d" | "QTD";
 type ActivePane = "sentiment" | "critical" | "emerging" | "volume";
@@ -38,6 +38,9 @@ export default function Dashboard() {
   });
   const patternsQuery = useListPatterns({ brandId: activeBrand.id }, {
     query: { enabled: apiReady, queryKey: ["dashboard-patterns", activeBrand.id] },
+  });
+  const healthQuery = useListSourceHealth({ brandId: activeBrand.id }, {
+    query: { enabled: apiReady, queryKey: ["source-health", activeBrand.id] },
   });
 
   const brandSignals = (signalsQuery.data?.signals ?? []).map(toSignalView);
@@ -279,6 +282,15 @@ export default function Dashboard() {
           </div>
         </section>
 
+        <section className="resound-health-footer mt-6 pt-5 pb-2 border-t border-[#1a1815]">
+          <div className="flex justify-between items-baseline mb-4 uppercase" style={{ fontFamily: MONO }}><strong className="text-[10px] tracking-[.09em]">Public source health</strong><span className="text-[9px] tracking-[.06em] text-[#8b857a]">Latest bounded sync</span></div>
+          <div className="resound-health-table border-t border-[#d9d3c7]">
+            <div className="resound-health-row grid grid-cols-[150px_minmax(0,1fr)_120px_160px] gap-4 px-3 py-2 border-b border-[#1a1815] uppercase text-[9px] tracking-[.1em] text-[#8b857a]" style={{ fontFamily: MONO }}><span>Platform</span><span>Path</span><span>Status</span><span className="text-right">Last success</span></div>
+            {(healthQuery.data ?? []).map(row => <div key={`${row.canonicalSource}-${row.path}`} className="resound-health-row grid grid-cols-[150px_minmax(0,1fr)_120px_160px] gap-4 items-center min-h-9 px-3 py-2 border-b border-[#e3ddd1] text-[10px]" style={{ fontFamily: MONO }}>
+              <b className="uppercase font-medium">{formatSource(row.canonicalSource)}</b><span className="text-[#4a4640]">{formatPath(row.path)}</span><span className={`uppercase ${row.status === "ok" ? "text-[#4a6b3f]" : row.status === "partial" ? "text-[#c97a30]" : "text-[#b8431f]"}`}>● {row.status}</span><span className="text-right uppercase text-[9px] text-[#8b857a]">{row.lastSuccessAt ? new Date(row.lastSuccessAt).toLocaleString() : "—"}</span>
+            </div>)}
+          </div>
+        </section>
         <footer className="resound-dashboard-footer mt-8 py-6 pb-12 flex justify-between items-baseline" style={{ borderTop: "1px solid #1a1815", fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#8b857a" }}>
           <div className="resound-source-status flex gap-6 items-center">
             {activeBrand.sourcesActive.map(src => (

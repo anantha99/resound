@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRerouteSignal } from "@workspace/api-client-react";
 import { type OwnerOption, type SignalView } from "@/api/viewModels";
+import { CompactSignalMetrics, SignalParentContext } from "@/components/SignalContext";
 
 interface SignalRowProps {
   signal: SignalView;
@@ -10,6 +11,7 @@ interface SignalRowProps {
   onReroute?: (routeId: number, newOwner: string) => void;
   showPattern?: boolean;
   index?: number;
+  onOpen?: (signalId: number) => void;
 }
 
 const severityClass: Record<string, string> = {
@@ -26,7 +28,7 @@ const sentimentClass: Record<string, string> = {
   mixed: "text-[#c97a30]",
 };
 
-export default function SignalRow({ signal, ownerOptions = [], onReroute, showPattern, index = 0 }: SignalRowProps) {
+export default function SignalRow({ signal, ownerOptions = [], onReroute, showPattern, index = 0, onOpen }: SignalRowProps) {
   const [rerouteOpen, setRerouteOpen] = useState(false);
   const [currentOwner, setCurrentOwner] = useState(signal.owner);
   const [confidence, setConfidence] = useState(signal.confidence);
@@ -69,13 +71,17 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
       className="resound-signal-row grid gap-8 py-6 border-t border-[#e3ddd1] items-start"
+      onClick={() => onOpen?.(signal.id)}
+      style={{ cursor: onOpen ? "pointer" : undefined }}
       data-testid={`signal-row-${signal.id}`}
     >
       {/* Meta */}
       <div className="font-mono text-[10px] text-[#8b857a] uppercase tracking-[0.05em] leading-[1.7]">
         <span className="block text-[#1a1815] font-medium">{signal.source}</span>
         <span className="block mt-0.5">{signal.postedAt}</span>
-        <span className="block mt-1.5">{signal.reach}</span>
+        <span className="block mt-1.5 normal-case">
+          {signal.metrics.compact ? <CompactSignalMetrics metrics={signal.metrics} /> : signal.reach}
+        </span>
       </div>
 
       {/* Body */}
@@ -89,6 +95,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
         >
           {signal.content}
         </blockquote>
+        {signal.parentContext && <SignalParentContext parent={signal.parentContext} compact />}
         <div className="resound-signal-tags flex gap-3.5 items-center font-mono text-[10px] uppercase tracking-[0.06em] text-[#8b857a]">
           <span className="text-[#1a1815] font-medium">{signal.area.toUpperCase()}</span>
           <span className={severityClass[signal.severity]}>{signal.severity.toUpperCase()}</span>
@@ -110,7 +117,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
         <div className="relative">
           <button
             data-testid={`reroute-btn-${signal.id}`}
-            onClick={() => setRerouteOpen(!rerouteOpen)}
+            onClick={(event) => { event.stopPropagation(); setRerouteOpen(!rerouteOpen); }}
             disabled={reroute.isPending || opts.length === 0}
             className="mt-3 bg-transparent border border-[#d9d3c7] text-[#4a4640] font-sans text-[11px] px-3 py-1.5 cursor-pointer transition-all duration-150 hover:border-[#1a1815] hover:text-[#1a1815]"
           >
@@ -138,7 +145,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
                 {opts.map((opt) => (
                   <button
                     key={opt.owner}
-                    onClick={() => handleReroute(opt.owner)}
+                    onClick={(event) => { event.stopPropagation(); handleReroute(opt.owner); }}
                     className="flex justify-between items-center w-full px-2.5 py-1.75 font-mono text-[12px] text-[#f4f1ec] cursor-pointer transition-colors duration-[0.12s] hover:bg-[#4a4640] text-left"
                     data-testid={`reroute-option-${opt.owner.replace(/[^a-z0-9]/gi, "-")}`}
                   >

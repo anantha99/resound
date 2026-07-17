@@ -3,22 +3,30 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    delete,
     func,
     select,
+    text,
+    update,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -37,6 +45,7 @@ from resound.db import (
 from resound.gateway import LLMGatewayError, LLMResponse
 from resound.models import Classification, FeedbackEvent, RawSignal, Route
 from resound.social import ListeningProfile
+from resound.social.contracts import canonical_public_source
 from resound.tenancy import TenantContext
 
 
@@ -49,6 +58,40 @@ def _sha256(text: str) -> str:
 
 def _normalize_slug(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
+
+
+def signal_provider_identity(
+    raw: RawSignal,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Return conservative canonical identity fields carried by an adapter row."""
+
+    metadata = raw.raw_metadata or {}
+    platform_value = metadata.get("canonical_platform")
+    content_kind = metadata.get("content_kind")
+    native_id = metadata.get("provider_native_id")
+    fallback_hash = metadata.get("fallback_identity_hash")
+    identity_contract_present = any(
+        key in metadata
+        for key in (
+            "canonical_platform",
+            "content_kind",
+            "provider_native_id",
+            "fallback_identity_hash",
+        )
+    )
+    if not platform_value or not content_kind or bool(native_id) == bool(fallback_hash):
+        if identity_contract_present:
+            raise ValueError(
+                "canonical provider rows require platform, content kind, and exactly one identity"
+            )
+        return None, None, None, None
+    platform = canonical_public_source(str(platform_value))
+    return (
+        platform,
+        str(content_kind).strip().lower(),
+        str(native_id).strip() if native_id else None,
+        str(fallback_hash).strip().lower() if fallback_hash else None,
+    )
 
 
 def _listening_profile_payload(row: ListeningProfileRow) -> dict[str, Any]:
@@ -209,11 +252,15 @@ class ListeningProfileRevisionRow(Base):
 class SourceHealthRow(Base):
     __tablename__ = "source_health"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_source_health_flat_path",
             "organization_id",
             "brand_id",
-            "source_type",
-            name="uq_source_health_scope",
+            "canonical_source",
+            "path",
+            unique=True,
+            postgresql_where=text("canonical_source IS NOT NULL AND path IS NOT NULL"),
+            sqlite_where=text("canonical_source IS NOT NULL AND path IS NOT NULL"),
         ),
     )
 
@@ -221,12 +268,20 @@ class SourceHealthRow(Base):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
     source_type: Mapped[str] = mapped_column(String(64), index=True)
+    canonical_source: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    path: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(64), default="apify", index=True)
     status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     last_run_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     item_count: Mapped[int] = mapped_column(Integer, default=0)
+    fetched_count: Mapped[int] = mapped_column(Integer, default=0)
+    processed_count: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    issues: Mapped[list] = mapped_column(JSON, default=list)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -331,6 +386,11 @@ class WorkflowJobRow(Base):
     brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
     task_queue: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    resolved_config_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_fingerprint_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_schema_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    start_reconciliation_diagnostics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -338,6 +398,44 @@ class WorkflowJobRow(Base):
         onupdate=datetime.utcnow,
         index=True,
     )
+
+
+class WorkflowLeaseRow(Base):
+    __tablename__ = "workflow_leases"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "brand_id",
+            "workflow_kind",
+            name="uq_workflow_leases_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    workflow_kind: Mapped[str] = mapped_column(String(64), index=True)
+    owner_token: Mapped[str] = mapped_column(String(128), index=True)
+    workflow_job_id: Mapped[int] = mapped_column(ForeignKey("workflow_jobs.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime)
+    renewed_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class SignalProcessingClaimRow(Base):
+    __tablename__ = "signal_processing_claims"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "stage", name="uq_signal_processing_claim_stage"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int] = mapped_column(ForeignKey("signals.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)
+    owner_token: Mapped[str] = mapped_column(String(128), index=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime)
+    renewed_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
 class WorkflowEventRow(Base):
@@ -369,6 +467,39 @@ class PublicFeedModerationEventRow(Base):
 
 class SignalRow(Base):
     __tablename__ = "signals"
+    __table_args__ = (
+        CheckConstraint(
+            "(canonical_platform IS NULL AND content_kind IS NULL "
+            "AND provider_native_id IS NULL AND fallback_identity_hash IS NULL) OR "
+            "(organization_id IS NOT NULL AND brand_id IS NOT NULL "
+            "AND canonical_platform IS NOT NULL AND content_kind IS NOT NULL "
+            "AND ((provider_native_id IS NOT NULL AND fallback_identity_hash IS NULL) "
+            "OR (provider_native_id IS NULL AND fallback_identity_hash IS NOT NULL)))",
+            name="ck_signals_canonical_identity_complete",
+        ),
+        Index(
+            "uq_signals_provider_native_identity",
+            "organization_id",
+            "brand_id",
+            "canonical_platform",
+            "content_kind",
+            "provider_native_id",
+            unique=True,
+            postgresql_where=text("provider_native_id IS NOT NULL"),
+            sqlite_where=text("provider_native_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_signals_fallback_identity",
+            "organization_id",
+            "brand_id",
+            "canonical_platform",
+            "content_kind",
+            "fallback_identity_hash",
+            unique=True,
+            postgresql_where=text("fallback_identity_hash IS NOT NULL"),
+            sqlite_where=text("fallback_identity_hash IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     organization_id: Mapped[int | None] = mapped_column(
@@ -379,6 +510,12 @@ class SignalRow(Base):
     source: Mapped[str] = mapped_column(String(32), index=True)
     source_mode: Mapped[str] = mapped_column(String(32), default="public_listening", index=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    canonical_platform: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    content_kind: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    provider_native_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    fallback_identity_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     external_id: Mapped[str] = mapped_column(String(256), index=True)
     dedupe_key: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -900,19 +1037,38 @@ class SqlMemory(Memory):
         brand_id: int,
         source_type: str,
         provider: str,
+        canonical_source: str | None = None,
+        path: str = "official_discovery",
         status: str,
         run_id: str | None = None,
         item_count: int = 0,
+        fetched_count: int | None = None,
+        processed_count: int | None = None,
+        duplicate_count: int = 0,
+        cost_usd: Decimal | float = 0,
+        provenance: dict[str, Any] | None = None,
+        issues: list[dict[str, Any]] | None = None,
         error_message: str | None = None,
         checked_at: datetime | None = None,
     ) -> int:
         checked_at = checked_at or datetime.utcnow()
+        canonical_source = canonical_public_source(canonical_source or source_type)
+        if path not in {
+            "official_discovery",
+            "mention_discovery",
+            "official_comments",
+            "mention_comments",
+        }:
+            raise ValueError(f"Unsupported public-listening path: {path}")
+        if canonical_source in {"reddit", "x", "youtube"} and path.endswith("comments"):
+            raise ValueError(f"{canonical_source} does not support comment health paths")
         with self.session() as s:
             row = s.execute(
                 select(SourceHealthRow).where(
                     SourceHealthRow.organization_id == organization_id,
                     SourceHealthRow.brand_id == brand_id,
-                    SourceHealthRow.source_type == source_type,
+                    SourceHealthRow.canonical_source == canonical_source,
+                    SourceHealthRow.path == path,
                 ),
             ).scalar_one_or_none()
             if row is None:
@@ -920,6 +1076,8 @@ class SqlMemory(Memory):
                     organization_id=organization_id,
                     brand_id=brand_id,
                     source_type=source_type,
+                    canonical_source=canonical_source,
+                    path=path,
                     provider=provider,
                 )
                 s.add(row)
@@ -927,6 +1085,12 @@ class SqlMemory(Memory):
             row.provider = provider
             row.last_run_id = run_id
             row.item_count = item_count
+            row.fetched_count = item_count if fetched_count is None else fetched_count
+            row.processed_count = item_count if processed_count is None else processed_count
+            row.duplicate_count = duplicate_count
+            row.cost_usd = float(cost_usd)
+            row.provenance = provenance or {}
+            row.issues = issues or []
             row.error_message = error_message
             if status == "ok":
                 row.last_success_at = checked_at
@@ -943,7 +1107,7 @@ class SqlMemory(Memory):
                     SourceHealthRow.organization_id == organization_id,
                     SourceHealthRow.brand_id == brand_id,
                 )
-                .order_by(SourceHealthRow.source_type)
+                .order_by(SourceHealthRow.canonical_source, SourceHealthRow.path)
             )
             return list(s.execute(stmt).scalars())
 
@@ -1162,7 +1326,13 @@ class SqlMemory(Memory):
         brand_id: int | None,
         status: str = "queued",
         task_queue: str | None = None,
+        resolved_config_snapshot: dict | None = None,
+        request_fingerprint_summary: dict | None = None,
     ) -> int:
+        if resolved_config_snapshot is not None:
+            from resound.workflows.result_persistence import bounded_request_snapshot
+
+            resolved_config_snapshot = bounded_request_snapshot(resolved_config_snapshot)
         with self.session() as s:
             row = WorkflowJobRow(
                 workflow_id=workflow_id,
@@ -1172,16 +1342,346 @@ class SqlMemory(Memory):
                 brand_id=brand_id,
                 status=status,
                 task_queue=task_queue,
+                resolved_config_snapshot=resolved_config_snapshot,
+                request_fingerprint_summary=request_fingerprint_summary,
             )
             s.add(row)
             s.commit()
             return row.id
+
+    def acquire_workflow_lease(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        workflow_job_id: int,
+        workflow_kind: str = "public_listening_sync",
+        owner_token: str | None = None,
+        ttl_seconds: int = 120,
+        now: datetime | None = None,
+    ) -> WorkflowLeaseRow | None:
+        """Acquire or take over an expired brand-scoped workflow lease."""
+
+        owner_token = owner_token or secrets.token_urlsafe(32)
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            expires_at = database_now + timedelta(seconds=ttl_seconds)
+            row = WorkflowLeaseRow(
+                organization_id=organization_id,
+                brand_id=brand_id,
+                workflow_kind=workflow_kind,
+                owner_token=owner_token,
+                workflow_job_id=workflow_job_id,
+                status="active",
+                acquired_at=database_now,
+                renewed_at=database_now,
+                expires_at=expires_at,
+            )
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return row
+            except IntegrityError:
+                s.rollback()
+
+            result = s.execute(
+                update(WorkflowLeaseRow)
+                .where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                    WorkflowLeaseRow.expires_at <= database_now,
+                )
+                .values(
+                    owner_token=owner_token,
+                    workflow_job_id=workflow_job_id,
+                    status="active",
+                    acquired_at=database_now,
+                    renewed_at=database_now,
+                    expires_at=expires_at,
+                )
+            )
+            if result.rowcount != 1:
+                s.rollback()
+                return None
+            s.commit()
+            return s.execute(
+                select(WorkflowLeaseRow).where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                )
+            ).scalar_one()
+
+    def renew_workflow_lease(
+        self,
+        *,
+        organization_id: int,
+        brand_id: int,
+        owner_token: str,
+        workflow_kind: str = "public_listening_sync",
+        ttl_seconds: int = 120,
+        now: datetime | None = None,
+    ) -> bool:
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            result = s.execute(
+                update(WorkflowLeaseRow)
+                .where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                    WorkflowLeaseRow.owner_token == owner_token,
+                    WorkflowLeaseRow.status == "active",
+                    WorkflowLeaseRow.expires_at > database_now,
+                )
+                .values(
+                    renewed_at=database_now,
+                    expires_at=database_now + timedelta(seconds=ttl_seconds),
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
+
+    def mark_workflow_start_unknown(
+        self,
+        *,
+        workflow_job_id: int,
+        organization_id: int,
+        brand_id: int,
+        owner_token: str,
+        diagnostics: dict[str, Any],
+        workflow_kind: str = "public_listening_sync",
+        ttl_seconds: int = 600,
+        now: datetime | None = None,
+    ) -> bool:
+        """Atomically preserve an ambiguous start and extend only its owning active lease."""
+
+        if ttl_seconds <= 0:
+            raise ValueError("start-unknown lease TTL must be positive")
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            lease = s.execute(
+                select(WorkflowLeaseRow).where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                    WorkflowLeaseRow.workflow_job_id == workflow_job_id,
+                    WorkflowLeaseRow.owner_token == owner_token,
+                    WorkflowLeaseRow.status == "active",
+                    WorkflowLeaseRow.expires_at > database_now,
+                )
+            ).scalar_one_or_none()
+            job = s.get(WorkflowJobRow, workflow_job_id)
+            if (
+                lease is None
+                or job is None
+                or job.organization_id != organization_id
+                or job.brand_id != brand_id
+            ):
+                s.rollback()
+                return False
+            job.status = "start_unknown"
+            job.start_reconciliation_diagnostics = diagnostics
+            lease.renewed_at = database_now
+            lease.expires_at = database_now + timedelta(seconds=ttl_seconds)
+            s.commit()
+            return True
+
+    def finalize_workflow_job(
+        self,
+        *,
+        workflow_job_id: int,
+        organization_id: int,
+        brand_id: int,
+        owner_token: str,
+        status: str,
+        result_summary: dict,
+        result_schema_version: int = 1,
+        workflow_kind: str = "public_listening_sync",
+        now: datetime | None = None,
+    ) -> bool:
+        """Persist terminal state and release only the owning lease atomically."""
+
+        from resound.workflows.result_persistence import bounded_result_summary
+
+        result_summary = bounded_result_summary(result_summary)
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            lease = s.execute(
+                select(WorkflowLeaseRow).where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                    WorkflowLeaseRow.owner_token == owner_token,
+                    WorkflowLeaseRow.workflow_job_id == workflow_job_id,
+                    WorkflowLeaseRow.status == "active",
+                )
+            ).scalar_one_or_none()
+            if lease is None:
+                return False
+            job = s.get(WorkflowJobRow, workflow_job_id)
+            if job is None:
+                return False
+            job.status = status
+            job.result_schema_version = result_schema_version
+            job.result_summary = result_summary
+            lease.status = status
+            lease.renewed_at = database_now
+            lease.expires_at = database_now
+            s.commit()
+            return True
+
+    def acquire_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+        ttl_seconds: float = 300,
+        now: datetime | None = None,
+    ) -> bool:
+        """Claim one external processing stage or take over its expired claim."""
+
+        if stage not in {"classification", "route"}:
+            raise ValueError(f"Unsupported signal processing claim stage: {stage}")
+        if ttl_seconds <= 0:
+            raise ValueError("signal processing claim TTL must be positive")
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            expires_at = database_now + timedelta(seconds=ttl_seconds)
+            row = SignalProcessingClaimRow(
+                signal_id=signal_id,
+                stage=stage,
+                owner_token=owner_token,
+                acquired_at=database_now,
+                renewed_at=database_now,
+                expires_at=expires_at,
+            )
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return True
+            except IntegrityError:
+                s.rollback()
+            result = s.execute(
+                update(SignalProcessingClaimRow)
+                .where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    (SignalProcessingClaimRow.expires_at <= database_now)
+                    | (SignalProcessingClaimRow.owner_token == owner_token),
+                )
+                .values(
+                    owner_token=owner_token,
+                    acquired_at=database_now,
+                    renewed_at=database_now,
+                    expires_at=expires_at,
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
+
+    def renew_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+        ttl_seconds: float = 300,
+        now: datetime | None = None,
+    ) -> bool:
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            result = s.execute(
+                update(SignalProcessingClaimRow)
+                .where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    SignalProcessingClaimRow.owner_token == owner_token,
+                    SignalProcessingClaimRow.expires_at > database_now,
+                )
+                .values(
+                    renewed_at=database_now,
+                    expires_at=database_now + timedelta(seconds=ttl_seconds),
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
+
+    def release_signal_processing_claim(
+        self,
+        *,
+        signal_id: int,
+        stage: str,
+        owner_token: str,
+    ) -> bool:
+        with self.session() as s:
+            result = s.execute(
+                delete(SignalProcessingClaimRow).where(
+                    SignalProcessingClaimRow.signal_id == signal_id,
+                    SignalProcessingClaimRow.stage == stage,
+                    SignalProcessingClaimRow.owner_token == owner_token,
+                )
+            )
+            s.commit()
+            return result.rowcount == 1
 
     def get_workflow_job(self, workflow_id: str) -> WorkflowJobRow | None:
         with self.session() as s:
             return s.execute(
                 select(WorkflowJobRow).where(WorkflowJobRow.workflow_id == workflow_id),
             ).scalar_one_or_none()
+
+    def configure_workflow_job(
+        self,
+        *,
+        workflow_job_id: int,
+        workflow_id: str,
+        resolved_config_snapshot: dict,
+        request_fingerprint_summary: dict,
+    ) -> None:
+        """Attach the deterministic identity and bounded immutable request after ID allocation."""
+        from resound.workflows.result_persistence import bounded_request_snapshot
+
+        snapshot = bounded_request_snapshot(resolved_config_snapshot)
+        with self.session() as s:
+            row = s.get(WorkflowJobRow, workflow_job_id)
+            if row is None:
+                raise ValueError("workflow job not found")
+            row.workflow_id = workflow_id
+            row.resolved_config_snapshot = snapshot
+            row.request_fingerprint_summary = request_fingerprint_summary
+            s.commit()
+
+    def fail_workflow_start(
+        self,
+        *,
+        workflow_job_id: int,
+        owner_token: str | None,
+        status: str = "failed",
+    ) -> None:
+        """Mark a definite pre-start failure and release only its owned lease."""
+        with self.session() as s:
+            row = s.get(WorkflowJobRow, workflow_job_id)
+            if row is not None:
+                row.status = status
+            if owner_token:
+                lease = s.execute(
+                    select(WorkflowLeaseRow).where(
+                        WorkflowLeaseRow.workflow_job_id == workflow_job_id,
+                        WorkflowLeaseRow.owner_token == owner_token,
+                        WorkflowLeaseRow.status == "active",
+                    )
+                ).scalar_one_or_none()
+                if lease is not None:
+                    lease.status = status
+                    lease.expires_at = datetime.utcnow()
+            s.commit()
 
     def update_workflow_job_handle(
         self,
@@ -1332,6 +1832,25 @@ class SqlMemory(Memory):
         organization_id: int | None = None,
         brand_id: int | None = None,
     ) -> int:
+        signal_id, _ = self.record_signal_with_state(
+            brand_slug,
+            raw,
+            organization_id=organization_id,
+            brand_id=brand_id,
+        )
+        return signal_id
+
+    def record_signal_with_state(
+        self,
+        brand_slug: str,
+        raw: RawSignal,
+        *,
+        organization_id: int | None = None,
+        brand_id: int | None = None,
+    ) -> tuple[int, bool]:
+        """Return the signal ID and whether this call inserted the row."""
+
+        canonical_platform, content_kind, native_id, fallback_hash = signal_provider_identity(raw)
         with self.session() as s:
             row = SignalRow(
                 organization_id=organization_id,
@@ -1340,6 +1859,10 @@ class SqlMemory(Memory):
                 source=raw.source,
                 source_mode=raw.source_mode,
                 provider=raw.provider,
+                canonical_platform=canonical_platform,
+                content_kind=content_kind,
+                provider_native_id=native_id,
+                fallback_identity_hash=fallback_hash,
                 external_id=raw.external_id,
                 dedupe_key=self.signal_dedupe_key(
                     brand_slug,
@@ -1353,9 +1876,52 @@ class SqlMemory(Memory):
                 posted_at=raw.posted_at,
                 raw_metadata=raw.raw_metadata,
             )
-            s.add(row)
-            s.commit()
-            return row.id
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return row.id, True
+            except IntegrityError:
+                s.rollback()
+                identity_filters = [
+                    SignalRow.organization_id == organization_id,
+                    SignalRow.brand_id == brand_id,
+                    SignalRow.canonical_platform == canonical_platform,
+                    SignalRow.content_kind == content_kind,
+                ]
+                if native_id:
+                    identity_filters.append(SignalRow.provider_native_id == native_id)
+                elif fallback_hash:
+                    identity_filters.append(SignalRow.fallback_identity_hash == fallback_hash)
+                else:
+                    identity_filters = [SignalRow.dedupe_key == row.dedupe_key]
+                existing = s.execute(
+                    select(SignalRow.id).where(*identity_filters)
+                ).scalar_one_or_none()
+                if existing is None:
+                    raise
+                return existing, False
+
+    def load_classification(self, signal_id: int) -> tuple[int, Classification] | None:
+        with self.session() as s:
+            row = s.execute(
+                select(ClassificationRow).where(ClassificationRow.signal_id == signal_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            return row.id, Classification(
+                is_about_brand=row.is_about_brand,
+                area=row.area,
+                subarea=row.subarea,
+                sentiment=row.sentiment,
+                severity=row.severity,
+                action_class=row.action_class,
+                summary=row.summary,
+                root_cause_hypothesis=row.root_cause_hypothesis,
+                confidence=row.confidence,
+                reasoning=row.reasoning,
+            )
 
     def record_classification(self, signal_id: int, classification: Classification) -> int:
         with Session(self.engine) as s:
@@ -1372,9 +1938,17 @@ class SqlMemory(Memory):
                 confidence=classification.confidence,
                 reasoning=classification.reasoning,
             )
-            s.add(row)
-            s.commit()
-            return row.id
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return row.id
+            except IntegrityError:
+                s.rollback()
+                return s.execute(
+                    select(ClassificationRow.id).where(ClassificationRow.signal_id == signal_id)
+                ).scalar_one()
 
     def record_route(self, signal_id: int, classification_id: int, route: Route) -> int:
         with Session(self.engine) as s:
@@ -1387,9 +1961,17 @@ class SqlMemory(Memory):
                 priority=route.priority,
                 notes=route.notes,
             )
-            s.add(row)
-            s.commit()
-            return row.id
+            try:
+                with s.begin_nested():
+                    s.add(row)
+                    s.flush()
+                s.commit()
+                return row.id
+            except IntegrityError:
+                s.rollback()
+                return s.execute(
+                    select(RouteRow.id).where(RouteRow.signal_id == signal_id)
+                ).scalar_one()
 
     def record_feedback(self, event: FeedbackEvent) -> int:
         with Session(self.engine) as s:

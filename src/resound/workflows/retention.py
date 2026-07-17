@@ -63,7 +63,7 @@ def apply_public_signal_retention(
 
 
 @activity.defn
-async def retention_activity(request: RetentionRequest) -> RetentionResult:
+def retention_activity(request: RetentionRequest) -> RetentionResult:
     return apply_public_signal_retention(
         SqlMemory(),
         now=datetime.utcnow(),

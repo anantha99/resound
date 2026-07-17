@@ -5,6 +5,9 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+import type { ObservedPublicMetrics } from './observedPublicMetrics';
+import type { ParentContext } from './parentContext';
+import type { SignalProvenance } from './signalProvenance';
 
 export interface Signal {
   id: number;
@@ -15,6 +18,11 @@ export interface Signal {
   authorHandle: string;
   authorMeta?: string | null;
   reach?: number | null;
+  canonicalPlatform: string;
+  contentKind: string;
+  metrics: ObservedPublicMetrics;
+  parentContext?: ParentContext | null;
+  provenance: SignalProvenance;
   content: string;
   postedAt: string;
   createdAt: string;
