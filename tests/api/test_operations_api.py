@@ -49,6 +49,17 @@ def test_source_health_telemetry_and_evaluation_are_tenant_scoped(operations_cli
         error_message="rate limited",
         checked_at=datetime.now(tz=UTC),
     )
+    memory.record_source_health(
+        organization_id=org,
+        brand_id=brand.id,
+        source_type="reddit",
+        canonical_source="reddit",
+        path="mention_discovery",
+        provider="apify",
+        status="partial",
+        error_message="bounded result preserved",
+        checked_at=datetime.now(tz=UTC),
+    )
     memory.record_llm_call(
         brand_slug="acme",
         stage="classify",
@@ -110,10 +121,12 @@ def test_source_health_telemetry_and_evaluation_are_tenant_scoped(operations_cli
     )
 
     assert health.status_code == 200
-    assert health.json()[0]["status"] == "failed"
-    assert health.json()[0]["canonicalSource"] == "reddit"
-    assert health.json()[0]["path"] == "official_discovery"
-    assert health.json()[0]["fetchedCount"] == 0
+    assert {row["status"] for row in health.json()} == {"failed", "partial"}
+    assert {row["canonicalSource"] for row in health.json()} == {"reddit"}
+    assert {row["path"] for row in health.json()} == {
+        "official_discovery", "mention_discovery",
+    }
+    assert all(row["fetchedCount"] == 0 for row in health.json())
     assert telemetry.status_code == 200
     assert telemetry.json()["costs"][0]["total_cost_usd"] == 0.25
     assert evaluation.status_code == 200

@@ -117,11 +117,13 @@ def test_comment_signal_projects_parent_context_metrics_and_path(client, seeded_
         signal.raw_metadata = {
             "content_kind": "comment",
             "path": "mention_comments",
-            "likes": 1800,
-            "reply_count": 93,
-            "parent_url": "https://instagram.com/p/parent",
-            "parent_author_handle": "@acme",
-            "parent_excerpt": "New look. Same product.",
+            "observed_public_metrics": {"likes": 1800, "reply_count": 93},
+            "parent_context": {
+                "canonical_url": "https://instagram.com/p/parent",
+                "author_handle": "@acme",
+                "excerpt": "New look. Same product.",
+                "published_at": "2026-07-16T12:30:00+00:00",
+            },
         }
         session.commit()
 
@@ -134,7 +136,9 @@ def test_comment_signal_projects_parent_context_metrics_and_path(client, seeded_
         "reposts": None, "upvotes": None,
     }
     assert signal["parentContext"]["contentKind"] == "post"
+    assert signal["parentContext"]["url"] == "https://instagram.com/p/parent"
     assert signal["parentContext"]["excerpt"] == "New look. Same product."
+    assert signal["parentContext"]["publishedAt"] == "2026-07-16T12:30:00+00:00"
     assert signal["provenance"]["path"] == "mention_comments"
 
 

@@ -5,12 +5,12 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
-import type { WorkflowPathResultAssociationsItem } from './workflowPathResultAssociationsItem';
-import type { WorkflowPathResultDatasetsItem } from './workflowPathResultDatasetsItem';
-import type { WorkflowPathResultIssuesItem } from './workflowPathResultIssuesItem';
 import type { WorkflowPathResultPath } from './workflowPathResultPath';
-import type { WorkflowPathResultRunsItem } from './workflowPathResultRunsItem';
 import type { WorkflowPathResultStatus } from './workflowPathResultStatus';
+import type { WorkflowProviderDataset } from './workflowProviderDataset';
+import type { WorkflowProviderRun } from './workflowProviderRun';
+import type { WorkflowResultIssue } from './workflowResultIssue';
+import type { WorkflowSignalAssociation } from './workflowSignalAssociation';
 
 export interface WorkflowPathResult {
   path: WorkflowPathResultPath;
@@ -22,17 +22,16 @@ export interface WorkflowPathResult {
   skippedCount?: number;
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   costUsd?: string;
-  issues?: WorkflowPathResultIssuesItem[];
+  issues?: WorkflowResultIssue[];
   issuesOriginalCount?: number;
   issuesTruncatedCount?: number;
-  runs?: WorkflowPathResultRunsItem[];
+  runs?: WorkflowProviderRun[];
   runsOriginalCount?: number;
   runsTruncatedCount?: number;
-  datasets?: WorkflowPathResultDatasetsItem[];
+  datasets?: WorkflowProviderDataset[];
   datasetsOriginalCount?: number;
   datasetsTruncatedCount?: number;
-  associations?: WorkflowPathResultAssociationsItem[];
+  associations?: WorkflowSignalAssociation[];
   associationsOriginalCount?: number;
   associationsTruncatedCount?: number;
-  [key: string]: unknown;
- }
+}

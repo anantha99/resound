@@ -756,7 +756,17 @@ def _source_path(metadata: dict) -> str | None:
 
 def _observed_metrics(row: SignalRow) -> schemas.ObservedPublicMetrics:
     metadata = row.raw_metadata or {}
-    metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else metadata
+    metrics = next(
+        (
+            candidate
+            for candidate in (
+                metadata.get("metrics"),
+                metadata.get("observed_public_metrics"),
+            )
+            if isinstance(candidate, dict)
+        ),
+        metadata,
+    )
 
     def metric(*names: str) -> int | None:
         for name in names:
@@ -790,10 +800,23 @@ def _parent_context(row: SignalRow) -> schemas.ParentContext | None:
     return schemas.ParentContext(
         platform=platform,
         content_kind="video" if platform == "tiktok" else "post",
-        url=nested.get("url") or metadata.get("parent_url"),
+        url=nested.get("url") or nested.get("canonical_url") or metadata.get("parent_url"),
         author_handle=nested.get("author_handle") or metadata.get("parent_author_handle"),
         excerpt=nested.get("excerpt") or metadata.get("parent_excerpt"),
+        published_at=_parent_published_at(nested, metadata),
     )
+
+
+def _parent_published_at(nested: dict, metadata: dict) -> str | None:
+    value = (
+        nested.get("published_at")
+        or nested.get("publishedAt")
+        or metadata.get("parent_published_at")
+        or metadata.get("parentPublishedAt")
+    )
+    if isinstance(value, datetime):
+        return _iso(value)
+    return str(value) if value else None
 
 
 def _author_meta(row: SignalRow) -> str | None:

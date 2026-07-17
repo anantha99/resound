@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { WorkflowPathResult } from './workflowPathResult';
-import type { WorkflowSourceResultIssuesItem } from './workflowSourceResultIssuesItem';
+import type { WorkflowResultIssue } from './workflowResultIssue';
 import type { WorkflowSourceResultStatus } from './workflowSourceResultStatus';
 
 export interface WorkflowSourceResult {
@@ -25,8 +25,7 @@ export interface WorkflowSourceResult {
   paths: WorkflowPathResult[];
   pathsOriginalCount?: number;
   pathsTruncatedCount?: number;
-  issues?: WorkflowSourceResultIssuesItem[];
+  issues?: WorkflowResultIssue[];
   issuesOriginalCount?: number;
   issuesTruncatedCount?: number;
-  [key: string]: unknown;
- }
+}

@@ -68,8 +68,14 @@ def _brand() -> BrandConfig:
         "preflight_required": False,
         "manifest_version": "test-1",
         "paths": {
-            "official_discovery": {"enabled": True, "selectors": ["https://acme.test"]},
-            "mention_discovery": {"enabled": True, "selectors": ["Acme"]},
+            "official_discovery": {
+                "enabled": True,
+                "selectors": [{"kind": "url", "value": "https://acme.test"}],
+            },
+            "mention_discovery": {
+                "enabled": True,
+                "selectors": [{"kind": "search", "value": "Acme"}],
+            },
         },
         "limits": {
             "max_signals_per_source": 100,
@@ -83,17 +89,23 @@ def _brand() -> BrandConfig:
             "page_size": 100,
             "deadline_reserve_seconds": 30,
         },
-        "provider_evidence": [{
-            "actor_id": "owner/reddit", "build_id": "build", "build_number": "1",
-            "provider_declared_input_schema_reference": "provider://input",
-            "provider_declared_input_schema_sha256": "a" * 64,
-            "provider_declared_output_schema_reference": "provider://output",
-            "provider_declared_output_schema_sha256": "b" * 64,
-            "fixture_derived_shape_reference": "fixtures/reddit.json",
-            "fixture_derived_shape_sha256": "c" * 64,
-            "canary_required": False, "charge_quantum_usd": "0.001",
-            "minimum_call_charge_usd": "0.01", "conservative_request_cost_usd": "0.05",
-        }],
+        "provider_evidence": [
+            {
+                "source": "reddit", "path": path, "actor_role": "discovery",
+                "actor_id": "solidcode/reddit-scraper",
+                "build_id": "LxJ3Vm9RHSEJcQEYK", "build_number": "1.1.31",
+                "provider_declared_input_schema_reference": "provider://input",
+                "provider_declared_input_schema_sha256": "a" * 64,
+                "provider_declared_output_schema_reference": "provider://output",
+                "provider_declared_output_schema_sha256": "b" * 64,
+                "fixture_derived_shape_reference": "fixtures/reddit.json",
+                "fixture_derived_shape_sha256": "c" * 64,
+                "canary_required": False, "charge_quantum_usd": "0.001",
+                "minimum_call_charge_usd": "0.01",
+                "conservative_request_cost_usd": "0.05",
+            }
+            for path in ("official_discovery", "mention_discovery")
+        ],
     }
     source["approved_envelope_fingerprint"] = approval_envelope_fingerprint(source)
     return BrandConfig(
@@ -148,6 +160,39 @@ def test_source_sync_rejects_upward_signal_cap_and_missing_tenant(production_cli
     assert "may only lower" in rejected.json()["detail"]
 
 
+def test_repeated_start_unknown_reconciles_preserved_job_without_creating_another(
+    production_client,
+):
+    _seed_brand()
+    payload = {
+        "brandId": "acme",
+        "selectedSources": ["reddit"],
+        "selectedPaths": [{"source": "reddit", "paths": ["official_discovery"]}],
+        "limits": {"maxSignalsPerSource": 9},
+    }
+    headers = {"X-Resound-Organization": "org-a"}
+    first = production_client.post("/api/workflows/source-sync", json=payload, headers=headers)
+    workflow_id = first.json()["workflowId"]
+    memory = SqlMemory()
+    with Session(memory.engine) as session:
+        job = session.query(WorkflowJobRow).filter_by(workflow_id=workflow_id).one()
+        original_job_id = job.id
+        original_snapshot = job.resolved_config_snapshot
+        job.status = "start_unknown"
+        session.commit()
+
+    second = production_client.post("/api/workflows/source-sync", json=payload, headers=headers)
+
+    assert second.status_code == 202
+    assert second.json()["id"] == original_job_id
+    assert second.json()["workflowId"] == workflow_id
+    assert len(production_client.workflow_starter.calls) == 2
+    retried_request = production_client.workflow_starter.calls[-1][2]
+    assert retried_request.model_dump(mode="json") == original_snapshot
+    with Session(memory.engine) as session:
+        assert session.query(WorkflowJobRow).count() == 1
+
+
 @pytest.mark.parametrize("terminal_status", ["completed", "partial", "failed"])
 def test_workflow_retrieval_is_tenant_scoped_and_projects_bounded_results(
     production_client, terminal_status,
@@ -167,6 +212,31 @@ def test_workflow_retrieval_is_tenant_scoped_and_projects_bounded_results(
                 "path": "official_discovery",
                 "status": "ok" if terminal_status == "completed" else terminal_status,
                 "processed_count": 3,
+                "issues": [{
+                    "path": "official_discovery", "code": "bounded",
+                    "issue_class": "ProviderIssue", "message": "preserved",
+                    "run_id": "run-1", "dataset_id": "dataset-1",
+                }],
+                "runs": [{
+                    "path": "official_discovery", "actor_id": "owner/reddit",
+                    "build_id": "build", "build_number": "1", "run_id": "run-1",
+                    "requested_row_maximum": 9, "max_total_charge_usd": "0.50",
+                    "usage_total_usd": "0.10", "status": "SUCCEEDED",
+                    "input_schema_reference": "provider://input",
+                    "output_schema_reference": "provider://output",
+                    "fixture_shape_reference": "fixtures/reddit.json",
+                    "dataset_ids": ["dataset-1"],
+                }],
+                "datasets": [{
+                    "path": "official_discovery", "dataset_id": "dataset-1",
+                    "run_id": "run-1", "requested_limit": 9, "fetched_count": 3,
+                    "processed_count": 3, "provenance": {"provider": "apify"},
+                }],
+                "associations": [{
+                    "path": "official_discovery",
+                    "identity": {"kind": "provider_native_id", "value": "post-1"},
+                    "signal_id": 1, "processing_state": "processed",
+                }],
             }],
         }],
     })
@@ -200,6 +270,10 @@ def test_workflow_retrieval_is_tenant_scoped_and_projects_bounded_results(
     assert own.json()["resultSummary"]["status"] == terminal_status
     assert own.json()["resultSummary"]["effectiveSignalCaps"] == {"reddit": 9}
     assert own.json()["resultSummary"]["sources"][0]["pathsTruncatedCount"] == 0
+    path = own.json()["resultSummary"]["sources"][0]["paths"][0]
+    assert path["runs"][0]["actorId"] == "owner/reddit"
+    assert path["datasets"][0]["datasetId"] == "dataset-1"
+    assert path["associations"][0]["identity"]["kind"] == "provider_native_id"
     assert running.json()["resultSummary"] is None
     assert hidden.status_code == 404
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import secrets
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
@@ -11,10 +9,12 @@ from resound.api.dependencies import get_memory, get_tenant_context, get_workflo
 from resound.config import load_brand_config
 from resound.memory import BrandRow, SqlMemory
 from resound.social.contracts import SourceSyncInput as ResolvedSourceSyncInput
-from resound.social.resolver import resolve_public_listening_request
 from resound.tenancy import TenantContext
 from resound.workflows.client import WorkflowStarter, WorkflowStartUnknownError
-from resound.workflows.leases import public_listening_workflow_id
+from resound.workflows.start_service import (
+    PublicListeningStartConflictError,
+    start_public_listening_workflow,
+)
 
 router = APIRouter(tags=["workflows"])
 
@@ -34,16 +34,6 @@ async def start_source_sync(
     if tenant is None:
         raise HTTPException(status_code=401, detail="Tenant context required")
     brand = _tenant_brand(memory, tenant, payload.brand_id)
-    placeholder_id = f"resolving-public-listening-{uuid4().hex}"
-    job_id = memory.create_workflow_job(
-        workflow_id=placeholder_id,
-        workflow_type="PublicListeningSyncWorkflow",
-        organization_id=tenant.organization_id,
-        brand_id=brand.id,
-        status="resolving",
-    )
-    workflow_id = public_listening_workflow_id(tenant.organization_id, brand.id, job_id)
-    owner_token = secrets.token_urlsafe(32)
     try:
         request_input = ResolvedSourceSyncInput.model_validate(
             {
@@ -51,55 +41,20 @@ async def start_source_sync(
                 "internal_brand_id": brand.id,
             }
         )
-        resolved = resolve_public_listening_request(
-            request_input,
+        job = await start_public_listening_workflow(
+            request_input=request_input,
             brand_config=load_brand_config(payload.brand_id),
             memory=memory,
             organization_id=tenant.organization_id,
-            workflow_job_id=job_id,
-            owner_token=owner_token,
-        )
-        fingerprint_summary = {
-            source: fingerprint.model_dump(mode="json")
-            for source, fingerprint in resolved.fingerprints.items()
-        }
-        memory.configure_workflow_job(
-            workflow_job_id=job_id,
-            workflow_id=workflow_id,
-            resolved_config_snapshot=resolved.model_dump(mode="json"),
-            request_fingerprint_summary=fingerprint_summary,
+            brand_id=brand.id,
+            starter=starter,
         )
     except (ValueError, FileNotFoundError) as exc:
-        memory.fail_workflow_start(workflow_job_id=job_id, owner_token=None)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    lease = memory.acquire_workflow_lease(
-        organization_id=tenant.organization_id,
-        brand_id=brand.id,
-        workflow_job_id=job_id,
-        owner_token=owner_token,
-    )
-    if lease is None:
-        memory.fail_workflow_start(workflow_job_id=job_id, owner_token=None, status="conflict")
-        raise HTTPException(status_code=409, detail="A public-listening sync is already active")
-
-    try:
-        started = await starter.start_public_listening_sync(
-            workflow_id=workflow_id,
-            request=resolved,
-        )
+    except PublicListeningStartConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowStartUnknownError:
         raise HTTPException(status_code=503, detail="Workflow start acceptance is unresolved")
-    except Exception:
-        memory.fail_workflow_start(workflow_job_id=job_id, owner_token=owner_token)
-        raise
-    memory.update_workflow_job_handle(
-        workflow_id=started.workflow_id,
-        run_id=started.run_id,
-        task_queue=started.task_queue,
-    )
-    job = memory.get_workflow_job(started.workflow_id)
-    assert job is not None
     return _workflow_job_schema(job)
 
 

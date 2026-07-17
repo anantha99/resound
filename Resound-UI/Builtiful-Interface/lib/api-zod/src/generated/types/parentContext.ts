@@ -13,4 +13,5 @@ export interface ParentContext {
   url?: string | null;
   authorHandle?: string | null;
   excerpt?: string | null;
+  publishedAt?: string | null;
 }

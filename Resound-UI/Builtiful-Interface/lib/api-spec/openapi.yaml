@@ -1850,6 +1850,11 @@ components:
           - type: string
           - type: 'null'
           title: Excerpt
+        publishedAt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Publishedat
       type: object
       required:
       - platform
@@ -2120,7 +2125,6 @@ components:
           - type: string
           - type: 'null'
           title: Leaseoutcome
-      additionalProperties: true
       type: object
       required:
       - schemaVersion
@@ -2751,6 +2755,22 @@ components:
       - msg
       - type
       title: ValidationError
+    WorkflowCanonicalIdentity:
+      properties:
+        kind:
+          type: string
+          enum:
+          - provider_native_id
+          - fallback_identity_hash
+          title: Kind
+        value:
+          type: string
+          title: Value
+      type: object
+      required:
+      - kind
+      - value
+      title: WorkflowCanonicalIdentity
     WorkflowJob:
       properties:
         id:
@@ -2851,8 +2871,7 @@ components:
           default: '0'
         issues:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowResultIssue'
           type: array
           title: Issues
         issuesOriginalCount:
@@ -2865,8 +2884,7 @@ components:
           default: 0
         runs:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowProviderRun'
           type: array
           title: Runs
         runsOriginalCount:
@@ -2879,8 +2897,7 @@ components:
           default: 0
         datasets:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowProviderDataset'
           type: array
           title: Datasets
         datasetsOriginalCount:
@@ -2893,8 +2910,7 @@ components:
           default: 0
         associations:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowSignalAssociation'
           type: array
           title: Associations
         associationsOriginalCount:
@@ -2905,12 +2921,219 @@ components:
           type: integer
           title: Associationstruncatedcount
           default: 0
-      additionalProperties: true
       type: object
       required:
       - path
       - status
       title: WorkflowPathResult
+    WorkflowProviderDataset:
+      properties:
+        path:
+          type: string
+          enum:
+          - official_discovery
+          - mention_discovery
+          - official_comments
+          - mention_comments
+          title: Path
+        datasetId:
+          type: string
+          title: Datasetid
+        runId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runid
+        parentIdentityValue:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parentidentityvalue
+        requestedLimit:
+          type: integer
+          title: Requestedlimit
+        fetchedCount:
+          type: integer
+          title: Fetchedcount
+        processedCount:
+          type: integer
+          title: Processedcount
+        rawFetchedCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rawfetchedcount
+        providerOverReturnCount:
+          type: integer
+          title: Provideroverreturncount
+          default: 0
+        provenance:
+          additionalProperties: true
+          type: object
+          title: Provenance
+      type: object
+      required:
+      - path
+      - datasetId
+      - requestedLimit
+      - fetchedCount
+      - processedCount
+      title: WorkflowProviderDataset
+    WorkflowProviderRun:
+      properties:
+        path:
+          type: string
+          enum:
+          - official_discovery
+          - mention_discovery
+          - official_comments
+          - mention_comments
+          title: Path
+        actorId:
+          type: string
+          title: Actorid
+        buildId:
+          type: string
+          title: Buildid
+        buildNumber:
+          type: string
+          title: Buildnumber
+        runId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runid
+        requestedRowMaximum:
+          type: integer
+          title: Requestedrowmaximum
+        maxTotalChargeUsd:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Maxtotalchargeusd
+        usageTotalUsd:
+          anyOf:
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Usagetotalusd
+        status:
+          type: string
+          title: Status
+        inputSchemaReference:
+          type: string
+          title: Inputschemareference
+        outputSchemaReference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outputschemareference
+        fixtureShapeReference:
+          type: string
+          title: Fixtureshapereference
+        datasetIds:
+          items:
+            type: string
+          type: array
+          title: Datasetids
+      type: object
+      required:
+      - path
+      - actorId
+      - buildId
+      - buildNumber
+      - requestedRowMaximum
+      - maxTotalChargeUsd
+      - status
+      - inputSchemaReference
+      - fixtureShapeReference
+      title: WorkflowProviderRun
+    WorkflowResultIssue:
+      properties:
+        path:
+          anyOf:
+          - type: string
+            enum:
+            - official_discovery
+            - mention_discovery
+            - official_comments
+            - mention_comments
+          - type: 'null'
+          title: Path
+        code:
+          type: string
+          title: Code
+        issueClass:
+          type: string
+          title: Issueclass
+        message:
+          type: string
+          title: Message
+        retryable:
+          type: boolean
+          title: Retryable
+          default: false
+        preservedWork:
+          type: boolean
+          title: Preservedwork
+          default: false
+        runId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runid
+        datasetId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Datasetid
+        parentIdentityValue:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parentidentityvalue
+      type: object
+      required:
+      - code
+      - issueClass
+      - message
+      title: WorkflowResultIssue
+    WorkflowSignalAssociation:
+      properties:
+        path:
+          type: string
+          enum:
+          - official_discovery
+          - mention_discovery
+          - official_comments
+          - mention_comments
+          title: Path
+        identity:
+          $ref: '#/components/schemas/WorkflowCanonicalIdentity'
+        signalId:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Signalid
+        parentId:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parentid
+        processingState:
+          type: string
+          enum:
+          - processed
+          - resumed
+          - duplicate
+          - skipped
+          - failed
+          title: Processingstate
+      type: object
+      required:
+      - path
+      - identity
+      - processingState
+      title: WorkflowSignalAssociation
     WorkflowSourceResult:
       properties:
         source:
@@ -2973,8 +3196,7 @@ components:
           default: 0
         issues:
           items:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/WorkflowResultIssue'
           type: array
           title: Issues
         issuesOriginalCount:
@@ -2985,7 +3207,6 @@ components:
           type: integer
           title: Issuestruncatedcount
           default: 0
-      additionalProperties: true
       type: object
       required:
       - source

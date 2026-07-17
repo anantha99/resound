@@ -150,6 +150,7 @@ class ParentContext(ApiModel):
     url: str | None = None
     author_handle: str | None = None
     excerpt: str | None = None
+    published_at: str | None = None
 
 
 class SignalProvenance(ApiModel):
@@ -283,13 +284,58 @@ class ReportRunCreateInput(ApiModel):
     report_config_id: int | None = None
 
 
-class ResultIssue(ApiModel):
+class WorkflowResultIssue(ApiModel):
     path: SourcePath | None = None
     code: str
     issue_class: str
     message: str
     retryable: bool = False
     preserved_work: bool = False
+    run_id: str | None = None
+    dataset_id: str | None = None
+    parent_identity_value: str | None = None
+
+
+class WorkflowProviderRun(ApiModel):
+    path: SourcePath
+    actor_id: str
+    build_id: str
+    build_number: str
+    run_id: str | None = None
+    requested_row_maximum: int
+    max_total_charge_usd: Decimal
+    usage_total_usd: Decimal | None = None
+    status: str
+    input_schema_reference: str
+    output_schema_reference: str | None = None
+    fixture_shape_reference: str
+    dataset_ids: list[str] = Field(default_factory=list)
+
+
+class WorkflowProviderDataset(ApiModel):
+    path: SourcePath
+    dataset_id: str
+    run_id: str | None = None
+    parent_identity_value: str | None = None
+    requested_limit: int
+    fetched_count: int
+    processed_count: int
+    raw_fetched_count: int | None = None
+    provider_over_return_count: int = 0
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowCanonicalIdentity(ApiModel):
+    kind: Literal["provider_native_id", "fallback_identity_hash"]
+    value: str
+
+
+class WorkflowSignalAssociation(ApiModel):
+    path: SourcePath
+    identity: WorkflowCanonicalIdentity
+    signal_id: int | None = None
+    parent_id: int | None = None
+    processing_state: Literal["processed", "resumed", "duplicate", "skipped", "failed"]
 
 
 class WorkflowPathResult(ApiModel):
@@ -301,21 +347,18 @@ class WorkflowPathResult(ApiModel):
     duplicate_count: int = 0
     skipped_count: int = 0
     cost_usd: Decimal = Decimal("0")
-    issues: list[dict[str, Any]] = Field(default_factory=list)
+    issues: list[WorkflowResultIssue] = Field(default_factory=list)
     issues_original_count: int = 0
     issues_truncated_count: int = 0
-    runs: list[dict[str, Any]] = Field(default_factory=list)
+    runs: list[WorkflowProviderRun] = Field(default_factory=list)
     runs_original_count: int = 0
     runs_truncated_count: int = 0
-    datasets: list[dict[str, Any]] = Field(default_factory=list)
+    datasets: list[WorkflowProviderDataset] = Field(default_factory=list)
     datasets_original_count: int = 0
     datasets_truncated_count: int = 0
-    associations: list[dict[str, Any]] = Field(default_factory=list)
+    associations: list[WorkflowSignalAssociation] = Field(default_factory=list)
     associations_original_count: int = 0
     associations_truncated_count: int = 0
-
-    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="allow")
-
 
 class WorkflowSourceResult(ApiModel):
     source: str
@@ -332,12 +375,9 @@ class WorkflowSourceResult(ApiModel):
     paths: list[WorkflowPathResult]
     paths_original_count: int = 0
     paths_truncated_count: int = 0
-    issues: list[dict[str, Any]] = Field(default_factory=list)
+    issues: list[WorkflowResultIssue] = Field(default_factory=list)
     issues_original_count: int = 0
     issues_truncated_count: int = 0
-
-    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="allow")
-
 
 class PublicListeningResultSummary(ApiModel):
     schema_version: Literal[1]
@@ -355,9 +395,6 @@ class PublicListeningResultSummary(ApiModel):
     skipped_count: int = 0
     cost_usd: Decimal = Decimal("0")
     lease_outcome: str | None = None
-
-    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="allow")
-
 
 class WorkflowJob(ApiModel):
     id: int

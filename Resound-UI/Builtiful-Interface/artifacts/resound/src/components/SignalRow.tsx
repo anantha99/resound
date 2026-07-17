@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRerouteSignal } from "@workspace/api-client-react";
 import { type OwnerOption, type SignalView } from "@/api/viewModels";
+import { CompactSignalMetrics, SignalParentContext } from "@/components/SignalContext";
 
 interface SignalRowProps {
   signal: SignalView;
@@ -78,7 +79,9 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
       <div className="font-mono text-[10px] text-[#8b857a] uppercase tracking-[0.05em] leading-[1.7]">
         <span className="block text-[#1a1815] font-medium">{signal.source}</span>
         <span className="block mt-0.5">{signal.postedAt}</span>
-        <span className="block mt-1.5 normal-case">{signal.metrics || signal.reach}</span>
+        <span className="block mt-1.5 normal-case">
+          {signal.metrics.compact ? <CompactSignalMetrics metrics={signal.metrics} /> : signal.reach}
+        </span>
       </div>
 
       {/* Body */}
@@ -92,12 +95,7 @@ export default function SignalRow({ signal, ownerOptions = [], onReroute, showPa
         >
           {signal.content}
         </blockquote>
-        {signal.parentContext && (
-          <div className="resound-parent-context flex gap-2.5 items-baseline py-2.5 mb-3 border-y border-[#e3ddd1] text-[#4a4640]">
-            <span className="shrink-0 font-mono text-[9px] tracking-[0.08em] uppercase text-[#8b857a]">{signal.parentContext.label}</span>
-            <span className="font-serif italic text-[14px] leading-[1.35]">{signal.parentContext.excerpt}</span>
-          </div>
-        )}
+        {signal.parentContext && <SignalParentContext parent={signal.parentContext} compact />}
         <div className="resound-signal-tags flex gap-3.5 items-center font-mono text-[10px] uppercase tracking-[0.06em] text-[#8b857a]">
           <span className="text-[#1a1815] font-medium">{signal.area.toUpperCase()}</span>
           <span className={severityClass[signal.severity]}>{signal.severity.toUpperCase()}</span>

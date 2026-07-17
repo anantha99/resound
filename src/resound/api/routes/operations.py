@@ -99,7 +99,10 @@ def get_evaluation_summary(
             organization_id=tenant.organization_id,
             brand_id=brand.id,
         ),
-        source_failure_count=len([row for row in health if row.status != "ok"]),
+        source_failure_count=len({
+            row.canonical_source for row in health
+            if row.status != "ok" and row.canonical_source is not None
+        }),
         total_llm_cost_usd=sum(row["total_cost_usd"] for row in costs),
     )
 

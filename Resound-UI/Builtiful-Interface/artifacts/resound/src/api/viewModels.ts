@@ -37,11 +37,17 @@ export interface SignalView {
   authorHandle: string;
   authorMeta: string;
   reach: string;
-  metrics: string;
+  metrics: {
+    compact: string;
+    items: Array<{ label: string; value: number | null }>;
+  };
   parentContext?: {
     label: string;
+    sourceLabel: string;
     excerpt: string;
     url?: string | null;
+    authorHandle?: string | null;
+    publishedAt?: string | null;
   };
   provenancePath?: string;
   canonicalUrl: string;
@@ -102,11 +108,19 @@ export function toSignalView(detail: SignalDetail): SignalView {
     authorHandle: detail.signal.authorHandle || "unknown",
     authorMeta: detail.signal.authorMeta || "source metadata unavailable",
     reach: formatReach(detail.signal.source, detail.signal.reach),
-    metrics: formatMetrics(detail.signal.metrics),
+    metrics: signalMetrics(detail.signal.metrics),
     parentContext: detail.signal.parentContext ? {
-      label: `On ${formatSource(detail.signal.parentContext.platform)} ${detail.signal.parentContext.contentKind}`,
-      excerpt: [detail.signal.parentContext.authorHandle, detail.signal.parentContext.excerpt].filter(Boolean).join(" · ") || "Parent content",
+      label: `Parent ${detail.signal.parentContext.contentKind}`,
+      sourceLabel: formatSourceLabel(
+        detail.signal.parentContext.platform,
+        detail.signal.parentContext.contentKind,
+      ),
+      excerpt: detail.signal.parentContext.excerpt || "Parent content",
       url: detail.signal.parentContext.url,
+      authorHandle: detail.signal.parentContext.authorHandle,
+      publishedAt: detail.signal.parentContext.publishedAt
+        ? relativeTime(detail.signal.parentContext.publishedAt)
+        : null,
     } : undefined,
     provenancePath: detail.signal.provenance.path ?? undefined,
     canonicalUrl: detail.signal.url,
@@ -137,7 +151,7 @@ export function routeAuditToSignalView(route: RouteAudit, brandId: string): Sign
     authorHandle: "memory",
     authorMeta: "routing audit",
     reach: "recorded",
-    metrics: "",
+    metrics: { compact: "", items: [] },
     canonicalUrl: "",
     content: route.content,
     postedAt: relativeTime(route.createdAt),
@@ -193,7 +207,7 @@ export function formatPath(path?: string | null): string {
 
 type Metrics = SignalDetail["signal"]["metrics"];
 
-function formatMetrics(metrics: Metrics): string {
+function signalMetrics(metrics: Metrics): SignalView["metrics"] {
   const values: Array<[number | null | undefined, string]> = [
     [metrics.views, "views"], [metrics.plays, "plays"], [metrics.likes, "likes"],
     [metrics.replies, "replies"], [metrics.comments, "comments"], [metrics.shares, "shares"],
@@ -201,7 +215,17 @@ function formatMetrics(metrics: Metrics): string {
   ];
   const rendered = values.filter(([value]) => value != null).slice(0, 3)
     .map(([value, label]) => `${Number(value).toLocaleString()} ${label}`);
-  return rendered.length ? `Observed · ${rendered.join(" · ")}` : "Observed public metrics unavailable";
+  return {
+    compact: rendered.length
+      ? `Observed · ${rendered.join(" · ")}`
+      : "Observed public metrics unavailable",
+    items: [
+      { label: "Likes", value: metrics.likes ?? null },
+      { label: "Replies", value: metrics.replies ?? null },
+      { label: "Views", value: metrics.views ?? metrics.plays ?? null },
+      { label: "Shares", value: metrics.shares ?? metrics.reposts ?? null },
+    ],
+  };
 }
 
 function formatReach(source: string, reach?: number | null): string {
@@ -224,7 +248,7 @@ function normalizeArea(area: string): Area {
   return allowed.includes(area as Area) ? (area as Area) : "other";
 }
 
-function relativeTime(value: string): string {
+export function relativeTime(value: string): string {
   const date = new Date(value);
   const diffMs = Date.now() - date.getTime();
   if (Number.isNaN(diffMs)) return value;

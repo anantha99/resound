@@ -3,6 +3,7 @@ import { Link, useRoute } from "wouter";
 import Masthead from "@/components/Masthead";
 import { formatPath, toSignalView } from "@/api/viewModels";
 import { useBrand } from "@/context/BrandContext";
+import { SignalMetricGrid, SignalParentContext } from "@/components/SignalContext";
 
 const SERIF = "'Cormorant Garamond', serif";
 const MONO = "'JetBrains Mono', monospace";
@@ -37,8 +38,8 @@ export default function SignalDetailPage() {
               <div className="uppercase text-[11px] tracking-[.06em] mb-3" style={{ fontFamily: MONO }}>{signal.source}</div>
               <div className="uppercase text-[10px] tracking-[.05em] text-[#8b857a] mb-4" style={{ fontFamily: MONO }}>{signal.authorHandle} · {signal.authorMeta}</div>
               <p className="text-[27px] leading-[1.38] mb-7" style={{ fontFamily: SERIF }}>{signal.content}</p>
-              {signal.parentContext && <section className="py-5 border-y border-[#e3ddd1]"><div className="uppercase text-[9px] tracking-[.1em] text-[#8b857a] mb-3" style={{ fontFamily: MONO }}>Parent content</div><p className="text-[21px] leading-tight" style={{ fontFamily: SERIF }}>“{signal.parentContext.excerpt}”</p></section>}
-              <section className="py-5 border-b border-[#e3ddd1]"><div className="uppercase text-[9px] tracking-[.1em] text-[#8b857a] mb-3" style={{ fontFamily: MONO }}>Observed public engagement</div><div className="text-[12px] uppercase tracking-[.04em] text-[#4a4640]" style={{ fontFamily: MONO }}>{signal.metrics}</div></section>
+              {signal.parentContext && <SignalParentContext parent={signal.parentContext} />}
+              <section className="py-5 border-b border-[#e3ddd1]"><div className="uppercase text-[9px] tracking-[.1em] text-[#8b857a] mb-3" style={{ fontFamily: MONO }}>Observed public engagement</div><SignalMetricGrid metrics={signal.metrics} /></section>
               <div className="flex gap-4 py-5 uppercase text-[10px] tracking-[.06em]" style={{ fontFamily: MONO }}><b>{signal.area}</b><span>{signal.severity}</span><span>{signal.sentiment}</span><span>{signal.actionClass}</span></div>
             </div>
             <aside>

@@ -243,6 +243,7 @@ export interface ParentContext {
   url?: string | null;
   authorHandle?: string | null;
   excerpt?: string | null;
+  publishedAt?: string | null;
 }
 
 export interface Pattern {
@@ -408,13 +409,121 @@ export const WorkflowPathResultStatus = {
   failed: 'failed',
 } as const;
 
-export type WorkflowPathResultIssuesItem = { [key: string]: unknown };
+export type WorkflowResultIssuePath = typeof WorkflowResultIssuePath[keyof typeof WorkflowResultIssuePath] | null;
 
-export type WorkflowPathResultRunsItem = { [key: string]: unknown };
 
-export type WorkflowPathResultDatasetsItem = { [key: string]: unknown };
+export const WorkflowResultIssuePath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
 
-export type WorkflowPathResultAssociationsItem = { [key: string]: unknown };
+export interface WorkflowResultIssue {
+  path?: WorkflowResultIssuePath;
+  code: string;
+  issueClass: string;
+  message: string;
+  retryable?: boolean;
+  preservedWork?: boolean;
+  runId?: string | null;
+  datasetId?: string | null;
+  parentIdentityValue?: string | null;
+}
+
+export type WorkflowProviderRunPath = typeof WorkflowProviderRunPath[keyof typeof WorkflowProviderRunPath];
+
+
+export const WorkflowProviderRunPath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export interface WorkflowProviderRun {
+  path: WorkflowProviderRunPath;
+  actorId: string;
+  buildId: string;
+  buildNumber: string;
+  runId?: string | null;
+  requestedRowMaximum: number;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  maxTotalChargeUsd: string;
+  usageTotalUsd?: string | null;
+  status: string;
+  inputSchemaReference: string;
+  outputSchemaReference?: string | null;
+  fixtureShapeReference: string;
+  datasetIds?: string[];
+}
+
+export type WorkflowProviderDatasetPath = typeof WorkflowProviderDatasetPath[keyof typeof WorkflowProviderDatasetPath];
+
+
+export const WorkflowProviderDatasetPath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export type WorkflowProviderDatasetProvenance = { [key: string]: unknown };
+
+export interface WorkflowProviderDataset {
+  path: WorkflowProviderDatasetPath;
+  datasetId: string;
+  runId?: string | null;
+  parentIdentityValue?: string | null;
+  requestedLimit: number;
+  fetchedCount: number;
+  processedCount: number;
+  rawFetchedCount?: number | null;
+  providerOverReturnCount?: number;
+  provenance?: WorkflowProviderDatasetProvenance;
+}
+
+export type WorkflowSignalAssociationPath = typeof WorkflowSignalAssociationPath[keyof typeof WorkflowSignalAssociationPath];
+
+
+export const WorkflowSignalAssociationPath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export type WorkflowCanonicalIdentityKind = typeof WorkflowCanonicalIdentityKind[keyof typeof WorkflowCanonicalIdentityKind];
+
+
+export const WorkflowCanonicalIdentityKind = {
+  provider_native_id: 'provider_native_id',
+  fallback_identity_hash: 'fallback_identity_hash',
+} as const;
+
+export interface WorkflowCanonicalIdentity {
+  kind: WorkflowCanonicalIdentityKind;
+  value: string;
+}
+
+export type WorkflowSignalAssociationProcessingState = typeof WorkflowSignalAssociationProcessingState[keyof typeof WorkflowSignalAssociationProcessingState];
+
+
+export const WorkflowSignalAssociationProcessingState = {
+  processed: 'processed',
+  resumed: 'resumed',
+  duplicate: 'duplicate',
+  skipped: 'skipped',
+  failed: 'failed',
+} as const;
+
+export interface WorkflowSignalAssociation {
+  path: WorkflowSignalAssociationPath;
+  identity: WorkflowCanonicalIdentity;
+  signalId?: number | null;
+  parentId?: number | null;
+  processingState: WorkflowSignalAssociationProcessingState;
+}
 
 export interface WorkflowPathResult {
   path: WorkflowPathResultPath;
@@ -426,22 +535,19 @@ export interface WorkflowPathResult {
   skippedCount?: number;
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   costUsd?: string;
-  issues?: WorkflowPathResultIssuesItem[];
+  issues?: WorkflowResultIssue[];
   issuesOriginalCount?: number;
   issuesTruncatedCount?: number;
-  runs?: WorkflowPathResultRunsItem[];
+  runs?: WorkflowProviderRun[];
   runsOriginalCount?: number;
   runsTruncatedCount?: number;
-  datasets?: WorkflowPathResultDatasetsItem[];
+  datasets?: WorkflowProviderDataset[];
   datasetsOriginalCount?: number;
   datasetsTruncatedCount?: number;
-  associations?: WorkflowPathResultAssociationsItem[];
+  associations?: WorkflowSignalAssociation[];
   associationsOriginalCount?: number;
   associationsTruncatedCount?: number;
-  [key: string]: unknown;
- }
-
-export type WorkflowSourceResultIssuesItem = { [key: string]: unknown };
+}
 
 export interface WorkflowSourceResult {
   source: string;
@@ -459,11 +565,10 @@ export interface WorkflowSourceResult {
   paths: WorkflowPathResult[];
   pathsOriginalCount?: number;
   pathsTruncatedCount?: number;
-  issues?: WorkflowSourceResultIssuesItem[];
+  issues?: WorkflowResultIssue[];
   issuesOriginalCount?: number;
   issuesTruncatedCount?: number;
-  [key: string]: unknown;
- }
+}
 
 export interface PublicListeningResultSummary {
   schemaVersion: 1;
@@ -482,8 +587,7 @@ export interface PublicListeningResultSummary {
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   costUsd?: string;
   leaseOutcome?: string | null;
-  [key: string]: unknown;
- }
+}
 
 export type ReadinessCheckStatus = typeof ReadinessCheckStatus[keyof typeof ReadinessCheckStatus];
 

@@ -35,13 +35,8 @@ from resound.ops.demo_population import (
 from resound.pipeline import Pipeline
 from resound.social import SourceType, canonical_source
 from resound.social.resolver import parse_cli_request
-from resound.tenancy import TenantContext
-from resound.workflows.public_listening import (
-    PublicListeningSyncRequest,
-)
-from resound.workflows.public_listening import (
-    sync_public_listening as run_public_listening_sync,
-)
+from resound.workflows.client import build_workflow_starter
+from resound.workflows.start_service import start_public_listening_workflow
 
 app = typer.Typer(add_completion=False, help="Resound — voice-of-customer routing.")
 console = Console()
@@ -209,10 +204,7 @@ def sync_public_listening_cmd(
     _setup_logging()
     cfg = load_brand_config(brand)
     enabled_sources = _parse_public_sources(sources)
-    # Build the exact same lower-only request contract consumed by the API
-    # integration. The legacy workflow remains in place until Task 4 switches
-    # execution to resolved snapshots.
-    parse_cli_request(
+    request_input = parse_cli_request(
         brand_id=brand,
         sources=list(sources or ["reddit"]),
         paths=paths,
@@ -245,30 +237,20 @@ def sync_public_listening_cmd(
         f"[bold cyan]Syncing public listening[/] brand=[bold]{cfg.slug}[/] "
         f"sources={enabled_sources} max_items={max_items}"
     )
-    result = run_public_listening_sync(
-        PublicListeningSyncRequest(
-            tenant=TenantContext(
-                organization_id,
-                organization,
-                team_id=None,
-                user_id=None,
-            ),
+    job = asyncio.run(
+        start_public_listening_workflow(
+            request_input=request_input.model_copy(update={"internal_brand_id": brand_row.id}),
+            brand_config=cfg,
+            memory=memory,
+            organization_id=organization_id,
             brand_id=brand_row.id,
-            brand_slug=cfg.slug,
-            brand_context=cfg.understanding,
-            routing_config=cfg.routing,
-            people_config=cfg.people,
-            enabled_sources=enabled_sources,
-            max_items_per_source=max_items,
-        ),
-        memory=memory,
+            starter=build_workflow_starter(),
+        )
     )
     console.print(
-        f"[green]{result.status}[/] processed={result.processed_count} "
-        f"skipped={result.skipped_count} synced={result.synced_sources}"
+        f"[green]{job.status}[/] workflow_id={job.workflow_id} "
+        f"run_id={job.run_id or 'pending'}"
     )
-    if result.failed_sources:
-        console.print(f"[red]failed_sources={result.failed_sources}[/]")
 
 
 @app.command("populate-demo-brands")

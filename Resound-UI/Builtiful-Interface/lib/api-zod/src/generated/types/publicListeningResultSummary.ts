@@ -27,5 +27,4 @@ export interface PublicListeningResultSummary {
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   costUsd?: string;
   leaseOutcome?: string | null;
-  [key: string]: unknown;
- }
+}
