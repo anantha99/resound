@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit, urlunsplit
 
 from resound.social.common import ProviderBudget, fallback_identity, provider_native_identity
-from resound.social.contracts import CanonicalIdentity, SourcePath
+from resound.social.contracts import CanonicalIdentity, ResolvedSelector, SourcePath
 from resound.social.registry import ActorRegistration
 
 
@@ -19,6 +20,9 @@ class AdapterBlockedError(RuntimeError):
 
 class ParserError(ValueError):
     """A provider row cannot produce a trustworthy normalized signal."""
+
+
+TypedSelector = ResolvedSelector
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,79 @@ class ActorRunPlan:
 
 
 @dataclass(frozen=True)
+class ParentContext:
+    platform: str
+    content_kind: Literal["post", "video"]
+    author_handle: str | None
+    excerpt: str | None
+    canonical_url: str
+    published_at: datetime | None
+    provider_native_id: str | None = None
+
+
+@dataclass(frozen=True)
+class DatasetFetchPlan:
+    path: SourcePath
+    dataset_id: str
+    dataset_url: str
+    requested_limit: int
+    parent: ParentContext
+    provenance: dict[str, str]
+
+
+@dataclass(frozen=True)
+class FetchedDataset:
+    plan: DatasetFetchPlan
+    items: tuple[dict[str, Any], ...]
+
+
+def execute_dataset_fetch(client: Any, plan: DatasetFetchPlan, *, page_size: int) -> FetchedDataset:
+    """Execute a bounded authenticated dataset GET without consuming an actor Run slot."""
+
+    items = client.fetch_dataset_items(
+        plan.dataset_id,
+        dataset_url=plan.dataset_url,
+        limit=plan.requested_limit,
+        page_size=page_size,
+    )
+    return FetchedDataset(plan=plan, items=tuple(items))
+
+
+@dataclass(frozen=True)
+class AdapterPathPlan:
+    path: SourcePath
+    actor_runs: tuple[ActorRunPlan, ...] = ()
+    dataset_fetches: tuple[DatasetFetchPlan, ...] = ()
+    empty_reason: Literal["no_eligible_parents"] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.actor_runs and not self.dataset_fetches and self.empty_reason is None:
+            raise ValueError("path plan must contain work or an explicit empty reason")
+
+
+class PathAdapter(Protocol):
+    def plan_path(
+        self,
+        *,
+        path: SourcePath,
+        selectors: tuple[TypedSelector, ...] = (),
+        parents: tuple[ParsedProviderSignal, ...] = (),
+        item_cap: int,
+        max_parents: int,
+        max_comments_per_parent: int,
+        max_comments: int,
+    ) -> AdapterPathPlan: ...
+
+    def parse_path_result(
+        self,
+        *,
+        path: SourcePath,
+        item: dict[str, Any],
+        parent: ParentContext | None = None,
+    ) -> ParsedProviderSignal: ...
+
+
+@dataclass(frozen=True)
 class ParsedProviderSignal:
     platform: str
     content_kind: Literal["post", "video", "comment"]
@@ -39,8 +116,54 @@ class ParsedProviderSignal:
     provider_timestamp: datetime
     canonical_url: str | None
     author_handle: str | None
-    parent_url: str | None = None
+    observed_public_metrics: dict[str, int] = dataclass_field(default_factory=dict)
+    parent_context: ParentContext | None = None
     comments_dataset_url: str | None = None
+
+    @property
+    def parent_url(self) -> str | None:
+        return self.parent_context.canonical_url if self.parent_context else None
+
+    def as_parent_context(self) -> ParentContext:
+        if self.content_kind not in {"post", "video"} or self.canonical_url is None:
+            raise ValueError("only canonical posts/videos can be comment parents")
+        native_id = self.identity.value if self.identity.kind == "provider_native_id" else None
+        return ParentContext(
+            platform=self.platform,
+            content_kind=self.content_kind,
+            author_handle=self.author_handle,
+            excerpt=self.content[:500],
+            canonical_url=self.canonical_url,
+            published_at=self.provider_timestamp,
+            provider_native_id=native_id,
+        )
+
+    def raw_metadata(self, path: SourcePath) -> dict[str, Any]:
+        """Activity-facing safe metadata projection for persistence and API projection."""
+
+        parent = self.parent_context
+        return {
+            "canonical_platform": self.platform,
+            "content_kind": self.content_kind,
+            "path": path.value,
+            self.identity.kind: self.identity.value,
+            "observed_public_metrics": dict(self.observed_public_metrics),
+            "parent_context": (
+                {
+                    "platform": parent.platform,
+                    "content_kind": parent.content_kind,
+                    "author_handle": parent.author_handle,
+                    "excerpt": parent.excerpt,
+                    "url": parent.canonical_url,
+                    "published_at": (
+                        parent.published_at.isoformat() if parent.published_at is not None else None
+                    ),
+                    "provider_native_id": parent.provider_native_id,
+                }
+                if parent is not None
+                else None
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -213,3 +336,17 @@ def nested_text(item: dict[str, Any], object_field: str, *fields: str) -> str | 
     if not isinstance(nested, dict):
         return None
     return optional_text(nested, *fields)
+
+
+def observed_metrics(item: dict[str, Any], fields: dict[str, tuple[str, ...]]) -> dict[str, int]:
+    """Extract only non-negative, source-declared observed-public metric values."""
+
+    result: dict[str, int] = {}
+    for canonical_name, provider_fields in fields.items():
+        for provider_field in provider_fields:
+            value = item.get(provider_field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                continue
+            result[canonical_name] = value
+            break
+    return result

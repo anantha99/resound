@@ -8,7 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from resound.social.apify_adapters import AdapterBlockedError, ParserError, execute_actor_run
+from resound.social.apify_adapters import (
+    AdapterBlockedError,
+    ParentContext,
+    ParserError,
+    SelectorKind,
+    TypedSelector,
+    execute_actor_run,
+    execute_dataset_fetch,
+)
 from resound.social.apify_adapters.instagram import (
     InstagramAdapter,
     InstagramMentionSelector,
@@ -122,6 +130,57 @@ def test_instagram_rejects_unsupported_or_unallocatable_selectors() -> None:
         )
 
 
+def test_instagram_typed_selectors_serialize_exact_provider_search_types() -> None:
+    selectors = [
+        TypedSelector(kind=SelectorKind.HASHTAG, value=" acme "),
+        TypedSelector(kind=SelectorKind.PROFILE, value="acme_profile"),
+        TypedSelector(kind=SelectorKind.PLACE, value="acme_place"),
+        TypedSelector(kind=SelectorKind.USER, value="acme_user"),
+    ]
+    plans = InstagramAdapter().plan_path(
+        path=SourcePath.MENTION_DISCOVERY,
+        selectors=tuple(selectors),
+        item_cap=20,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    assert [run.actor_input for run in plans.actor_runs] == [
+        {
+            "search": "acme",
+            "searchType": "hashtag",
+            "searchLimit": 1,
+            "resultsType": "posts",
+            "resultsLimit": 5,
+            "addParentData": True,
+        },
+        {
+            "search": "acme_profile",
+            "searchType": "profile",
+            "searchLimit": 1,
+            "resultsType": "posts",
+            "resultsLimit": 5,
+            "addParentData": True,
+        },
+        {
+            "search": "acme_place",
+            "searchType": "place",
+            "searchLimit": 1,
+            "resultsType": "posts",
+            "resultsLimit": 5,
+            "addParentData": True,
+        },
+        {
+            "search": "acme_user",
+            "searchType": "user",
+            "searchLimit": 1,
+            "resultsType": "posts",
+            "resultsLimit": 5,
+            "addParentData": True,
+        },
+    ]
+
+
 def test_tiktok_dispatch_multiplies_rows_and_uses_two_actor_runs_only() -> None:
     adapter = TikTokAdapter()
     official = adapter.plan_official(
@@ -144,6 +203,33 @@ def test_tiktok_dispatch_multiplies_rows_and_uses_two_actor_runs_only() -> None:
     assert mentions[0].minimum_call_charge_usd == Decimal("0.50")
     forbidden = ("download", "media", "subtitle", "transcript", "ai")
     assert all(token not in key.lower() for key in mentions[0].actor_input for token in forbidden)
+
+
+def test_tiktok_typed_selectors_dispatch_exact_profiles_hashtags_and_queries() -> None:
+    adapter = TikTokAdapter()
+    official = adapter.plan_path(
+        path=SourcePath.OFFICIAL_DISCOVERY,
+        selectors=(TypedSelector(kind=SelectorKind.PROFILE, value=" acme "),),
+        item_cap=10,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    mention = adapter.plan_path(
+        path=SourcePath.MENTION_DISCOVERY,
+        selectors=(
+            TypedSelector(kind=SelectorKind.HASHTAG, value="acme"),
+            TypedSelector(kind=SelectorKind.SEARCH, value="Acme review"),
+        ),
+        item_cap=10,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    assert official.actor_runs[0].actor_input["profiles"] == ["acme"]
+    assert mention.actor_runs[0].actor_input["hashtags"] == ["acme"]
+    assert mention.actor_runs[0].actor_input["searchQueries"] == ["Acme review"]
+    assert mention.actor_runs[0].actor_input["resultsPerPage"] == 5
 
 
 @pytest.mark.parametrize(
@@ -188,6 +274,107 @@ def test_tiktok_fetches_exact_dataset_id_with_authenticated_client_contract() ->
     ]
 
 
+@pytest.mark.parametrize(
+    ("path", "discovery_path"),
+    [
+        (SourcePath.OFFICIAL_COMMENTS, SourcePath.OFFICIAL_DISCOVERY),
+        (SourcePath.MENTION_COMMENTS, SourcePath.MENTION_DISCOVERY),
+    ],
+)
+def test_tiktok_comment_paths_plan_authenticated_parent_associated_dataset_traversal(
+    path: SourcePath, discovery_path: SourcePath
+) -> None:
+    fixture = json.loads(
+        Path("tests/fixtures/apify/synthetic/parser_rows.json").read_text(encoding="utf-8")
+    )
+    parent = TikTokAdapter.parse_video(fixture["tiktok_video"])
+    plan = TikTokAdapter().plan_path(
+        path=path,
+        parents=(parent,),
+        item_cap=25,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    assert plan.path == path
+    assert plan.actor_runs == ()
+    assert plan.empty_reason is None
+    assert len(plan.dataset_fetches) == 1
+    fetch = plan.dataset_fetches[0]
+    assert fetch.path == path
+    assert fetch.dataset_id == "synthetic-comments"
+    assert fetch.dataset_url == ("https://api.apify.com/v2/datasets/synthetic-comments/items")
+    assert fetch.requested_limit == 5
+    assert fetch.parent.platform == "tiktok"
+    assert fetch.parent.content_kind == "video"
+    assert fetch.parent.author_handle == "synthetic_parent"
+    assert fetch.parent.excerpt == "Synthetic video text"
+    assert fetch.parent.published_at == datetime(2026, 7, 17, 1, 2, 3, tzinfo=UTC)
+    assert fetch.provenance == {
+        "source": "tiktok",
+        "path": path.value,
+        "association": "commentsDatasetUrl",
+        "parent_identity": "synthetic-tt-video-1",
+    }
+    assert discovery_path.value.replace("discovery", "comments") == path.value
+
+
+def test_activity_facing_dataset_plan_fetch_and_parse_need_no_source_conditionals() -> None:
+    fixture = json.loads(
+        Path("tests/fixtures/apify/synthetic/parser_rows.json").read_text(encoding="utf-8")
+    )
+    adapter = TikTokAdapter()
+    parent = adapter.parse_video(fixture["tiktok_video"])
+    path_plan = adapter.plan_path(
+        path=SourcePath.MENTION_COMMENTS,
+        parents=(parent,),
+        item_cap=25,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    calls = []
+
+    class Client:
+        def fetch_dataset_items(self, dataset_id: str, **kwargs):
+            calls.append((dataset_id, kwargs))
+            return [fixture["tiktok_comment"]]
+
+    fetched = execute_dataset_fetch(Client(), path_plan.dataset_fetches[0], page_size=100)
+    parsed = tuple(
+        adapter.parse_path_result(
+            path=fetched.plan.path,
+            item=item,
+            parent=fetched.plan.parent,
+        )
+        for item in fetched.items
+    )
+    assert parsed[0].parent_context == fetched.plan.parent
+    assert calls == [
+        (
+            "synthetic-comments",
+            {
+                "dataset_url": "https://api.apify.com/v2/datasets/synthetic-comments/items",
+                "limit": 5,
+                "page_size": 100,
+            },
+        )
+    ]
+
+
+def test_tiktok_comment_path_without_parents_is_explicit_not_a_successful_noop() -> None:
+    plan = TikTokAdapter().plan_path(
+        path=SourcePath.OFFICIAL_COMMENTS,
+        parents=(),
+        item_cap=25,
+        max_parents=10,
+        max_comments_per_parent=5,
+        max_comments=25,
+    )
+    assert plan.dataset_fetches == ()
+    assert plan.empty_reason == "no_eligible_parents"
+
+
 def test_synthetic_parsers_enforce_exact_time_content_identity_and_parent_topology() -> None:
     fixture = json.loads(
         Path("tests/fixtures/apify/synthetic/parser_rows.json").read_text(encoding="utf-8")
@@ -198,8 +385,25 @@ def test_synthetic_parsers_enforce_exact_time_content_identity_and_parent_topolo
     youtube = YouTubeAdapter.parse(fixture["youtube_video"])
     assert instagram.canonical_url == fixture["instagram_comment"]["commentUrl"]
     assert instagram.parent_url == fixture["instagram_comment"]["postUrl"]
+    assert instagram.parent_context == ParentContext(
+        platform="instagram",
+        content_kind="post",
+        author_handle="synthetic_parent",
+        excerpt="Synthetic parent post",
+        canonical_url="https://www.instagram.com/p/synthetic/",
+        published_at=datetime(2026, 7, 16, 1, 2, 3, tzinfo=UTC),
+        provider_native_id="synthetic-ig-post-1",
+    )
+    assert instagram.observed_public_metrics == {"likes": 3}
     assert tiktok.content_kind == "video"
+    assert tiktok.observed_public_metrics == {
+        "likes": 12,
+        "comments": 4,
+        "shares": 2,
+        "plays": 101,
+    }
     assert youtube.content_kind == "video"
+    assert youtube.observed_public_metrics == {"views": 42, "likes": 5}
     assert instagram.provider_timestamp == datetime(2026, 7, 17, 1, 2, 3, tzinfo=UTC)
 
     mutation = deepcopy(fixture["instagram_comment"])
@@ -216,6 +420,42 @@ def test_synthetic_parsers_enforce_exact_time_content_identity_and_parent_topolo
         YouTubeAdapter.parse(mutation)
 
 
+@pytest.mark.parametrize("path", [SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS])
+def test_tiktok_parse_path_result_carries_metrics_and_complete_parent_context(
+    path: SourcePath,
+) -> None:
+    fixture = json.loads(
+        Path("tests/fixtures/apify/synthetic/parser_rows.json").read_text(encoding="utf-8")
+    )
+    parent = TikTokAdapter.parse_video(fixture["tiktok_video"]).as_parent_context()
+    parsed = TikTokAdapter().parse_path_result(
+        path=path,
+        item=fixture["tiktok_comment"],
+        parent=parent,
+    )
+    assert parsed.content_kind == "comment"
+    assert parsed.parent_context == parent
+    assert parsed.parent_url == fixture["tiktok_video"]["webVideoUrl"]
+    assert parsed.observed_public_metrics == {"likes": 7, "replies": 2}
+    assert parsed.author_handle == "synthetic_commenter"
+    assert parsed.raw_metadata(path) == {
+        "canonical_platform": "tiktok",
+        "content_kind": "comment",
+        "path": path.value,
+        "provider_native_id": "synthetic-tt-comment-1",
+        "observed_public_metrics": {"likes": 7, "replies": 2},
+        "parent_context": {
+            "platform": "tiktok",
+            "content_kind": "video",
+            "author_handle": "synthetic_parent",
+            "excerpt": "Synthetic video text",
+            "url": "https://www.tiktok.com/@synthetic/video/1",
+            "published_at": "2026-07-17T01:02:03+00:00",
+            "provider_native_id": "synthetic-tt-video-1",
+        },
+    }
+
+
 def test_parser_duplicate_rows_produce_the_same_native_identity() -> None:
     row = {
         "id": "same-provider-id",
@@ -224,6 +464,43 @@ def test_parser_duplicate_rows_produce_the_same_native_identity() -> None:
         "url": "https://x.com/synthetic/status/1",
     }
     assert XAdapter.parse(row).identity == XAdapter.parse(deepcopy(row)).identity
+
+
+def test_reddit_and_x_extract_only_source_specific_observed_public_metrics() -> None:
+    reddit = RedditAdapter.parse(
+        {
+            "id": "reddit-1",
+            "title": "Synthetic Reddit post",
+            "createdAt": "2026-07-17T01:02:03Z",
+            "url": "https://reddit.com/r/acme/comments/1",
+            "score": 10,
+            "numComments": 4,
+            "upvoteRatio": 0.9,
+            "viewCount": 999,
+        }
+    )
+    x = XAdapter.parse(
+        {
+            "id": "x-1",
+            "text": "Synthetic X post",
+            "createdAt": "2026-07-17T01:02:03Z",
+            "url": "https://x.com/acme/status/1",
+            "likeCount": 8,
+            "retweetCount": 3,
+            "replyCount": 2,
+            "viewCount": 100,
+        }
+    )
+    assert reddit.observed_public_metrics == {
+        "upvotes": 10,
+        "comments": 4,
+    }
+    assert x.observed_public_metrics == {
+        "likes": 8,
+        "replies": 2,
+        "reposts": 3,
+        "views": 100,
+    }
 
 
 def test_each_run_gets_remaining_hard_charge_cap_and_preserves_path_attribution() -> None:
@@ -279,8 +556,15 @@ def test_tiktok_minimum_blocks_call_below_fifty_cents() -> None:
 
 
 def test_registry_exposes_every_actor_specific_adapter() -> None:
-    assert isinstance(get_source_adapter("reddit"), RedditAdapter)
-    assert isinstance(get_source_adapter("instagram"), InstagramAdapter)
-    assert isinstance(get_source_adapter("tiktok"), TikTokAdapter)
-    assert isinstance(get_source_adapter("x"), XAdapter)
-    assert isinstance(get_source_adapter("youtube"), YouTubeAdapter)
+    adapters = {
+        "reddit": RedditAdapter,
+        "instagram": InstagramAdapter,
+        "tiktok": TikTokAdapter,
+        "x": XAdapter,
+        "youtube": YouTubeAdapter,
+    }
+    for source, adapter_type in adapters.items():
+        adapter = get_source_adapter(source)
+        assert isinstance(adapter, adapter_type)
+        assert callable(adapter.plan_path)
+        assert callable(adapter.parse_path_result)
