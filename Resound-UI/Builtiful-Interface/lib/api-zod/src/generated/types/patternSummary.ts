@@ -5,6 +5,7 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+import type { PatternSummaryVelocityState } from './patternSummaryVelocityState';
 
 export interface PatternSummary {
   id: number;
@@ -13,4 +14,5 @@ export interface PatternSummary {
   signalCount: number;
   weeklyVelocity: number;
   velocityMultiple: number;
+  velocityState: PatternSummaryVelocityState;
 }

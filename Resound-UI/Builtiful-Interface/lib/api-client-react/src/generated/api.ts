@@ -155,6 +155,13 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getReadinessCheckUrl = () => {
 
 
@@ -225,6 +232,13 @@ export function useReadinessCheck<TData = Awaited<ReturnType<typeof readinessChe
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getListBrandsUrl = () => {
 
 
@@ -295,6 +309,13 @@ export function useListBrands<TData = Awaited<ReturnType<typeof listBrands>>, TE
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetBrandStatsUrl = (brandId: string,
     period: '24h' | '7d' | '30d' | 'qtd',) => {
 
@@ -1998,3 +2019,10 @@ export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+

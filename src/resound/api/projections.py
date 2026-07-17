@@ -35,8 +35,8 @@ class SignalJoinedRow:
     route: RouteRow
 
 
-def period_since(period: schemas.Period) -> datetime:
-    now = datetime.utcnow()
+def period_since(period: schemas.Period, now: datetime | None = None) -> datetime:
+    now = now if now is not None else datetime.utcnow()
     if period == "24h":
         return now - timedelta(days=1)
     if period == "7d":
@@ -148,9 +148,11 @@ def brand_stats(
     brand_slug: str,
     period: schemas.Period,
     tenant: TenantContext | None = None,
+    now: datetime | None = None,
 ) -> schemas.BrandStats:
-    since = period_since(period)
-    previous_since = since - (datetime.utcnow() - since)
+    now = now if now is not None else datetime.utcnow()
+    since = period_since(period, now)
+    previous_since = since - (now - since)
     current = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
     previous = _joined_rows(
         memory,
@@ -161,6 +163,7 @@ def brand_stats(
         limit=None,
         offset=0,
     )
+    previous_empty = len(previous) == 0
     current_classes = [row.classification for row in current]
     previous_classes = [row.classification for row in previous]
 
@@ -169,16 +172,25 @@ def brand_stats(
     current_critical = _critical_count(current_classes)
     previous_critical = _critical_count(previous_classes)
     source_mix = _source_mix(row.signal.source for row in current)
-    patterns = list_patterns(memory, brand_slug, area=None, tenant=tenant)
-    top_pattern = _pattern_summary(patterns[0]) if patterns else _empty_pattern_summary()
+    patterns = list_patterns(memory, brand_slug, area=None, since=since, tenant=tenant)
+    top_pattern = (
+        _emerging_summary(patterns[0], current, previous)
+        if patterns
+        else _empty_pattern_summary()
+    )
+
+    net_sentiment_delta = (
+        0 if previous_empty else current_sentiment["score"] - previous_sentiment["score"]
+    )
+    critical_delta = 0 if previous_empty else current_critical - previous_critical
 
     return schemas.BrandStats(
         brand_id=brand_slug,
         period=period,
         net_sentiment=current_sentiment["score"],
-        net_sentiment_delta=current_sentiment["score"] - previous_sentiment["score"],
+        net_sentiment_delta=net_sentiment_delta,
         critical_count=current_critical,
-        critical_delta=current_critical - previous_critical,
+        critical_delta=critical_delta,
         total_volume=len(current),
         volume_delta=_volume_delta(len(current), len(previous)),
         source_mix=source_mix,
@@ -188,6 +200,7 @@ def brand_stats(
             negative=current_sentiment["negative"],
         ),
         top_emerging_issue=top_pattern,
+        trend=_trend_series(current, period, since, now),
         last_ingested=_last_ingested(memory, brand_slug),
     )
 
@@ -362,8 +375,9 @@ def list_patterns(
     brand_slug: str | None,
     area: str | None,
     tenant: TenantContext | None = None,
+    since: datetime | None = None,
 ) -> list[schemas.Pattern]:
-    rows = _joined_rows(memory, brand_slug, tenant=tenant, limit=None, offset=0)
+    rows = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
     groups: dict[str, list[SignalJoinedRow]] = {}
     for row in rows:
         if area and row.classification.area != area:
@@ -646,16 +660,76 @@ def _sentiment_stats(rows: list[ClassificationRow]) -> dict[str, int]:
     positive = len([row for row in rows if row.sentiment == "positive"])
     negative = len([row for row in rows if row.sentiment == "negative"])
     neutral = total - positive - negative
+    pos_pct, neu_pct, neg_pct = _largest_remainder(
+        {"positive": positive, "neutral": neutral, "negative": negative},
+        total,
+    )
     return {
         "score": round(((positive - negative) / total) * 100),
-        "positive": round((positive / total) * 100),
-        "neutral": round((neutral / total) * 100),
-        "negative": round((negative / total) * 100),
+        "positive": pos_pct,
+        "neutral": neu_pct,
+        "negative": neg_pct,
     }
+
+
+def _largest_remainder(counts: dict[str, int], total: int) -> list[int]:
+    """Allocate integer percentages summing to exactly 100 (largest remainder)."""
+    if total == 0:
+        return [0 for _ in counts]
+    exact = {key: (count / total) * 100 for key, count in counts.items()}
+    floors = {key: int(value) for key, value in exact.items()}
+    remainder = 100 - sum(floors.values())
+    order = sorted(
+        counts.keys(),
+        key=lambda key: (exact[key] - floors[key], counts[key]),
+        reverse=True,
+    )
+    for key in order[:remainder]:
+        floors[key] += 1
+    return [floors[key] for key in counts]
 
 
 def _critical_count(rows: list[ClassificationRow]) -> int:
     return len([row for row in rows if row.severity in {"critical", "high"}])
+
+
+def _trend_buckets(period: schemas.Period) -> int:
+    return {"24h": 12, "7d": 7, "30d": 10, "qtd": 13}.get(period, 12)
+
+
+def _trend_series(
+    rows: list[SignalJoinedRow],
+    period: schemas.Period,
+    since: datetime,
+    now: datetime,
+) -> list[schemas.TrendPoint]:
+    """Divide the elapsed window (since -> now) into N equal buckets and summarize each."""
+    count = _trend_buckets(period)
+    span = now - since
+    if count <= 0 or span <= timedelta(0):
+        return []
+    width = span / count
+    buckets: list[list[SignalJoinedRow]] = [[] for _ in range(count)]
+    for row in rows:
+        ingested = row.signal.ingested_at
+        if ingested < since or ingested >= now:
+            continue
+        index = int((ingested - since) / width)
+        index = min(max(index, 0), count - 1)
+        buckets[index].append(row)
+
+    points: list[schemas.TrendPoint] = []
+    for index, bucket in enumerate(buckets):
+        bucket_classes = [row.classification for row in bucket]
+        points.append(
+            schemas.TrendPoint(
+                label=str(index),
+                net_sentiment=_sentiment_stats(bucket_classes)["score"],
+                critical_count=_critical_count(bucket_classes),
+                volume=len(bucket),
+            )
+        )
+    return points
 
 
 def _source_mix(sources: Iterable[str]) -> list[schemas.SourceStat]:
@@ -665,15 +739,17 @@ def _source_mix(sources: Iterable[str]) -> list[schemas.SourceStat]:
     total = sum(counts.values())
     if total == 0:
         return []
+    ordered = sorted(counts.items())
+    pcts = _largest_remainder({source: count for source, count in ordered}, total)
     return [
-        schemas.SourceStat(source=source, count=count, pct=round((count / total) * 100, 1))
-        for source, count in sorted(counts.items())
+        schemas.SourceStat(source=source, count=count, pct=pct)
+        for (source, count), pct in zip(ordered, pcts, strict=True)
     ]
 
 
 def _volume_delta(current: int, previous: int) -> float:
     if previous == 0:
-        return 0.0 if current == 0 else 100.0
+        return 0.0
     return round(((current - previous) / previous) * 100, 1)
 
 
@@ -772,6 +848,7 @@ def _pattern_summary(pattern: schemas.Pattern) -> schemas.PatternSummary:
         signal_count=pattern.signal_count,
         weekly_velocity=pattern.weekly_velocity,
         velocity_multiple=pattern.velocity_multiple,
+        velocity_state="no_baseline",
     )
 
 
@@ -783,7 +860,48 @@ def _empty_pattern_summary() -> schemas.PatternSummary:
         signal_count=0,
         weekly_velocity=0,
         velocity_multiple=1.0,
+        velocity_state="no_baseline",
     )
+
+
+def _pattern_group_key(row: SignalJoinedRow) -> str:
+    return row.classification.subarea or row.classification.area
+
+
+def _group_by_pattern(rows: list[SignalJoinedRow]) -> dict[str, list[SignalJoinedRow]]:
+    groups: dict[str, list[SignalJoinedRow]] = {}
+    for row in rows:
+        groups.setdefault(_pattern_group_key(row), []).append(row)
+    return groups
+
+
+def _emerging_summary(
+    top_pattern: schemas.Pattern,
+    current: list[SignalJoinedRow],
+    previous: list[SignalJoinedRow],
+) -> schemas.PatternSummary:
+    """Build the emerging-issue summary with honest velocity vs a comparable prior window.
+
+    ``top_pattern`` supplies name/area/signal_count/id (period-scoped via ``list_patterns``);
+    velocity_multiple and velocity_state are overridden using the current vs previous window
+    counts for the top current pattern key.
+    """
+    summary = _pattern_summary(top_pattern)
+    top_key = _pattern_key_from_name(top_pattern.name)
+    current_count = len(_group_by_pattern(current).get(top_key, []))
+    previous_count = len(_group_by_pattern(previous).get(top_key, []))
+
+    if previous_count == 0:
+        return summary.model_copy(update={"velocity_state": "no_baseline"})
+
+    ratio = round(current_count / previous_count, 1)
+    if ratio > 1.05:
+        state = "accelerating"
+    elif ratio < 0.95:
+        state = "cooling"
+    else:
+        state = "steady"
+    return summary.model_copy(update={"velocity_multiple": ratio, "velocity_state": state})
 
 
 def _pattern_id(brand_slug: str, key: str) -> int:

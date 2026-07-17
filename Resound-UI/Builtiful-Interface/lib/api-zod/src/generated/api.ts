@@ -98,8 +98,15 @@ export const GetBrandStatsResponse = zod.object({
   "area": zod.string(),
   "signalCount": zod.number(),
   "weeklyVelocity": zod.number(),
-  "velocityMultiple": zod.number()
+  "velocityMultiple": zod.number(),
+  "velocityState": zod.enum(['accelerating', 'steady', 'cooling', 'no_baseline'])
 }),
+  "trend": zod.array(zod.object({
+  "label": zod.string(),
+  "netSentiment": zod.number(),
+  "criticalCount": zod.number(),
+  "volume": zod.number()
+})),
   "lastIngested": zod.union([zod.string(),zod.null()]).optional()
 })
 
@@ -792,3 +799,5 @@ export const ModeratePublicFeedItemResponse = zod.object({
  * @summary Stream Events
  */
 export const StreamEventsResponse = zod.unknown()
+
+
