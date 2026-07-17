@@ -29,6 +29,7 @@ from resound.social.contracts import (
     ResolvedPathConfig,
     ResolvedProcessingConfigSnapshot,
     ResolvedPublicListeningRequest,
+    ResolvedSelector,
     ResolvedSourceConfigSnapshot,
     SelectedPathInput,
     SourceLimitOverrides,
@@ -123,6 +124,13 @@ def resolve_public_listening_request(
             else limits.max_items_per_path
             for path in paths
         }
+        comment_caps = {
+            path: cap for path, cap in base_caps.items() if path.endswith("comments")
+        }
+        if comment_caps:
+            comment_total = min(limits.max_comments_per_source, sum(comment_caps.values()))
+            comment_allocations = allocate_signal_cap(comment_caps, comment_total)
+            base_caps.update(comment_allocations)
         allocations = allocate_signal_cap(base_caps, limits.max_signals_per_source)
         path_configs = tuple(
             _resolve_path(source, path, selectors[path], limits, allocations[path])
@@ -135,7 +143,7 @@ def resolve_public_listening_request(
                 f"max_runs_per_source={limits.max_runs_per_source} is below derived Run "
                 f"count {derived_runs} for {source}"
             )
-        evidence = provider_evidence(config)
+        evidence = provider_evidence(source, config, paths)
         snapshot_body = {
             "source": source,
             "storage_platform": SOURCE_REGISTRY[source].storage_platform,
@@ -292,7 +300,7 @@ def _resolve_limits(
 def _resolve_path(
     source: str,
     path: str,
-    selectors: tuple[str, ...],
+    selectors: tuple[ResolvedSelector, ...],
     limits: AdapterLimits,
     allocation: int,
 ) -> ResolvedPathConfig:

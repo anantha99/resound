@@ -13,6 +13,9 @@ from resound.social.common import (
     ProviderBudget as ProviderBudget,
 )
 from resound.social.common import (
+    UnresolvedActorStartError as UnresolvedActorStartError,
+)
+from resound.social.common import (
     allocate_signal_cap as allocate_signal_cap,
 )
 from resound.social.common import (
@@ -26,6 +29,9 @@ from resound.social.common import (
 )
 from resound.social.config import SourceConfigError as SourceConfigError
 from resound.social.config import canonical_source as canonical_source
+from resound.social.contracts import (
+    ActorRole as ActorRole,
+)
 from resound.social.contracts import (
     AdapterComponentResult as AdapterComponentResult,
 )
@@ -48,10 +54,16 @@ from resound.social.contracts import (
     ProviderDatasetRef as ProviderDatasetRef,
 )
 from resound.social.contracts import (
+    ProviderDeadlineContext as ProviderDeadlineContext,
+)
+from resound.social.contracts import (
     ProviderEvidenceManifest as ProviderEvidenceManifest,
 )
 from resound.social.contracts import (
     ProviderEvidenceRecord as ProviderEvidenceRecord,
+)
+from resound.social.contracts import (
+    ProviderOverReturn as ProviderOverReturn,
 )
 from resound.social.contracts import (
     ProviderRunRef as ProviderRunRef,
@@ -75,10 +87,16 @@ from resound.social.contracts import (
     ResolvedPublicListeningRequest as ResolvedPublicListeningRequest,
 )
 from resound.social.contracts import (
+    ResolvedSelector as ResolvedSelector,
+)
+from resound.social.contracts import (
     ResolvedSourceConfigSnapshot as ResolvedSourceConfigSnapshot,
 )
 from resound.social.contracts import (
     SelectedPathInput as SelectedPathInput,
+)
+from resound.social.contracts import (
+    SelectorKind as SelectorKind,
 )
 from resound.social.contracts import (
     SignalAssociation as SignalAssociation,

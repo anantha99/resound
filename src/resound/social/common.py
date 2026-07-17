@@ -9,6 +9,14 @@ from decimal import ROUND_FLOOR, Decimal
 from resound.social.contracts import CanonicalIdentity, sha256_value
 
 
+class UnresolvedActorStartError(RuntimeError):
+    """A reserved actor start may have reached Apify but has no reconciled Run ID."""
+
+    def __init__(self, reservation_id: str, message: str | None = None):
+        self.reservation_id = reservation_id
+        super().__init__(message or f"actor start reservation {reservation_id} is unresolved")
+
+
 def provider_native_identity(value: str) -> CanonicalIdentity:
     normalized = value.strip()
     if not normalized:
@@ -104,7 +112,11 @@ class ProviderBudget:
 
     def reserve(self, reservation_id: str) -> ActorStartReservation:
         if self.unresolved_start:
-            raise RuntimeError("an actor start is unresolved; no later Run may start")
+            unresolved_id = next(iter(self.reservations), reservation_id)
+            raise UnresolvedActorStartError(
+                unresolved_id,
+                "an actor start is unresolved; no later Run may start",
+            )
         remaining = self.remaining_charge_cap()
         required = max(self.minimum_call_charge_usd, self.conservative_request_cost_usd)
         if remaining < required:

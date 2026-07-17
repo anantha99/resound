@@ -9,17 +9,14 @@ from resound.social.contracts import (
     CANONICAL_PATH_ORDER,
     SOURCE_ALIASES,
     AdapterLimits,
+    PublicSource,
     ResolvedProviderEvidence,
+    ResolvedSelector,
+    SelectorKind,
+    SourcePath,
     canonical_json,
     sha256_value,
 )
-
-SOURCE_CONFIG_ALIASES = {
-    "instagram_public": "instagram",
-    "x_public": "x",
-    "twitter": "x",
-    "youtube_comments": "youtube",
-}
 
 SOURCE_CAPABILITIES: dict[str, tuple[str, ...]] = {
     "reddit": ("official_discovery", "mention_discovery"),
@@ -63,7 +60,14 @@ def normalize_source_mapping(sources: dict[str, Any]) -> dict[str, dict[str, Any
     return normalized
 
 
-def normalize_selectors(source: str, config: dict[str, Any], path: str) -> tuple[str, ...]:
+def normalize_selectors(
+    source: str,
+    config: dict[str, Any],
+    path: str,
+) -> tuple[ResolvedSelector, ...]:
+    paths = config.get("paths", {})
+    path_config = paths.get(path, {}) if isinstance(paths, dict) else {}
+    configured = path_config.get("selectors") if isinstance(path_config, dict) else None
     if source == "instagram" and path == "mention_discovery":
         forbidden = ("search_terms", "caption_keywords", "keywords", "mention_terms")
         present = [key for key in forbidden if config.get(key)]
@@ -72,30 +76,77 @@ def normalize_selectors(source: str, config: dict[str, Any], path: str) -> tuple
                 "Instagram does not support free-text mention terms; use hashtags or explicit "
                 "public profile/place/user searches"
             )
-        selectors: list[str] = []
-        for key in (
-            "hashtags",
-            "public_profile_searches",
-            "public_place_searches",
-            "public_user_searches",
+    if configured is not None:
+        if source in {"instagram", "tiktok"} and any(
+            not isinstance(item, dict) for item in _selector_list(configured, path)
         ):
-            selectors.extend(_string_list(config.get(key, []), key))
+            raise SourceConfigError(
+                f"{source} path selectors must preserve typed {{kind,value}} entries"
+            )
+        selectors = _typed_selectors(configured, f"{path}.selectors")
+        _validate_source_selector_kinds(source, path, selectors)
+        return _dedupe_selectors(selectors)
+
+    if source == "instagram" and path == "mention_discovery":
+        selectors: list[ResolvedSelector] = []
+        for key, kind in (
+            ("hashtags", SelectorKind.HASHTAG),
+            ("public_profile_searches", SelectorKind.PROFILE),
+            ("public_place_searches", SelectorKind.PLACE),
+            ("public_user_searches", SelectorKind.USER),
+        ):
+            selectors.extend(
+                ResolvedSelector(kind=kind, value=value)
+                for value in _string_list(config.get(key, []), key)
+            )
         if len(selectors) > 6:
             raise SourceConfigError("Instagram mention selectors exceed hard ceiling 6")
-        return _dedupe(selectors)
+        return _dedupe_selectors(selectors)
 
-    paths = config.get("paths", {})
-    path_config = paths.get(path, {}) if isinstance(paths, dict) else {}
-    configured = path_config.get("selectors") if isinstance(path_config, dict) else None
-    if configured is None:
-        if path.startswith("official"):
-            configured = config.get("official_urls") or config.get("handles") or []
-        else:
-            configured = config.get("search_terms") or []
-    selectors = _string_list(configured, f"{path}.selectors")
-    if source == "instagram" and path == "official_discovery" and len(selectors) > 2:
-        raise SourceConfigError("Instagram official selectors exceed hard ceiling 2")
-    return _dedupe(selectors)
+    if source == "instagram" and path == "official_discovery":
+        selectors = tuple(
+            ResolvedSelector(kind=SelectorKind.URL, value=value)
+            for value in _string_list(config.get("official_urls", []), "official_urls")
+        )
+        if len(selectors) > 2:
+            raise SourceConfigError("Instagram official selectors exceed hard ceiling 2")
+        return selectors
+
+    if source == "tiktok":
+        if path == "official_discovery":
+            return tuple(
+                ResolvedSelector(kind=SelectorKind.PROFILE, value=value)
+                for value in _string_list(config.get("profiles", []), "profiles")
+            )
+        if path == "mention_discovery":
+            selectors = [
+                *(
+                    ResolvedSelector(kind=SelectorKind.HASHTAG, value=value)
+                    for value in _string_list(config.get("hashtags", []), "hashtags")
+                ),
+                *(
+                    ResolvedSelector(kind=SelectorKind.SEARCH, value=value)
+                    for value in _string_list(config.get("search_queries", []), "search_queries")
+                ),
+            ]
+            return _dedupe_selectors(selectors)
+        return ()
+
+    if path.startswith("official"):
+        configured = config.get("official_urls") or config.get("handles") or config.get(
+            "subreddits", []
+        )
+    else:
+        configured = config.get("search_terms") or []
+    kind = {
+        ("reddit", "official_discovery"): SelectorKind.SUBREDDIT,
+        ("x", "official_discovery"): SelectorKind.HANDLE,
+        ("youtube", "official_discovery"): SelectorKind.URL,
+    }.get((source, path), SelectorKind.SEARCH)
+    return tuple(
+        ResolvedSelector(kind=kind, value=value)
+        for value in _string_list(configured, f"{path}.selectors")
+    )
 
 
 def selected_paths_for_config(source: str, config: dict[str, Any]) -> tuple[str, ...]:
@@ -120,15 +171,48 @@ def approved_limits(config: dict[str, Any]) -> AdapterLimits:
         raise SourceConfigError(f"invalid source limits: {exc}") from exc
 
 
-def provider_evidence(config: dict[str, Any]) -> tuple[ResolvedProviderEvidence, ...]:
+def provider_evidence(
+    source: str,
+    config: dict[str, Any],
+    selected_paths: tuple[str, ...],
+) -> tuple[ResolvedProviderEvidence, ...]:
     raw = config.get("provider_evidence")
     values = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
     if not values:
         raise SourceConfigError("approved source is missing provider_evidence")
     try:
-        return tuple(ResolvedProviderEvidence.model_validate(value) for value in values)
+        evidence = tuple(ResolvedProviderEvidence.model_validate(value) for value in values)
     except ValueError as exc:
         raise SourceConfigError(f"invalid provider evidence: {exc}") from exc
+    identities = [(item.source, item.path, item.actor_role) for item in evidence]
+    if len(set(identities)) != len(identities):
+        raise SourceConfigError("approved source has duplicate source/path/actor-role evidence")
+    for path in selected_paths:
+        from resound.social.registry import expected_actor_registration
+
+        role, actor = expected_actor_registration(source, path)
+        matches = [
+            item
+            for item in evidence
+            if item.source == PublicSource(source)
+            and item.path == SourcePath(path)
+            and item.actor_role == role
+        ]
+        if len(matches) != 1:
+            raise SourceConfigError(
+                f"source {source} requires exactly one evidence entry for {path}/{role.value}"
+            )
+        match = matches[0]
+        if (match.actor_id, match.build_id, match.build_number) != (
+            actor.actor_id,
+            actor.build_id,
+            actor.build_number,
+        ):
+            raise SourceConfigError(
+                f"source {source} evidence actor/build does not match expected "
+                f"{path}/{role.value} registration"
+            )
+    return evidence
 
 
 def approval_envelope(config: dict[str, Any]) -> dict[str, Any]:
@@ -156,7 +240,7 @@ def verify_approval(source: str, config: dict[str, Any]) -> str:
             f"source {source} approval fingerprint is missing or stale; manually clearing "
             "preflight_required does not approve execution"
         )
-    provider_evidence(config)
+    provider_evidence(source, config, selected_paths_for_config(source, config))
     return expected
 
 
@@ -181,6 +265,52 @@ def _string_list(value: Any, name: str) -> list[str]:
     return result
 
 
-def _dedupe(values: list[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(values))
+def _selector_list(value: Any, name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise SourceConfigError(f"{name} must be a selector list")
+    return value
+
+
+def _typed_selectors(value: Any, name: str) -> list[ResolvedSelector]:
+    try:
+        return [ResolvedSelector.model_validate(item) for item in _selector_list(value, name)]
+    except ValueError as exc:
+        raise SourceConfigError(f"invalid {name}: {exc}") from exc
+
+
+def _dedupe_selectors(values: list[ResolvedSelector]) -> tuple[ResolvedSelector, ...]:
+    result: list[ResolvedSelector] = []
+    seen: set[tuple[SelectorKind, str]] = set()
+    for selector in values:
+        identity = (selector.kind, selector.value)
+        if identity not in seen:
+            result.append(selector)
+            seen.add(identity)
+    return tuple(result)
+
+
+def _validate_source_selector_kinds(
+    source: str,
+    path: str,
+    selectors: list[ResolvedSelector],
+) -> None:
+    allowed = {
+        ("instagram", "official_discovery"): {SelectorKind.URL},
+        ("instagram", "mention_discovery"): {
+            SelectorKind.HASHTAG,
+            SelectorKind.PROFILE,
+            SelectorKind.PLACE,
+            SelectorKind.USER,
+        },
+        ("tiktok", "official_discovery"): {SelectorKind.PROFILE},
+        ("tiktok", "mention_discovery"): {SelectorKind.HASHTAG, SelectorKind.SEARCH},
+    }.get((source, path))
+    if allowed is not None:
+        invalid = sorted(
+            {selector.kind.value for selector in selectors if selector.kind not in allowed}
+        )
+        if invalid:
+            raise SourceConfigError(
+                f"{source} {path} does not support selector kind(s): {', '.join(invalid)}"
+            )
 

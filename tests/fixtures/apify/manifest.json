@@ -2,11 +2,13 @@
   "manifest_version": "2026-07-17.task1-incomplete",
   "entries": [
     {
+      "source": "reddit",
+      "path": "official_discovery",
+      "actor_role": "discovery",
       "actor_id": "solidcode/reddit-scraper",
       "build_id": "LxJ3Vm9RHSEJcQEYK",
       "build_number": "1.1.31",
       "captured_at": null,
-      "path": "official_discovery",
       "sanitized_input": {
         "subreddits": [],
         "searches": [],
@@ -32,11 +34,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "reddit",
+      "path": "mention_discovery",
+      "actor_role": "discovery",
       "actor_id": "solidcode/reddit-scraper",
       "build_id": "LxJ3Vm9RHSEJcQEYK",
       "build_number": "1.1.31",
       "captured_at": null,
-      "path": "mention_discovery",
       "sanitized_input": {
         "subreddits": [],
         "searches": [],
@@ -62,11 +66,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "instagram",
+      "path": "official_discovery",
+      "actor_role": "discovery",
       "actor_id": "apify/instagram-scraper",
       "build_id": "AnGYqGQjcKAa1VSUK",
       "build_number": "0.0.690",
       "captured_at": null,
-      "path": "official_discovery",
       "sanitized_input": {
         "directUrls": []
       },
@@ -90,11 +96,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "instagram",
+      "path": "mention_discovery",
+      "actor_role": "discovery",
       "actor_id": "apify/instagram-scraper",
       "build_id": "AnGYqGQjcKAa1VSUK",
       "build_number": "0.0.690",
       "captured_at": null,
-      "path": "mention_discovery",
       "sanitized_input": {
         "directUrls": []
       },
@@ -118,39 +126,13 @@
       "canary_evidence_sha256": null
     },
     {
-      "actor_id": "apify/instagram-comment-scraper",
-      "build_id": "QnsnqzHndqNZTLqWw",
-      "build_number": "0.0.511",
-      "captured_at": null,
+      "source": "instagram",
       "path": "official_comments",
-      "sanitized_input": {
-        "directUrls": []
-      },
-      "input_url_shape": "string",
-      "provider_declared_input_schema_reference": "apify://actors/apify/instagram-comment-scraper/builds/QnsnqzHndqNZTLqWw/input-schema",
-      "provider_declared_input_schema_sha256": null,
-      "provider_declared_input_schema_sha256_prefix": "4b34f7eb",
-      "provider_declared_output_schema_reference": "apify://actors/apify/instagram-comment-scraper/builds/QnsnqzHndqNZTLqWw/output-schema",
-      "provider_declared_output_schema_sha256": null,
-      "provider_declared_output_schema_sha256_prefix": "2b07394d",
-      "fixture_path": null,
-      "fixture_sha256": null,
-      "fixture_derived_shape_reference": null,
-      "fixture_derived_shape_sha256": null,
-      "charge_quantum_usd": null,
-      "minimum_call_charge_usd": null,
-      "conservative_request_cost_usd": null,
-      "pricing_evidence_reference": null,
-      "canary_required": false,
-      "canary_evidence_reference": null,
-      "canary_evidence_sha256": null
-    },
-    {
+      "actor_role": "comments",
       "actor_id": "apify/instagram-comment-scraper",
       "build_id": "QnsnqzHndqNZTLqWw",
       "build_number": "0.0.511",
       "captured_at": null,
-      "path": "mention_comments",
       "sanitized_input": {
         "directUrls": []
       },
@@ -174,11 +156,43 @@
       "canary_evidence_sha256": null
     },
     {
-      "actor_id": "clockworks/tiktok-scraper",
-      "build_id": "JYyRr8f5BczSjcmPO",
-      "build_number": "0.0.561",
+      "source": "instagram",
+      "path": "mention_comments",
+      "actor_role": "comments",
+      "actor_id": "apify/instagram-comment-scraper",
+      "build_id": "QnsnqzHndqNZTLqWw",
+      "build_number": "0.0.511",
       "captured_at": null,
+      "sanitized_input": {
+        "directUrls": []
+      },
+      "input_url_shape": "string",
+      "provider_declared_input_schema_reference": "apify://actors/apify/instagram-comment-scraper/builds/QnsnqzHndqNZTLqWw/input-schema",
+      "provider_declared_input_schema_sha256": null,
+      "provider_declared_input_schema_sha256_prefix": "4b34f7eb",
+      "provider_declared_output_schema_reference": "apify://actors/apify/instagram-comment-scraper/builds/QnsnqzHndqNZTLqWw/output-schema",
+      "provider_declared_output_schema_sha256": null,
+      "provider_declared_output_schema_sha256_prefix": "2b07394d",
+      "fixture_path": null,
+      "fixture_sha256": null,
+      "fixture_derived_shape_reference": null,
+      "fixture_derived_shape_sha256": null,
+      "charge_quantum_usd": null,
+      "minimum_call_charge_usd": null,
+      "conservative_request_cost_usd": null,
+      "pricing_evidence_reference": null,
+      "canary_required": false,
+      "canary_evidence_reference": null,
+      "canary_evidence_sha256": null
+    },
+    {
+      "source": "tiktok",
       "path": "official_discovery",
+      "actor_role": "discovery",
+      "actor_id": "clockworks/tiktok-scraper",
+      "build_id": "JYyRr8f5BczSjcmPO",
+      "build_number": "0.0.561",
+      "captured_at": null,
       "sanitized_input": {},
       "input_url_shape": "none",
       "provider_declared_input_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/input-schema",
@@ -200,11 +214,13 @@
       "canary_evidence_sha256": null
     },
     {
-      "actor_id": "clockworks/tiktok-scraper",
-      "build_id": "JYyRr8f5BczSjcmPO",
-      "build_number": "0.0.561",
-      "captured_at": null,
+      "source": "tiktok",
       "path": "mention_discovery",
+      "actor_role": "discovery",
+      "actor_id": "clockworks/tiktok-scraper",
+      "build_id": "JYyRr8f5BczSjcmPO",
+      "build_number": "0.0.561",
+      "captured_at": null,
       "sanitized_input": {},
       "input_url_shape": "none",
       "provider_declared_input_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/input-schema",
@@ -226,39 +242,13 @@
       "canary_evidence_sha256": null
     },
     {
-      "actor_id": "clockworks/tiktok-scraper",
-      "build_id": "JYyRr8f5BczSjcmPO",
-      "build_number": "0.0.561",
-      "captured_at": null,
+      "source": "tiktok",
       "path": "official_comments",
-      "sanitized_input": {
-        "commentsDatasetUrl": "<exact-provider-dataset-url>"
-      },
-      "input_url_shape": "none",
-      "provider_declared_input_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/input-schema",
-      "provider_declared_input_schema_sha256": null,
-      "provider_declared_input_schema_sha256_prefix": "3c657f7b",
-      "provider_declared_output_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/output-schema",
-      "provider_declared_output_schema_sha256": null,
-      "provider_declared_output_schema_sha256_prefix": "84ba0128",
-      "fixture_path": null,
-      "fixture_sha256": null,
-      "fixture_derived_shape_reference": null,
-      "fixture_derived_shape_sha256": null,
-      "charge_quantum_usd": null,
-      "minimum_call_charge_usd": "0.50",
-      "conservative_request_cost_usd": null,
-      "pricing_evidence_reference": "Apify build metadata minimalMaxTotalChargeUsd",
-      "canary_required": false,
-      "canary_evidence_reference": null,
-      "canary_evidence_sha256": null
-    },
-    {
+      "actor_role": "comments_dataset",
       "actor_id": "clockworks/tiktok-scraper",
       "build_id": "JYyRr8f5BczSjcmPO",
       "build_number": "0.0.561",
       "captured_at": null,
-      "path": "mention_comments",
       "sanitized_input": {
         "commentsDatasetUrl": "<exact-provider-dataset-url>"
       },
@@ -282,11 +272,43 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "tiktok",
+      "path": "mention_comments",
+      "actor_role": "comments_dataset",
+      "actor_id": "clockworks/tiktok-scraper",
+      "build_id": "JYyRr8f5BczSjcmPO",
+      "build_number": "0.0.561",
+      "captured_at": null,
+      "sanitized_input": {
+        "commentsDatasetUrl": "<exact-provider-dataset-url>"
+      },
+      "input_url_shape": "none",
+      "provider_declared_input_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/input-schema",
+      "provider_declared_input_schema_sha256": null,
+      "provider_declared_input_schema_sha256_prefix": "3c657f7b",
+      "provider_declared_output_schema_reference": "apify://actors/clockworks/tiktok-scraper/builds/JYyRr8f5BczSjcmPO/output-schema",
+      "provider_declared_output_schema_sha256": null,
+      "provider_declared_output_schema_sha256_prefix": "84ba0128",
+      "fixture_path": null,
+      "fixture_sha256": null,
+      "fixture_derived_shape_reference": null,
+      "fixture_derived_shape_sha256": null,
+      "charge_quantum_usd": null,
+      "minimum_call_charge_usd": "0.50",
+      "conservative_request_cost_usd": null,
+      "pricing_evidence_reference": "Apify build metadata minimalMaxTotalChargeUsd",
+      "canary_required": false,
+      "canary_evidence_reference": null,
+      "canary_evidence_sha256": null
+    },
+    {
+      "source": "x",
+      "path": "official_discovery",
+      "actor_role": "discovery",
       "actor_id": "apidojo/twitter-scraper-lite",
       "build_id": "NqWYV0k5wlJ9R5bi6",
       "build_number": "0.0.935",
       "captured_at": "2026-07-17T02:05:54.546Z",
-      "path": "official_discovery",
       "sanitized_input": {
         "startUrls": [],
         "twitterHandles": [],
@@ -312,11 +334,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "x",
+      "path": "mention_discovery",
+      "actor_role": "discovery",
       "actor_id": "apidojo/twitter-scraper-lite",
       "build_id": "NqWYV0k5wlJ9R5bi6",
       "build_number": "0.0.935",
       "captured_at": "2026-07-17T02:05:54.546Z",
-      "path": "mention_discovery",
       "sanitized_input": {
         "startUrls": [],
         "twitterHandles": [],
@@ -342,11 +366,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "youtube",
+      "path": "official_discovery",
+      "actor_role": "discovery",
       "actor_id": "streamers/youtube-scraper",
       "build_id": "N0ksZ5khxS6TcgW8s",
       "build_number": "0.0.273",
       "captured_at": null,
-      "path": "official_discovery",
       "sanitized_input": {
         "startUrls": [
           {
@@ -374,11 +400,13 @@
       "canary_evidence_sha256": null
     },
     {
+      "source": "youtube",
+      "path": "mention_discovery",
+      "actor_role": "discovery",
       "actor_id": "streamers/youtube-scraper",
       "build_id": "N0ksZ5khxS6TcgW8s",
       "build_number": "0.0.273",
       "captured_at": null,
-      "path": "mention_discovery",
       "sanitized_input": {
         "startUrls": [
           {

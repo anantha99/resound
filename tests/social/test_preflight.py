@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from resound.social.contracts import ProviderEvidenceManifest, ProviderEvidenceRecord
 from resound.social.preflight import (
@@ -9,6 +10,7 @@ from resound.social.preflight import (
     load_evidence_manifest,
     validate_manifest_entry,
 )
+from resound.social.registry import ACTOR_REGISTRY
 
 
 def test_manifest_truthfully_scaffolds_fourteen_incomplete_path_captures() -> None:
@@ -48,10 +50,13 @@ def test_replacement_x_and_source_specific_url_evidence_are_recorded() -> None:
 
 
 def test_formal_output_fixture_and_pricing_evidence_build_deterministic_patch() -> None:
+    actor = ACTOR_REGISTRY["x_discovery"]
     entry = ProviderEvidenceRecord(
-        actor_id="owner/actor",
-        build_id="build-id",
-        build_number="1.2.3",
+        source="x",
+        actor_role="discovery",
+        actor_id=actor.actor_id,
+        build_id=actor.build_id,
+        build_number=actor.build_number,
         path="mention_discovery",
         sanitized_input={"searchTerms": ["Acme"]},
         input_url_shape="string",
@@ -80,4 +85,82 @@ def test_formal_output_fixture_and_pricing_evidence_build_deterministic_patch() 
     assert first == second
     assert first["preflight_required"] is False
     assert len(first["approved_envelope_fingerprint"]) == 64
+
+
+def test_manifest_identity_never_matches_same_named_path_from_another_source() -> None:
+    actor = ACTOR_REGISTRY["youtube_discovery"]
+    entry = ProviderEvidenceRecord(
+        source="youtube",
+        actor_role="discovery",
+        actor_id=actor.actor_id,
+        build_id=actor.build_id,
+        build_number=actor.build_number,
+        path="mention_discovery",
+        sanitized_input={"searchQueries": ["Acme"]},
+        input_url_shape="request_object",
+        provider_declared_input_schema_reference="provider://input",
+        provider_declared_input_schema_sha256="a" * 64,
+        provider_declared_output_schema_reference="provider://output",
+        provider_declared_output_schema_sha256="b" * 64,
+        fixture_path="tests/fixtures/apify/actor.json",
+        fixture_sha256="c" * 64,
+        fixture_derived_shape_reference="tests/fixtures/apify/actor.shape.json",
+        fixture_derived_shape_sha256="d" * 64,
+        charge_quantum_usd="0.001",
+        minimum_call_charge_usd="0.01",
+        conservative_request_cost_usd="0.05",
+        pricing_evidence_reference="provider://pricing",
+        canary_required=False,
+    )
+    manifest = ProviderEvidenceManifest(manifest_version="test-1", entries=(entry,))
+
+    with pytest.raises(PreflightError, match="x/mention_discovery/discovery; found 0"):
+        build_approval_patch(
+            source="x",
+            source_config={
+                "paths": {"mention_discovery": {"enabled": True}},
+                "search_terms": ["Acme"],
+            },
+            manifest=manifest,
+        )
+
+
+def test_manifest_rejects_duplicate_identity_and_wrong_registered_actor() -> None:
+    actor = ACTOR_REGISTRY["x_discovery"]
+    base = ProviderEvidenceRecord(
+        source="x",
+        actor_role="discovery",
+        actor_id=actor.actor_id,
+        build_id=actor.build_id,
+        build_number=actor.build_number,
+        path="mention_discovery",
+        sanitized_input={"searchTerms": ["Acme"]},
+        input_url_shape="string",
+        provider_declared_input_schema_reference="provider://input",
+        provider_declared_input_schema_sha256="a" * 64,
+        provider_declared_output_schema_reference="provider://output",
+        provider_declared_output_schema_sha256="b" * 64,
+        fixture_path="tests/fixtures/apify/actor.json",
+        fixture_sha256="c" * 64,
+        fixture_derived_shape_reference="tests/fixtures/apify/actor.shape.json",
+        fixture_derived_shape_sha256="d" * 64,
+        charge_quantum_usd="0.001",
+        minimum_call_charge_usd="0.01",
+        conservative_request_cost_usd="0.05",
+        pricing_evidence_reference="provider://pricing",
+        canary_required=False,
+    )
+    with pytest.raises(ValidationError, match="duplicate source/path/actor-role"):
+        ProviderEvidenceManifest(manifest_version="test-1", entries=(base, base))
+
+    wrong = base.model_copy(update={"build_id": "wrong-build"})
+    with pytest.raises(PreflightError, match="actor/build mismatch"):
+        build_approval_patch(
+            source="x",
+            source_config={
+                "paths": {"mention_discovery": {"enabled": True}},
+                "search_terms": ["Acme"],
+            },
+            manifest=ProviderEvidenceManifest(manifest_version="test-1", entries=(wrong,)),
+        )
 

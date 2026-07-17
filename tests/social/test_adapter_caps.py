@@ -5,6 +5,7 @@ import pytest
 
 from resound.social.common import (
     ProviderBudget,
+    UnresolvedActorStartError,
     allocate_signal_cap,
     fallback_identity,
     floor_to_quantum,
@@ -34,8 +35,9 @@ def test_decimal_budget_floors_reserves_and_blocks_unresolved_start() -> None:
     assert floor_to_quantum(Decimal("0.667"), Decimal("0.01")) == Decimal("0.66")
     reservation = budget.reserve("run-1")
     assert reservation.amount_usd == Decimal("0.66")
-    with pytest.raises(RuntimeError, match="unresolved"):
+    with pytest.raises(UnresolvedActorStartError, match="unresolved") as exc_info:
         budget.reserve("run-2")
+    assert exc_info.value.reservation_id == "run-1"
     budget.reconcile("run-1", Decimal("0.25"))
     assert budget.reconciled_spend_usd == Decimal("0.583")
 

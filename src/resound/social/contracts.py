@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
@@ -75,6 +76,36 @@ class SourcePath(StrEnum):
     MENTION_COMMENTS = "mention_comments"
 
 
+class ActorRole(StrEnum):
+    DISCOVERY = "discovery"
+    COMMENTS = "comments"
+    COMMENTS_DATASET = "comments_dataset"
+
+
+class SelectorKind(StrEnum):
+    URL = "url"
+    HANDLE = "handle"
+    SUBREDDIT = "subreddit"
+    SEARCH = "search"
+    HASHTAG = "hashtag"
+    PROFILE = "profile"
+    PLACE = "place"
+    USER = "user"
+
+
+class ResolvedSelector(FrozenModel):
+    kind: SelectorKind
+    value: str
+
+    @field_validator("value")
+    @classmethod
+    def non_empty_value(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("selector value cannot be empty")
+        return normalized
+
+
 CANONICAL_SOURCE_ORDER = ("reddit", "instagram", "tiktok", "x", "youtube")
 CANONICAL_PATH_ORDER = tuple(path.value for path in SourcePath)
 SOURCE_ALIASES = {
@@ -130,6 +161,9 @@ class ApprovedSourceConfigFingerprint(FrozenModel):
 
 
 class ResolvedProviderEvidence(FrozenModel):
+    source: PublicSource
+    path: SourcePath
+    actor_role: ActorRole
     actor_id: str
     build_id: str
     build_number: str
@@ -175,6 +209,8 @@ class ResolvedProviderEvidence(FrozenModel):
 class ProviderEvidenceRecord(FrozenModel):
     """Truthful manifest evidence, including intentionally incomplete captures."""
 
+    source: PublicSource
+    actor_role: ActorRole
     actor_id: str
     build_id: str
     build_number: str
@@ -229,11 +265,20 @@ class ProviderEvidenceManifest(FrozenModel):
     manifest_version: str
     entries: tuple[ProviderEvidenceRecord, ...]
 
+    @model_validator(mode="after")
+    def unique_evidence_identities(self) -> ProviderEvidenceManifest:
+        identities = [
+            (entry.source, entry.path, entry.actor_role) for entry in self.entries
+        ]
+        if len(set(identities)) != len(identities):
+            raise ValueError("manifest contains duplicate source/path/actor-role evidence")
+        return self
+
 
 class ResolvedPathConfig(FrozenModel):
     path: SourcePath
     enabled: bool = True
-    selectors: tuple[str, ...] = ()
+    selectors: tuple[ResolvedSelector, ...] = ()
     actor_input_mode: str
     max_items: int
     max_parents: int = 0
@@ -336,6 +381,40 @@ class AdapterLimits(FrozenModel):
             raise ValueError("all adapter limits must be greater than zero")
         return value
 
+    def deadline_context(
+        self,
+        *,
+        deadline_monotonic: float,
+        monotonic: Callable[[], float],
+    ) -> ProviderDeadlineContext:
+        return ProviderDeadlineContext(
+            deadline_monotonic=deadline_monotonic,
+            finalization_reserve_seconds=float(self.deadline_reserve_seconds),
+            monotonic=monotonic,
+        )
+
+
+@dataclass(frozen=True)
+class ProviderDeadlineContext:
+    """Enforce an activity deadline while preserving finalization time."""
+
+    deadline_monotonic: float
+    finalization_reserve_seconds: float
+    monotonic: Callable[[], float]
+
+    def remaining_seconds(self, operation: str) -> float:
+        remaining = (
+            self.deadline_monotonic
+            - self.monotonic()
+            - self.finalization_reserve_seconds
+        )
+        if remaining <= 0:
+            raise TimeoutError(f"Apify {operation} deadline elapsed before provider call")
+        return remaining
+
+    def request_timeout(self, maximum_seconds: float, operation: str) -> float:
+        return min(maximum_seconds, self.remaining_seconds(operation))
+
 
 class SourceLimitOverrides(FrozenModel):
     max_signals_per_source: int | None = None
@@ -378,6 +457,26 @@ class ResolvedSourceConfigSnapshot(FrozenModel):
     processing: ResolvedProcessingConfigSnapshot
     approval_fingerprint: ApprovedSourceConfigFingerprint
 
+    def evidence_for(
+        self,
+        path: SourcePath,
+        actor_role: ActorRole | None = None,
+    ) -> ResolvedProviderEvidence:
+        matches = [
+            evidence
+            for evidence in self.provider_evidence
+            if evidence.source == self.source
+            and evidence.path == path
+            and (actor_role is None or evidence.actor_role == actor_role)
+        ]
+        if len(matches) != 1:
+            role = actor_role.value if actor_role is not None else "any"
+            raise ValueError(
+                f"snapshot requires exactly one evidence entry for "
+                f"{self.source.value}/{path.value}/{role}; found {len(matches)}"
+            )
+        return matches[0]
+
 
 class ResolvedPublicListeningRequest(FrozenModel):
     organization_id: int | None = None
@@ -414,7 +513,43 @@ class ProviderDatasetRef(FrozenModel):
     requested_limit: int
     fetched_count: int
     processed_count: int
+    raw_fetched_count: int | None = None
+    provider_over_return_count: int = 0
     provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderOverReturn(FrozenModel):
+    requested_count: int
+    raw_count: int
+    retained_count: int
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> ProviderOverReturn:
+        if self.requested_count < 0 or self.retained_count < 0:
+            raise ValueError("provider row counts cannot be negative")
+        if self.raw_count <= self.requested_count:
+            raise ValueError("provider over-return requires raw_count above requested_count")
+        if self.retained_count > self.requested_count:
+            raise ValueError("retained_count cannot exceed requested_count")
+        return self
+
+    def as_issue(
+        self,
+        *,
+        path: SourcePath | None = None,
+        dataset_id: str | None = None,
+    ) -> AdapterIssue:
+        return AdapterIssue(
+            path=path,
+            code="provider_over_return",
+            issue_class="ProviderLimitViolation",
+            message=(
+                f"provider returned {self.raw_count} rows for requested limit "
+                f"{self.requested_count}; retained {self.retained_count}"
+            ),
+            preserved_work=True,
+            dataset_id=dataset_id,
+        )
 
 
 class AdapterIssue(FrozenModel):

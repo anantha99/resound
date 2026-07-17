@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from resound.social.contracts import PublicSource
+from resound.social.contracts import ActorRole, PublicSource, SourcePath
 
 
 @dataclass(frozen=True)
@@ -99,6 +99,35 @@ ACTOR_REGISTRY = {
         url_shape="list[request_object]",
     ),
 }
+
+
+def actor_role_for_path(source: str, path: SourcePath | str) -> ActorRole:
+    normalized_path = SourcePath(path)
+    if normalized_path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+        return ActorRole.COMMENTS_DATASET if source == "tiktok" else ActorRole.COMMENTS
+    return ActorRole.DISCOVERY
+
+
+def expected_actor_registration(
+    source: str,
+    path: SourcePath | str,
+) -> tuple[ActorRole, ActorRegistration]:
+    role = actor_role_for_path(source, path)
+    key = {
+        ("reddit", ActorRole.DISCOVERY): "reddit_discovery",
+        ("instagram", ActorRole.DISCOVERY): "instagram_discovery",
+        ("instagram", ActorRole.COMMENTS): "instagram_comments",
+        ("tiktok", ActorRole.DISCOVERY): "tiktok",
+        ("tiktok", ActorRole.COMMENTS_DATASET): "tiktok",
+        ("x", ActorRole.DISCOVERY): "x_discovery",
+        ("youtube", ActorRole.DISCOVERY): "youtube_discovery",
+    }.get((source, role))
+    if key is None:
+        raise ValueError(
+            f"no expected actor registration for "
+            f"{source}/{SourcePath(path).value}/{role}"
+        )
+    return role, ACTOR_REGISTRY[key]
 
 
 def get_source_adapter(source: str):

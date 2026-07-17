@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from resound.social.config import approval_envelope_fingerprint, normalize_selectors
-from resound.social.contracts import ProviderEvidenceManifest, ProviderEvidenceRecord
+from resound.social.contracts import ProviderEvidenceManifest, ProviderEvidenceRecord, PublicSource
+from resound.social.registry import expected_actor_registration
 
 
 class PreflightError(ValueError):
@@ -48,11 +49,32 @@ def build_approval_patch(
     ]
     for path in selected:
         normalize_selectors(source, source_config, path)
-    entries = [entry for entry in manifest.entries if entry.path.value in selected]
-    if not entries:
-        raise PreflightError(f"manifest has no evidence for selected {source} paths")
-    for entry in entries:
+    entries: list[ProviderEvidenceRecord] = []
+    for path in selected:
+        role, actor = expected_actor_registration(source, path)
+        matches = [
+            entry
+            for entry in manifest.entries
+            if entry.source == PublicSource(source)
+            and entry.path.value == path
+            and entry.actor_role == role
+        ]
+        if len(matches) != 1:
+            raise PreflightError(
+                f"manifest requires exactly one evidence entry for "
+                f"{source}/{path}/{role.value}; found {len(matches)}"
+            )
+        entry = matches[0]
+        if (entry.actor_id, entry.build_id, entry.build_number) != (
+            actor.actor_id,
+            actor.build_id,
+            actor.build_number,
+        ):
+            raise PreflightError(
+                f"manifest actor/build mismatch for {source}/{path}/{role.value}"
+            )
         validate_manifest_entry(entry)
+        entries.append(entry)
     patched = dict(source_config)
     patched["manifest_version"] = manifest.manifest_version
     patched["provider_evidence"] = [_resolved_evidence(entry) for entry in entries]
@@ -63,6 +85,9 @@ def build_approval_patch(
 
 def _resolved_evidence(entry: ProviderEvidenceRecord) -> dict[str, Any]:
     return {
+        "source": entry.source.value,
+        "path": entry.path.value,
+        "actor_role": entry.actor_role.value,
         "actor_id": entry.actor_id,
         "build_id": entry.build_id,
         "build_number": entry.build_number,

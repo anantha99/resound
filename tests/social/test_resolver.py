@@ -9,11 +9,15 @@ from resound.config import BrandConfig
 from resound.memory import SqlMemory
 from resound.social.config import approval_envelope_fingerprint
 from resound.social.contracts import (
+    ActorRole,
     ResolvedProcessingConfigSnapshot,
     SelectedPathInput,
+    SelectorKind,
     SourceLimitOverrides,
+    SourcePath,
     SourceSyncInput,
 )
+from resound.social.registry import expected_actor_registration
 from resound.social.resolver import parse_cli_request, resolve_public_listening_request
 
 HASH_A = "a" * 64
@@ -22,14 +26,28 @@ HASH_C = "c" * 64
 
 
 def _approved_source(*, source: str = "reddit") -> dict:
+    selector_kinds = {
+        "reddit": ("subreddit", "search"),
+        "instagram": ("url", "hashtag"),
+        "tiktok": ("profile", "hashtag"),
+        "x": ("handle", "search"),
+        "youtube": ("url", "search"),
+    }
+    official_kind, mention_kind = selector_kinds[source]
     config = {
         "enabled": True,
         "preflight_required": False,
         "manifest_version": "test-1",
         "search_terms": ["Acme"],
         "paths": {
-            "official_discovery": {"enabled": True, "selectors": ["https://acme.test"]},
-            "mention_discovery": {"enabled": True, "selectors": ["Acme"]},
+            "official_discovery": {
+                "enabled": True,
+                "selectors": [{"kind": official_kind, "value": "https://acme.test"}],
+            },
+            "mention_discovery": {
+                "enabled": True,
+                "selectors": [{"kind": mention_kind, "value": "Acme"}],
+            },
         },
         "limits": {
             "max_signals_per_source": 100,
@@ -43,11 +61,23 @@ def _approved_source(*, source: str = "reddit") -> dict:
             "page_size": 100,
             "deadline_reserve_seconds": 30,
         },
-        "provider_evidence": [
+        "provider_evidence": [],
+    }
+    for path in SourcePath:
+        if path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS} and source not in {
+            "instagram",
+            "tiktok",
+        }:
+            continue
+        role, actor = expected_actor_registration(source, path)
+        config["provider_evidence"].append(
             {
-                "actor_id": f"owner/{source}",
-                "build_id": "build-id",
-                "build_number": "1.2.3",
+                "source": source,
+                "path": path.value,
+                "actor_role": role.value,
+                "actor_id": actor.actor_id,
+                "build_id": actor.build_id,
+                "build_number": actor.build_number,
                 "provider_declared_input_schema_reference": "provider://input",
                 "provider_declared_input_schema_sha256": HASH_A,
                 "provider_declared_output_schema_reference": "provider://output",
@@ -59,8 +89,9 @@ def _approved_source(*, source: str = "reddit") -> dict:
                 "minimum_call_charge_usd": "0.01",
                 "conservative_request_cost_usd": "0.05",
             }
-        ],
-    }
+        )
+    if source == "instagram":
+        config.pop("search_terms")
     config["approved_envelope_fingerprint"] = approval_envelope_fingerprint(config)
     return config
 
@@ -118,7 +149,9 @@ def test_changed_provider_or_processing_values_change_execution_fingerprint() ->
     base = _brand({"reddit": _approved_source()})
     first = resolve_public_listening_request(_request(), brand_config=base, environment={})
     changed = deepcopy(base.sources)
-    changed["reddit"]["provider_evidence"][0]["build_number"] = "1.2.4"
+    changed["reddit"]["provider_evidence"][0]["provider_declared_input_schema_sha256"] = (
+        "d" * 64
+    )
     changed["reddit"]["approved_envelope_fingerprint"] = approval_envelope_fingerprint(
         changed["reddit"]
     )
@@ -187,7 +220,7 @@ def test_path_dependencies_and_instagram_free_text_capability() -> None:
         )
 
     dependency_config = _approved_source(source="instagram")
-    dependency_config.pop("search_terms")
+    dependency_config.pop("search_terms", None)
     dependency_config["hashtags"] = ["acme"]
     dependency_config["paths"]["official_comments"] = {"enabled": True}
     dependency_config["approved_envelope_fingerprint"] = approval_envelope_fingerprint(
@@ -204,6 +237,101 @@ def test_path_dependencies_and_instagram_free_text_capability() -> None:
             brand_config=_brand({"instagram": dependency_config}),
             environment={},
         )
+
+
+def test_typed_instagram_and_tiktok_selectors_preserve_provider_semantics() -> None:
+    instagram = _approved_source(source="instagram")
+    instagram["paths"]["mention_discovery"]["selectors"] = [
+        {"kind": "hashtag", "value": "acme"},
+        {"kind": "profile", "value": "acme-profile"},
+        {"kind": "place", "value": "acme-place"},
+        {"kind": "user", "value": "acme-user"},
+    ]
+    instagram["approved_envelope_fingerprint"] = approval_envelope_fingerprint(instagram)
+    resolved_instagram = resolve_public_listening_request(
+        _request(selected_sources=("instagram",)),
+        brand_config=_brand({"instagram": instagram}),
+        environment={},
+    )
+    mention = resolved_instagram.sources[0].paths[1]
+    assert [(selector.kind, selector.value) for selector in mention.selectors] == [
+        (SelectorKind.HASHTAG, "acme"),
+        (SelectorKind.PROFILE, "acme-profile"),
+        (SelectorKind.PLACE, "acme-place"),
+        (SelectorKind.USER, "acme-user"),
+    ]
+
+    tiktok = _approved_source(source="tiktok")
+    tiktok["paths"]["mention_discovery"]["selectors"] = [
+        {"kind": "hashtag", "value": "acme"},
+        {"kind": "search", "value": "Acme review"},
+    ]
+    tiktok["approved_envelope_fingerprint"] = approval_envelope_fingerprint(tiktok)
+    resolved_tiktok = resolve_public_listening_request(
+        _request(selected_sources=("tiktok",)),
+        brand_config=_brand({"tiktok": tiktok}),
+        environment={},
+    )
+    assert resolved_tiktok.sources[0].paths[0].selectors[0].kind == SelectorKind.PROFILE
+    assert [selector.kind for selector in resolved_tiktok.sources[0].paths[1].selectors] == [
+        SelectorKind.HASHTAG,
+        SelectorKind.SEARCH,
+    ]
+
+
+def test_invalid_typed_selector_kind_is_rejected() -> None:
+    instagram = _approved_source(source="instagram")
+    instagram["paths"]["mention_discovery"]["selectors"] = [
+        {"kind": "search", "value": "unsupported free text"}
+    ]
+    instagram["approved_envelope_fingerprint"] = approval_envelope_fingerprint(instagram)
+
+    with pytest.raises(ValueError, match="does not support selector kind"):
+        resolve_public_listening_request(
+            _request(selected_sources=("instagram",)),
+            brand_config=_brand({"instagram": instagram}),
+            environment={},
+        )
+
+
+def test_comment_allocations_honor_source_comment_cap_before_signal_cap() -> None:
+    instagram = _approved_source(source="instagram")
+    instagram["paths"].update(
+        {
+            "official_comments": {"enabled": True, "selectors": []},
+            "mention_comments": {"enabled": True, "selectors": []},
+        }
+    )
+    instagram["limits"]["max_comments_per_source"] = 30
+    instagram["approved_envelope_fingerprint"] = approval_envelope_fingerprint(instagram)
+    resolved = resolve_public_listening_request(
+        _request(selected_sources=("instagram",)),
+        brand_config=_brand({"instagram": instagram}),
+        environment={},
+    )
+
+    comments = [path for path in resolved.sources[0].paths if path.path.value.endswith("comments")]
+    assert [path.requested_row_maximum for path in comments] == [15, 15]
+    assert sum(path.requested_row_maximum for path in comments) == 30
+
+
+def test_snapshot_evidence_lookup_uses_exact_path_and_actor_role() -> None:
+    resolved = resolve_public_listening_request(
+        _request(),
+        brand_config=_brand({"reddit": _approved_source()}),
+        environment={},
+    )
+    snapshot = resolved.sources[0]
+    evidence = snapshot.evidence_for(SourcePath.MENTION_DISCOVERY, ActorRole.DISCOVERY)
+    assert evidence.path == SourcePath.MENTION_DISCOVERY
+
+    duplicate = snapshot.model_copy(
+        update={"provider_evidence": (*snapshot.provider_evidence, evidence)}
+    )
+    with pytest.raises(ValueError, match="found 2"):
+        duplicate.evidence_for(SourcePath.MENTION_DISCOVERY, ActorRole.DISCOVERY)
+    with pytest.raises(ValueError, match="found 0"):
+        snapshot.evidence_for(SourcePath.MENTION_DISCOVERY, ActorRole.COMMENTS)
 
 
 def test_cli_and_api_request_models_serialize_identically() -> None:

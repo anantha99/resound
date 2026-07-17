@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from resound.social.apify import ApifyClient, serialize_start_urls, validate_apify_dataset_url
+from resound.social.common import UnresolvedActorStartError
+from resound.social.contracts import AdapterLimits, ProviderDatasetRef, SourcePath
 
 
 class FakeClock:
@@ -40,7 +43,7 @@ def test_waits_for_actor_success_before_dataset_fetch() -> None:
         assert request.headers["Authorization"] == "Bearer secret-token"
         if request.url.path.endswith("/runs"):
             operations.append("start")
-            assert request.url.params["waitForFinish"] == "60"
+            assert request.url.params["waitForFinish"] == "10"
             return httpx.Response(
                 201,
                 json={
@@ -245,6 +248,50 @@ def test_deadline_and_cancellation_prevent_provider_calls() -> None:
     assert called is False
 
 
+def test_deadline_context_preserves_finalization_reserve_without_provider_calls() -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(500)
+
+    limits = AdapterLimits(deadline_reserve_seconds=30)
+    context = limits.deadline_context(deadline_monotonic=40, monotonic=lambda: 10)
+    client = ApifyClient("secret-token", transport=_transport(handler))
+
+    with pytest.raises(TimeoutError, match="actor start deadline elapsed"):
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: None,
+            deadline_context=context,
+        )
+    with pytest.raises(TimeoutError, match="dataset fetch deadline elapsed"):
+        client.fetch_dataset_items("dataset", limit=1, deadline_context=context)
+    assert called is False
+
+
+def test_actor_start_transport_failure_preserves_unresolved_reservation_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("response lost", request=request)
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    with pytest.raises(UnresolvedActorStartError) as exc_info:
+        client.run_actor(
+            "owner/actor",
+            {},
+            build_number="1.2.3",
+            expected_build_id="build-id",
+            max_total_charge_usd=Decimal("0.10"),
+            reservation_callback=lambda: SimpleNamespace(reservation_id="reservation-7"),
+        )
+    assert exc_info.value.reservation_id == "reservation-7"
+
+
 def test_bounded_dataset_paging_never_requests_more_than_remaining_limit() -> None:
     requests: list[tuple[str, str]] = []
 
@@ -258,6 +305,42 @@ def test_bounded_dataset_paging_never_requests_more_than_remaining_limit() -> No
 
     assert len(items) == 5
     assert requests == [("0", "2"), ("2", "2"), ("4", "1")]
+
+
+def test_provider_over_return_is_bounded_and_preserves_raw_count_issue() -> None:
+    client = ApifyClient(
+        "secret-token",
+        transport=_transport(
+            lambda request: httpx.Response(200, json=[{"id": index} for index in range(4)])
+        ),
+    )
+    items = client.fetch_dataset_items("dataset", limit=2, page_size=2)
+
+    assert len(items) == 2
+    assert items.raw_count == 4
+    assert items.over_return is not None
+    issue = items.over_return.as_issue(
+        path=SourcePath.MENTION_DISCOVERY,
+        dataset_id="dataset",
+    )
+    assert issue.code == "provider_over_return"
+    assert issue.issue_class == "ProviderLimitViolation"
+    dataset = ProviderDatasetRef(
+        path=SourcePath.MENTION_DISCOVERY,
+        dataset_id="dataset",
+        requested_limit=2,
+        fetched_count=2,
+        processed_count=2,
+        raw_fetched_count=items.raw_count,
+        provider_over_return_count=items.raw_count - len(items),
+    )
+    assert dataset.raw_fetched_count == 4
+    assert dataset.provider_over_return_count == 2
+
+
+def test_actor_start_wait_must_fit_heartbeat_interval() -> None:
+    with pytest.raises(RuntimeError, match="must not exceed the heartbeat interval"):
+        ApifyClient("secret-token", actor_start_wait_seconds=31)
 
 
 def test_source_specific_url_serialization_and_exact_tiktok_dataset_url() -> None:

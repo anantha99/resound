@@ -11,6 +11,32 @@ import httpx
 
 from resound.config import env
 from resound.social import ApifyQueryConfig
+from resound.social.common import UnresolvedActorStartError
+from resound.social.contracts import ProviderDeadlineContext, ProviderOverReturn
+
+
+class BoundedDatasetItems(list[dict[str, Any]]):
+    """List-compatible bounded rows with truthful provider raw-count metadata."""
+
+    def __init__(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        requested_count: int | None,
+        raw_count: int,
+    ) -> None:
+        super().__init__(items)
+        self.requested_count = requested_count
+        self.raw_count = raw_count
+        self.over_return = (
+            ProviderOverReturn(
+                requested_count=requested_count,
+                raw_count=raw_count,
+                retained_count=len(items),
+            )
+            if requested_count is not None and raw_count > requested_count
+            else None
+        )
 
 
 class ApifyClient:
@@ -21,6 +47,7 @@ class ApifyClient:
         timeout_seconds: float = 70.0,
         run_poll_timeout_seconds: float | None = None,
         run_poll_interval_seconds: float | None = None,
+        actor_start_wait_seconds: float | None = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         transport: httpx.BaseTransport | None = None,
@@ -41,6 +68,14 @@ class ApifyClient:
             env_name="APIFY_RUN_POLL_INTERVAL_SECONDS",
             default=2.0,
         )
+        self.actor_start_wait_seconds = _positive_float(
+            "actor_start_wait_seconds",
+            actor_start_wait_seconds,
+            env_name="APIFY_ACTOR_START_WAIT_SECONDS",
+            default=10.0,
+        )
+        if self.actor_start_wait_seconds > 30:
+            raise RuntimeError("actor_start_wait_seconds must not exceed the heartbeat interval")
         self.sleep = sleep
         self.monotonic = monotonic
         self.transport = transport
@@ -53,32 +88,51 @@ class ApifyClient:
         build_number: str,
         expected_build_id: str,
         max_total_charge_usd: Decimal,
-        reservation_callback: Callable[[], None],
+        reservation_callback: Callable[[], Any],
+        deadline_context: ProviderDeadlineContext | None = None,
         deadline_monotonic: float | None = None,
         deadline_reserve_seconds: float = 0,
         cancellation_requested: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         if cancellation_requested is not None and cancellation_requested():
             raise RuntimeError("Apify actor start cancelled before provider call")
-        timeout = self._remaining_timeout(
-            deadline_monotonic, "actor start", reserve_seconds=deadline_reserve_seconds
+        timeout = self._operation_timeout(
+            "actor start",
+            deadline_context=deadline_context,
+            deadline_monotonic=deadline_monotonic,
+            reserve_seconds=deadline_reserve_seconds,
         )
         url = f"https://api.apify.com/v2/acts/{apify_actor_path_id(actor_id)}/runs"
-        params = {"waitForFinish": "60"}
+        params = {"waitForFinish": f"{self.actor_start_wait_seconds:g}"}
         if not build_number.strip() or not expected_build_id.strip():
             raise ValueError("immutable build ID and number must be non-empty")
         params["build"] = build_number
         if max_total_charge_usd <= 0:
             raise ValueError("max_total_charge_usd must be greater than zero")
         params["maxTotalChargeUsd"] = format(max_total_charge_usd, "f")
-        reservation_callback()
-        with self._client(timeout_seconds=timeout) as client:
-            response = client.post(url, params=params, json=actor_input, headers=self._headers())
-            response.raise_for_status()
-            payload = response.json()
+        reservation = reservation_callback()
+        reservation_id = str(getattr(reservation, "reservation_id", actor_id))
+        try:
+            with self._client(timeout_seconds=timeout) as client:
+                response = client.post(
+                    url,
+                    params=params,
+                    json=actor_input,
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.RequestError as exc:
+            raise UnresolvedActorStartError(
+                reservation_id,
+                "Apify actor start transport failed after reservation; reconcile before retry",
+            ) from exc
         data = payload.get("data", payload)
         if not isinstance(data, dict):
-            raise RuntimeError("Apify actor run response did not include run data")
+            raise UnresolvedActorStartError(
+                reservation_id,
+                "Apify actor start response omitted Run data after reservation",
+            )
         _verify_run_build(
             data,
             expected_build_id=expected_build_id,
@@ -91,6 +145,7 @@ class ApifyClient:
         run: dict[str, Any],
         *,
         progress_callback: Callable[[], None] | None = None,
+        deadline_context: ProviderDeadlineContext | None = None,
         deadline_monotonic: float | None = None,
         cancellation_requested: Callable[[], bool] | None = None,
         cancellation_callback: Callable[[str], None] | None = None,
@@ -101,6 +156,11 @@ class ApifyClient:
         if not run_id:
             raise RuntimeError(f"Apify run is missing id ({_run_diagnostics(current)})")
         deadline = self.monotonic() + self.run_poll_timeout_seconds
+        if deadline_context is not None:
+            deadline = min(
+                deadline,
+                self.monotonic() + deadline_context.remaining_seconds("actor polling"),
+            )
         if deadline_monotonic is not None:
             deadline = min(deadline, deadline_monotonic)
         interval = self.run_poll_interval_seconds
@@ -162,22 +222,26 @@ class ApifyClient:
         *,
         limit: int | None = None,
         page_size: int = 100,
+        deadline_context: ProviderDeadlineContext | None = None,
         deadline_monotonic: float | None = None,
         cancellation_requested: Callable[[], bool] | None = None,
         dataset_url: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> BoundedDatasetItems:
         if limit is None:
-            return self._fetch_dataset_page(
+            page = self._fetch_dataset_page(
                 dataset_id,
                 offset=0,
                 limit=None,
                 deadline_monotonic=deadline_monotonic,
                 cancellation_requested=cancellation_requested,
                 dataset_url=dataset_url,
+                deadline_context=deadline_context,
             )
+            return BoundedDatasetItems(page, requested_count=None, raw_count=len(page))
         if limit <= 0 or page_size <= 0:
             raise ValueError("dataset limit and page_size must be greater than zero")
         items: list[dict[str, Any]] = []
+        raw_count = 0
         while len(items) < limit:
             requested = min(page_size, limit - len(items))
             page = self._fetch_dataset_page(
@@ -187,11 +251,13 @@ class ApifyClient:
                 deadline_monotonic=deadline_monotonic,
                 cancellation_requested=cancellation_requested,
                 dataset_url=dataset_url,
+                deadline_context=deadline_context,
             )
+            raw_count += len(page)
             items.extend(page[:requested])
             if len(page) < requested:
                 break
-        return items
+        return BoundedDatasetItems(items, requested_count=limit, raw_count=raw_count)
 
     def _fetch_dataset_page(
         self,
@@ -202,10 +268,15 @@ class ApifyClient:
         deadline_monotonic: float | None,
         cancellation_requested: Callable[[], bool] | None,
         dataset_url: str | None,
+        deadline_context: ProviderDeadlineContext | None,
     ) -> list[dict[str, Any]]:
         if cancellation_requested is not None and cancellation_requested():
             raise RuntimeError("Apify dataset fetch cancelled before provider call")
-        timeout = self._remaining_timeout(deadline_monotonic, "dataset fetch")
+        timeout = self._operation_timeout(
+            "dataset fetch",
+            deadline_context=deadline_context,
+            deadline_monotonic=deadline_monotonic,
+        )
         url = f"https://api.apify.com/v2/datasets/{dataset_id}/items"
         if dataset_url is not None:
             url = validate_apify_dataset_url(dataset_url, expected_dataset_id=dataset_id)
@@ -233,6 +304,22 @@ class ApifyClient:
         if remaining <= 0:
             raise TimeoutError(f"Apify {operation} deadline elapsed before provider call")
         return min(self.timeout_seconds, remaining)
+
+    def _operation_timeout(
+        self,
+        operation: str,
+        *,
+        deadline_context: ProviderDeadlineContext | None,
+        deadline_monotonic: float | None,
+        reserve_seconds: float = 0,
+    ) -> float:
+        if deadline_context is not None:
+            return deadline_context.request_timeout(self.timeout_seconds, operation)
+        return self._remaining_timeout(
+            deadline_monotonic,
+            operation,
+            reserve_seconds=reserve_seconds,
+        )
 
     def _client(self, *, timeout_seconds: float | None = None) -> httpx.Client:
         timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
