@@ -85,6 +85,14 @@ class PatternSummary(ApiModel):
     signal_count: int
     weekly_velocity: int
     velocity_multiple: float
+    velocity_state: Literal["accelerating", "steady", "cooling", "no_baseline"]
+
+
+class TrendPoint(ApiModel):
+    label: str
+    net_sentiment: int
+    critical_count: int
+    volume: int
 
 
 class BrandStats(ApiModel):
@@ -99,6 +107,7 @@ class BrandStats(ApiModel):
     source_mix: list[SourceStat]
     sentiment_breakdown: SentimentBreakdown
     top_emerging_issue: PatternSummary
+    trend: list[TrendPoint]
     last_ingested: str | None = None
 
 

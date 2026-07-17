@@ -8,6 +8,7 @@
 import type { PatternSummary } from './patternSummary';
 import type { SentimentBreakdown } from './sentimentBreakdown';
 import type { SourceStat } from './sourceStat';
+import type { TrendPoint } from './trendPoint';
 
 export interface BrandStats {
   brandId: string;
@@ -21,5 +22,6 @@ export interface BrandStats {
   sourceMix: SourceStat[];
   sentimentBreakdown: SentimentBreakdown;
   topEmergingIssue: PatternSummary;
+  trend: TrendPoint[];
   lastIngested?: string | null;
 }

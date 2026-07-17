@@ -43,6 +43,16 @@ export interface SentimentBreakdown {
   negative: number;
 }
 
+export type PatternSummaryVelocityState = typeof PatternSummaryVelocityState[keyof typeof PatternSummaryVelocityState];
+
+
+export const PatternSummaryVelocityState = {
+  accelerating: 'accelerating',
+  steady: 'steady',
+  cooling: 'cooling',
+  no_baseline: 'no_baseline',
+} as const;
+
 export interface PatternSummary {
   id: number;
   name: string;
@@ -50,6 +60,14 @@ export interface PatternSummary {
   signalCount: number;
   weeklyVelocity: number;
   velocityMultiple: number;
+  velocityState: PatternSummaryVelocityState;
+}
+
+export interface TrendPoint {
+  label: string;
+  netSentiment: number;
+  criticalCount: number;
+  volume: number;
 }
 
 export interface BrandStats {
@@ -64,6 +82,7 @@ export interface BrandStats {
   sourceMix: SourceStat[];
   sentimentBreakdown: SentimentBreakdown;
   topEmergingIssue: PatternSummary;
+  trend: TrendPoint[];
   lastIngested?: string | null;
 }
 
@@ -452,6 +471,7 @@ brandId?: string | null;
 period?: ListRoutesPeriod;
 limit?: number;
 };
+
 export type ListRoutesPeriod = typeof ListRoutesPeriod[keyof typeof ListRoutesPeriod];
 
 
@@ -509,3 +529,4 @@ brandId: string;
  */
 limit?: number;
 };
+

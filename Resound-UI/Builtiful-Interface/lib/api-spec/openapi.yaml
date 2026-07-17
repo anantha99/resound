@@ -1378,6 +1378,11 @@ components:
           $ref: '#/components/schemas/SentimentBreakdown'
         topEmergingIssue:
           $ref: '#/components/schemas/PatternSummary'
+        trend:
+          items:
+            $ref: '#/components/schemas/TrendPoint'
+          type: array
+          title: Trend
         lastIngested:
           anyOf:
           - type: string
@@ -1396,6 +1401,7 @@ components:
       - sourceMix
       - sentimentBreakdown
       - topEmergingIssue
+      - trend
       title: BrandStats
     Classification:
       properties:
@@ -1800,6 +1806,14 @@ components:
         velocityMultiple:
           type: number
           title: Velocitymultiple
+        velocityState:
+          type: string
+          enum:
+          - accelerating
+          - steady
+          - cooling
+          - no_baseline
+          title: Velocitystate
       type: object
       required:
       - id
@@ -1808,6 +1822,7 @@ components:
       - signalCount
       - weeklyVelocity
       - velocityMultiple
+      - velocityState
       title: PatternSummary
     PublicFeed:
       properties:
@@ -2328,6 +2343,27 @@ components:
       required:
       - brandId
       title: SourceSyncInput
+    TrendPoint:
+      properties:
+        label:
+          type: string
+          title: Label
+        netSentiment:
+          type: integer
+          title: Netsentiment
+        criticalCount:
+          type: integer
+          title: Criticalcount
+        volume:
+          type: integer
+          title: Volume
+      type: object
+      required:
+      - label
+      - netSentiment
+      - criticalCount
+      - volume
+      title: TrendPoint
     ValidationError:
       properties:
         loc:
