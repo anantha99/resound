@@ -36,8 +36,8 @@ from resound.memory import Base
 
 SOURCE_DATABASE = Path("data/resound-live-social-smoke.db")
 EXPECTED_SOURCE_SHA256 = "831cdbf5b5ca04a7b1548805d9fedda207ea8fd271f0dc90407af6ab1c884090"
-EXPECTED_ALEMBIC_REVISION = "20260702_0005"
-TABLE_ORDER = (
+EXPECTED_ALEMBIC_REVISION = "20260717_0006"
+SOURCE_TABLE_ORDER = (
     "organizations",
     "users",
     "teams",
@@ -62,6 +62,43 @@ TABLE_ORDER = (
     "route_handoffs",
     "report_citations",
 )
+TABLE_ORDER = (*SOURCE_TABLE_ORDER, "workflow_leases")
+NEW_COLUMNS = {
+    "signals": {
+        "canonical_platform",
+        "content_kind",
+        "provider_native_id",
+        "fallback_identity_hash",
+    },
+    "workflow_jobs": {
+        "resolved_config_snapshot",
+        "request_fingerprint_summary",
+        "result_schema_version",
+        "result_summary",
+        "start_reconciliation_diagnostics",
+    },
+    "source_health": {
+        "canonical_source",
+        "path",
+        "fetched_count",
+        "processed_count",
+        "duplicate_count",
+        "cost_usd",
+        "provenance",
+        "issues",
+    },
+}
+PUBLIC_HEALTH_ALIASES = {
+    "reddit",
+    "instagram_public",
+    "instagram",
+    "tiktok",
+    "x_public",
+    "x",
+    "twitter",
+    "youtube_comments",
+    "youtube",
+}
 
 
 def main() -> None:
@@ -70,8 +107,7 @@ def main() -> None:
         "--execute",
         action="store_true",
         help=(
-            "Import into the configured Postgres database. "
-            "The default runs source preflight only."
+            "Import into the configured Postgres database. The default runs source preflight only."
         ),
     )
     args = parser.parse_args()
@@ -133,28 +169,90 @@ def _read_source(source_path: Path) -> tuple[str, dict[str, list[dict[str, Any]]
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
             )
         }
-        if source_tables != set(TABLE_ORDER):
+        if source_tables != set(SOURCE_TABLE_ORDER):
             raise SystemExit("Source table manifest does not match the expected smoke snapshot.")
 
         source_rows: dict[str, list[dict[str, Any]]] = {}
-        for table_name in TABLE_ORDER:
+        for table_name in SOURCE_TABLE_ORDER:
             table = Base.metadata.tables[table_name]
             source_columns = [
                 row[1] for row in connection.execute(f'PRAGMA table_info("{table_name}")')
             ]
-            expected_columns = [column.name for column in table.columns]
+            expected_columns = [
+                column.name
+                for column in table.columns
+                if column.name not in NEW_COLUMNS.get(table_name, set())
+            ]
             if source_columns != expected_columns:
                 raise SystemExit(f"Source columns drifted for {table_name}.")
             source_rows[table_name] = [
-                _normalize_row(table, dict(row))
+                _transform_source_row(table_name, table, dict(row))
                 for row in connection.execute(f'SELECT * FROM "{table_name}" ORDER BY id')
             ]
+        source_rows["source_health"] = [
+            row for row in source_rows["source_health"] if row is not None
+        ]
+        source_rows["workflow_leases"] = []
     finally:
         connection.close()
 
     if _file_hash(source_path) != source_hash:
         raise SystemExit("Source database changed while it was being read.")
     return source_hash, source_rows
+
+
+def _transform_source_row(table_name: str, table, row: dict[str, Any]) -> dict[str, Any] | None:
+    transformed = {
+        column.name: _normalize_value(column, row[column.name])
+        for column in table.columns
+        if column.name in row
+    }
+    if table_name == "signals":
+        metadata = transformed.get("raw_metadata") or {}
+        platform = _canonical_platform(metadata.get("canonical_platform"))
+        kind = metadata.get("content_kind")
+        native = metadata.get("provider_native_id")
+        fallback = metadata.get("fallback_identity_hash")
+        if not platform or not kind or bool(native) == bool(fallback):
+            platform = kind = native = fallback = None
+        transformed.update(
+            canonical_platform=platform,
+            content_kind=str(kind).lower() if kind else None,
+            provider_native_id=str(native) if native else None,
+            fallback_identity_hash=str(fallback).lower() if fallback else None,
+        )
+    elif table_name == "workflow_jobs":
+        transformed.update(
+            resolved_config_snapshot=None,
+            request_fingerprint_summary=None,
+            result_schema_version=None,
+            result_summary=None,
+            start_reconciliation_diagnostics=None,
+        )
+    elif table_name == "source_health":
+        if (
+            transformed.get("provider") == "apify"
+            or transformed.get("source_type") in PUBLIC_HEALTH_ALIASES
+        ):
+            return None
+        raise SystemExit(
+            "Source snapshot contains legacy health whose flat path cannot be inferred safely."
+        )
+    return transformed
+
+
+def _canonical_platform(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"twitter", "x", "x_public"}:
+        return "x"
+    return {
+        "reddit": "reddit",
+        "instagram": "instagram",
+        "instagram_public": "instagram",
+        "tiktok": "tiktok",
+        "youtube": "youtube",
+        "youtube_comments": "youtube",
+    }.get(normalized)
 
 
 def _normalize_row(table, row: dict[str, Any]) -> dict[str, Any]:

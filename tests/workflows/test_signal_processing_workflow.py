@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
-from resound.agents.signal_triage import SignalTriageResult
+from resound.agents.signal_triage import (
+    SignalClassificationResult,
+    SignalRouteResult,
+    SignalTriageResult,
+)
 from resound.gateway import (
     DEMO_POPULATION_MODEL_PROFILE,
     LLMGatewayExhaustedError,
     LLMGatewayParseError,
     LLMResponse,
 )
-from resound.memory import LLMCallRow, RouteRow, SqlMemory
+from resound.memory import LLMCallRow, RouteRow, SignalRow, SqlMemory
 from resound.models import ActionClass, Classification, RawSignal, Route, Sentiment, Severity
 from resound.workflows.signal_processing import (
+    LeaseLostError,
+    SignalProcessingFailpointError,
     SignalProcessingRequest,
     process_signal,
     signal_processing_steps,
@@ -143,6 +150,47 @@ class ClassificationFailingTriageAgent:
         )
 
 
+class SplitStageAgent:
+    def __init__(self):
+        self.classification_calls = 0
+        self.route_calls = 0
+        self.route_configs = []
+
+    def classify_only(self, request):
+        self.classification_calls += 1
+        return SignalClassificationResult(
+            classification=Classification(
+                is_about_brand=True,
+                area="engineering",
+                sentiment=Sentiment.NEGATIVE,
+                severity=Severity.HIGH,
+                action_class=ActionClass.SPRINT,
+                summary="Checkout broken",
+                confidence=0.92,
+            ),
+            prompt=f"classify with {request.brand_context}",
+            response=_response("classification"),
+        )
+
+    def route_only(self, request, classification):
+        self.route_calls += 1
+        self.route_configs.append(
+            (request.routing_config, request.people_config, request.model_profile)
+        )
+        return SignalRouteResult(
+            route=Route(
+                owner_id="@eng-on-call",
+                destination="@U_ENG",
+                matched_rule="agent_route",
+                priority="normal",
+            ),
+            prompt="route prompt",
+            response=_response("route"),
+            error=None,
+            latency_ms=1.0,
+        )
+
+
 def test_process_signal_uses_agentic_triage_by_default(tmp_path):
     memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'agentic-process.db'}")
     org = memory.ensure_organization("org-a", "Org A")
@@ -247,6 +295,104 @@ def test_process_signal_retries_signal_row_without_classification_or_route(tmp_p
 
     assert result.status == "processed"
     assert result.signal_id is not None
+
+
+def test_classification_commit_resume_routes_once_with_original_inline_config(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'stage-resume.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    agent = SplitStageAgent()
+    request = replace(
+        _processing_request(org=org, brand_id=brand.id, external_id="resume-1"),
+        model_profile="original-profile",
+        metadata={"failpoint": "after_classification_commit"},
+    )
+
+    with pytest.raises(SignalProcessingFailpointError, match="after_classification_commit"):
+        process_signal(request, memory=memory, triage_agent=agent)
+
+    with memory.session() as session:
+        session.get(type(brand), brand.id).source_config = {"routing": "mutated"}
+        session.commit()
+    result = process_signal(
+        replace(request, metadata={}),
+        memory=memory,
+        triage_agent=agent,
+    )
+
+    assert result.status == "processed"
+    assert agent.classification_calls == 1
+    assert agent.route_calls == 1
+    assert agent.route_configs == [
+        (
+            request.routing_config,
+            request.people_config,
+            "original-profile",
+        )
+    ]
+
+
+def test_route_response_without_commit_is_retried_but_route_commit_is_not(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'route-resume.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    agent = SplitStageAgent()
+    request = _processing_request(org=org, brand_id=brand.id, external_id="route-resume-1")
+
+    with pytest.raises(SignalProcessingFailpointError, match="after_route_response"):
+        process_signal(
+            replace(request, metadata={"failpoint": "after_route_response"}),
+            memory=memory,
+            triage_agent=agent,
+        )
+    assert process_signal(request, memory=memory, triage_agent=agent).status == "processed"
+    assert process_signal(request, memory=memory, triage_agent=agent).status == "duplicate"
+    assert agent.classification_calls == 1
+    assert agent.route_calls == 2
+
+
+def test_stale_owner_is_rejected_before_signal_or_llm_side_effect(tmp_path):
+    memory = SqlMemory(database_url=f"sqlite:///{tmp_path / 'owner-loss.db'}")
+    org = memory.ensure_organization("org-a", "Org A")
+    brand = memory.ensure_brand(org, "acme", "Acme")
+    old_job = memory.create_workflow_job(
+        workflow_id="old",
+        workflow_type="public_listening_sync",
+        organization_id=org,
+        brand_id=brand.id,
+    )
+    new_job = memory.create_workflow_job(
+        workflow_id="new",
+        workflow_type="public_listening_sync",
+        organization_id=org,
+        brand_id=brand.id,
+    )
+    now = datetime.utcnow()
+    memory.acquire_workflow_lease(
+        organization_id=org,
+        brand_id=brand.id,
+        workflow_job_id=old_job,
+        owner_token="old-owner",
+        now=now - timedelta(seconds=121),
+    )
+    memory.acquire_workflow_lease(
+        organization_id=org,
+        brand_id=brand.id,
+        workflow_job_id=new_job,
+        owner_token="new-owner",
+        now=now,
+    )
+    agent = SplitStageAgent()
+    request = replace(
+        _processing_request(org=org, brand_id=brand.id, external_id="owner-loss-1"),
+        owner_token="old-owner",
+    )
+
+    with pytest.raises(LeaseLostError):
+        process_signal(request, memory=memory, triage_agent=agent)
+    assert agent.classification_calls == 0
+    with memory.session() as session:
+        assert session.execute(select(SignalRow)).scalars().all() == []
 
 
 def _response(content: str) -> LLMResponse:

@@ -60,6 +60,22 @@ class SignalTriageResult:
     agent_session_id: int | None
 
 
+@dataclass(frozen=True)
+class SignalClassificationResult:
+    classification: Classification
+    prompt: str
+    response: LLMResponse
+
+
+@dataclass(frozen=True)
+class SignalRouteResult:
+    route: Route
+    prompt: str
+    response: LLMResponse | None
+    error: LLMGatewayError | None
+    latency_ms: float | None
+
+
 class SignalTriageAgent:
     """Classify and route one signal through a small LangGraph state graph."""
 
@@ -111,6 +127,45 @@ class SignalTriageAgent:
             agent_session_id=session_id,
         )
 
+    def classify_only(self, request: SignalTriageRequest) -> SignalClassificationResult:
+        """Run only classification so its commit can precede any routing side effect."""
+
+        gateway = self.gateway or self._gateway_for(request)
+        state = self._classify(gateway, {"request": request, "session_id": None})
+        return SignalClassificationResult(
+            classification=state["classification"],
+            prompt=state["classification_prompt"],
+            response=state["classification_response"],
+        )
+
+    def route_only(
+        self,
+        request: SignalTriageRequest,
+        classification: Classification,
+    ) -> SignalRouteResult:
+        """Route a committed classification using only the request's inline config."""
+
+        gateway = self.gateway or self._gateway_for(request)
+        state = self._route(
+            gateway,
+            {
+                "request": request,
+                "session_id": None,
+                "classification": classification,
+                "team_directory": build_team_directory(
+                    people_config=request.people_config,
+                    routing_config=request.routing_config,
+                ),
+            },
+        )
+        return SignalRouteResult(
+            route=state["route"],
+            prompt=state["route_prompt"],
+            response=state.get("route_response"),
+            error=state.get("route_error"),
+            latency_ms=state.get("route_latency_ms"),
+        )
+
     def _gateway_for(self, request: SignalTriageRequest) -> LLMGateway:
         key = (request.brand_slug, request.model_profile)
         if self._resolved_gateway is None or self._resolved_gateway[0] != key:
@@ -134,9 +189,7 @@ class SignalTriageAgent:
         request: SignalTriageRequest = state["request"]
         prompt = build_classify_prompt(request.raw_signal, request.brand_context)
         if request.model_profile not in DEMO_POPULATION_MODEL_PROFILES:
-            response = gateway.complete(
-                stage="classify", prompt=prompt, response_schema=JSON_MODE
-            )
+            response = gateway.complete(stage="classify", prompt=prompt, response_schema=JSON_MODE)
             classification = parse_classification_response(response.content)
         else:
             response = gateway.complete_validated(
