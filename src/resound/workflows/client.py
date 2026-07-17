@@ -314,21 +314,19 @@ def _preserve_start_unknown(request, diagnostics: list[str]) -> None:
     owner_token = getattr(request, "owner_token", None)
     if None in {workflow_job_id, organization_id, brand_id} or not owner_token:
         return
-    from resound.memory import SqlMemory, WorkflowJobRow
+    from resound.memory import SqlMemory
 
     memory = SqlMemory()
-    with memory.session() as session:
-        job = session.get(WorkflowJobRow, workflow_job_id)
-        if job is not None:
-            job.status = "start_unknown"
-            job.start_reconciliation_diagnostics = {
-                "attempt_error_classes": diagnostics[-20:],
-                "workflow_id": _resolved_public_listening_workflow_id(request),
-            }
-            session.commit()
-    memory.renew_workflow_lease(
+    preserved = memory.mark_workflow_start_unknown(
+        workflow_job_id=workflow_job_id,
         organization_id=organization_id,
         brand_id=brand_id,
         owner_token=owner_token,
+        diagnostics={
+            "attempt_error_classes": diagnostics[-20:],
+            "workflow_id": _resolved_public_listening_workflow_id(request),
+        },
         ttl_seconds=PUBLIC_LISTENING_START_UNKNOWN_TTL_SECONDS,
     )
+    if not preserved:
+        raise RuntimeError("could not atomically preserve the owning start-unknown lease")

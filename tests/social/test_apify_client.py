@@ -197,6 +197,39 @@ def test_actor_start_sends_exact_build_decimal_and_reservation_before_post() -> 
     assert operations == ["reserve", "post"]
 
 
+def test_actor_start_request_timeout_is_shorter_than_activity_heartbeat() -> None:
+    request_timeouts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_timeouts.append(request.extensions["timeout"])
+        return httpx.Response(
+            201,
+            json={
+                "data": {
+                    "id": "run-1",
+                    "buildId": "build-id",
+                    "buildNumber": "1.2.3",
+                }
+            },
+        )
+
+    ApifyClient(
+        "secret-token",
+        timeout_seconds=70,
+        transport=_transport(handler),
+    ).run_actor(
+        "owner/actor",
+        {},
+        build_number="1.2.3",
+        expected_build_id="build-id",
+        max_total_charge_usd=Decimal("0.10"),
+        reservation_callback=lambda: None,
+    )
+
+    assert len(request_timeouts) == 1
+    assert set(request_timeouts[0].values()) == {20.0}
+
+
 def test_actor_start_rejects_returned_build_mismatch() -> None:
     client = ApifyClient(
         "secret-token",
@@ -338,9 +371,27 @@ def test_provider_over_return_is_bounded_and_preserves_raw_count_issue() -> None
     assert dataset.provider_over_return_count == 2
 
 
-def test_actor_start_wait_must_fit_heartbeat_interval() -> None:
+@pytest.mark.parametrize("wait_seconds", [30, 31])
+def test_actor_start_wait_must_fit_heartbeat_interval(wait_seconds: int) -> None:
     with pytest.raises(RuntimeError, match="must not exceed the heartbeat interval"):
-        ApifyClient("secret-token", actor_start_wait_seconds=31)
+        ApifyClient("secret-token", actor_start_wait_seconds=wait_seconds)
+
+
+def test_abort_run_uses_bounded_authenticated_abort_endpoint() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"data": {"id": "run-1", "status": "ABORTING"}})
+
+    client = ApifyClient("secret-token", transport=_transport(handler))
+    client.abort_run("run-1", timeout_seconds=5.0)
+
+    assert len(requests) == 1
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/v2/actor-runs/run-1/abort"
+    assert requests[0].headers["Authorization"] == "Bearer secret-token"
+    assert set(requests[0].extensions["timeout"].values()) == {5.0}
 
 
 def test_source_specific_url_serialization_and_exact_tiktok_dataset_url() -> None:
@@ -350,10 +401,13 @@ def test_source_specific_url_serialization_and_exact_tiktok_dataset_url() -> Non
     assert serialize_start_urls("youtube", ["https://youtube.com/@acme"]) == [
         {"url": "https://youtube.com/@acme"}
     ]
-    assert validate_apify_dataset_url(
-        "https://api.apify.com/v2/datasets/comments-1/items?token=redacted",
-        expected_dataset_id="comments-1",
-    ) == "https://api.apify.com/v2/datasets/comments-1/items"
+    assert (
+        validate_apify_dataset_url(
+            "https://api.apify.com/v2/datasets/comments-1/items?token=redacted",
+            expected_dataset_id="comments-1",
+        )
+        == "https://api.apify.com/v2/datasets/comments-1/items"
+    )
     with pytest.raises(ValueError, match="expected Apify dataset"):
         validate_apify_dataset_url(
             "https://example.com/v2/datasets/comments-1/items",

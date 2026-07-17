@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from typing import Any, Protocol
 
 from resound.agents.signal_triage import SignalTriageAgent
@@ -19,6 +20,8 @@ from resound.social import (
     AdapterIssue,
     AdapterResult,
     ListeningProfile,
+    ProviderDatasetRef,
+    ProviderRunRef,
     ResolvedPublicListeningRequest,
     ResolvedSourceConfigSnapshot,
     SignalAssociation,
@@ -35,16 +38,21 @@ from resound.social.apify import ApifyClient, apify_actor_input
 from resound.social.apify_adapters.common import (
     ActorRunPlan,
     AdapterBlockedError,
+    AdapterPathPlan,
+    ParentContext,
     ParsedProviderSignal,
+    TypedSelector,
 )
-from resound.social.common import ProviderBudget
+from resound.social.common import ProviderBudget, UnresolvedActorStartError
 from resound.social.config import SourceConfigError
+from resound.social.registry import ActorRegistration, actor_role_for_path
 from resound.tenancy import TenantContext
 from resound.workflows.leases import PUBLIC_LISTENING_WORKFLOW_KIND
 from resound.workflows.signal_processing import (
     LeaseLostError,
     SignalProcessingRequest,
     process_signal,
+    signal_processing_is_resume,
 )
 from resound.workflows.temporal_compat import activity, workflow
 
@@ -271,26 +279,105 @@ NON_RETRYABLE_ACTIVITY_ERRORS = (
     "LLMGatewayAuthError",
     "LLMGatewayConfigError",
     "SourceConfigError",
+    "UnresolvedActorStartError",
     "ValueError",
 )
 
 
-def _heartbeat(details: dict[str, Any]) -> None:
-    """Heartbeat and observe cancellation from a synchronous executor activity."""
+@dataclass
+class SourceActivityCheckpoint:
+    source: str | None = None
+    fingerprint: str | None = None
+    reservations: dict[str, str] = field(default_factory=dict)
+    runs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    datasets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pages: dict[str, int] = field(default_factory=dict)
+    completed_paths: list[str] = field(default_factory=list)
+    processed_identities: list[str] = field(default_factory=list)
+    committed_stages: dict[str, list[str]] = field(default_factory=dict)
+    components: dict[str, dict[str, Any]] = field(default_factory=dict)
+    discovery_parents: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    reconciled_spend_usd: str = "0"
 
-    activity.heartbeat(details)
-    if activity.is_cancelled():
+    @classmethod
+    def load(cls) -> SourceActivityCheckpoint:
+        try:
+            details = activity.info().heartbeat_details
+        except RuntimeError:
+            return cls()
+        if not details or not isinstance(details[-1], Mapping):
+            return cls()
+        payload = details[-1]
+        if payload.get("schema_version") != 1:
+            return cls()
+        return cls(
+            source=str(payload.get("source")) if payload.get("source") else None,
+            fingerprint=(str(payload.get("fingerprint")) if payload.get("fingerprint") else None),
+            reservations=dict(payload.get("reservations") or {}),
+            runs=dict(payload.get("runs") or {}),
+            datasets=dict(payload.get("datasets") or {}),
+            pages={str(key): int(value) for key, value in (payload.get("pages") or {}).items()},
+            completed_paths=list(payload.get("completed_paths") or []),
+            processed_identities=list(payload.get("processed_identities") or []),
+            committed_stages={
+                str(key): list(value)
+                for key, value in (payload.get("committed_stages") or {}).items()
+            },
+            components=dict(payload.get("components") or {}),
+            discovery_parents={
+                str(key): list(value)
+                for key, value in (payload.get("discovery_parents") or {}).items()
+            },
+            reconciled_spend_usd=str(payload.get("reconciled_spend_usd") or "0"),
+        )
+
+    def payload(self, *, source: ResolvedSourceConfigSnapshot, checkpoint: str) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "source": source.source.value,
+            "fingerprint": source.approval_fingerprint.value,
+            "checkpoint": checkpoint,
+            "reservations": self.reservations,
+            "runs": self.runs,
+            "datasets": self.datasets,
+            "pages": self.pages,
+            "completed_paths": self.completed_paths,
+            "processed_identities": self.processed_identities[
+                -source.limits.max_signals_per_source :
+            ],
+            "committed_stages": self.committed_stages,
+            "components": self.components,
+            "discovery_parents": self.discovery_parents,
+            "reconciled_spend_usd": self.reconciled_spend_usd,
+        }
+
+
+def _cancellation_requested() -> bool:
+    try:
+        return activity.is_cancelled()
+    except RuntimeError:
+        return False
+
+
+def _heartbeat(
+    request: PublicListeningSourceActivityRequest,
+    state: SourceActivityCheckpoint,
+    checkpoint: str,
+) -> None:
+    """Heartbeat the complete retry checkpoint and observe executor cancellation."""
+
+    activity.heartbeat(state.payload(source=request.source, checkpoint=checkpoint))
+    if _cancellation_requested():
         raise asyncio.CancelledError
 
 
-def _assert_source_owner(request: PublicListeningSourceActivityRequest, memory: SqlMemory) -> None:
-    _heartbeat(
-        {
-            "source": request.source.source.value,
-            "fingerprint": request.source.approval_fingerprint.value,
-            "checkpoint": "lease_renewal",
-        }
-    )
+def _assert_source_owner(
+    request: PublicListeningSourceActivityRequest,
+    memory: SqlMemory,
+    state: SourceActivityCheckpoint,
+    checkpoint: str = "lease_renewal",
+) -> None:
+    _heartbeat(request, state, checkpoint)
     if not memory.renew_workflow_lease(
         organization_id=request.organization_id,
         brand_id=request.brand_id,
@@ -300,13 +387,85 @@ def _assert_source_owner(request: PublicListeningSourceActivityRequest, memory: 
         raise LeaseLostError("public-listening workflow lease was lost")
 
 
-def _provider_budget(snapshot: ResolvedSourceConfigSnapshot) -> ProviderBudget:
-    evidence = snapshot.provider_evidence[0]
+def _provider_budget(
+    snapshot: ResolvedSourceConfigSnapshot,
+    state: SourceActivityCheckpoint,
+) -> ProviderBudget:
+    evidence = snapshot.provider_evidence
     return ProviderBudget(
         ceiling_usd=snapshot.limits.max_cost_usd_per_source,
-        charge_quantum_usd=evidence.charge_quantum_usd,
+        charge_quantum_usd=max(item.charge_quantum_usd for item in evidence),
+        minimum_call_charge_usd=max(item.minimum_call_charge_usd for item in evidence),
+        conservative_request_cost_usd=max(item.conservative_request_cost_usd for item in evidence),
+        reconciled_spend_usd=Decimal(state.reconciled_spend_usd),
+    )
+
+
+def _activity_deadline_monotonic() -> float:
+    now_monotonic = time.monotonic()
+    try:
+        info = activity.info()
+    except RuntimeError:
+        return now_monotonic + 20 * 60
+    timeout = info.start_to_close_timeout or timedelta(minutes=20)
+    elapsed = max(0.0, (datetime.now(tz=UTC) - info.started_time).total_seconds())
+    return now_monotonic + max(0.0, timeout.total_seconds() - elapsed)
+
+
+def _typed_selectors(path_config) -> tuple[TypedSelector, ...]:
+    return tuple(path_config.selectors)
+
+
+def _path_plan(
+    snapshot: ResolvedSourceConfigSnapshot,
+    path_config,
+    discovery_parents: dict[SourcePath, list[ParsedProviderSignal]],
+) -> AdapterPathPlan:
+    adapter = get_source_adapter(snapshot.source.value)
+    if hasattr(adapter, "plan_path"):
+        discovery_path = (
+            SourcePath.OFFICIAL_DISCOVERY
+            if path_config.path == SourcePath.OFFICIAL_COMMENTS
+            else SourcePath.MENTION_DISCOVERY
+            if path_config.path == SourcePath.MENTION_COMMENTS
+            else None
+        )
+        return adapter.plan_path(
+            path=path_config.path,
+            selectors=_typed_selectors(path_config),
+            parents=tuple(discovery_parents.get(discovery_path, ())),
+            item_cap=path_config.max_items,
+            max_parents=path_config.max_parents,
+            max_comments_per_parent=path_config.max_comments_per_parent,
+            max_comments=path_config.max_comments,
+        )
+    plans = _plans_for_path(snapshot, path_config, discovery_parents)
+    return AdapterPathPlan(
+        path=path_config.path,
+        actor_runs=plans,
+        empty_reason="no_eligible_parents" if not plans else None,
+    )
+
+
+def _bind_plan_to_snapshot(
+    snapshot: ResolvedSourceConfigSnapshot,
+    plan: ActorRunPlan,
+) -> tuple[ActorRunPlan, Any]:
+    actor_role = actor_role_for_path(snapshot.source.value, plan.path)
+    evidence = snapshot.evidence_for(plan.path, actor_role)
+    actor = ActorRegistration(
+        actor_id=evidence.actor_id,
+        build_id=evidence.build_id,
+        build_number=evidence.build_number,
         minimum_call_charge_usd=evidence.minimum_call_charge_usd,
-        conservative_request_cost_usd=evidence.conservative_request_cost_usd,
+    )
+    return (
+        replace(
+            plan,
+            actor=actor,
+            minimum_call_charge_usd=evidence.minimum_call_charge_usd,
+        ),
+        evidence,
     )
 
 
@@ -379,9 +538,15 @@ def _plans_for_path(
 
 
 def _parse_provider_item(
-    source: str, path: SourcePath, item: dict[str, Any]
+    source: str,
+    path: SourcePath,
+    item: dict[str, Any],
+    *,
+    parent: ParentContext | None = None,
 ) -> ParsedProviderSignal:
     adapter = get_source_adapter(source)
+    if hasattr(adapter, "parse_path_result"):
+        return adapter.parse_path_result(path=path, item=item, parent=parent)
     if source == "instagram":
         if path.value.endswith("comments"):
             return adapter.parse_comment(item)
@@ -406,8 +571,81 @@ def _raw_signal(parsed: ParsedProviderSignal, path: SourcePath) -> RawSignal:
             "path": path.value,
             parsed.identity.kind: parsed.identity.value,
             "parent_url": parsed.parent_url,
+            "parent_context": (
+                {
+                    "platform": parsed.parent_context.platform,
+                    "content_kind": parsed.parent_context.content_kind,
+                    "author_handle": parsed.parent_context.author_handle,
+                    "excerpt": parsed.parent_context.excerpt,
+                    "canonical_url": parsed.parent_context.canonical_url,
+                    "published_at": (
+                        parsed.parent_context.published_at.isoformat()
+                        if parsed.parent_context.published_at
+                        else None
+                    ),
+                    "provider_native_id": parsed.parent_context.provider_native_id,
+                }
+                if parsed.parent_context
+                else None
+            ),
+            "observed_public_metrics": parsed.observed_public_metrics,
         },
     )
+
+
+def _checkpoint_identity(path: SourcePath, identity_value: str) -> str:
+    return f"{path.value}:{identity_value}"
+
+
+def _serialize_parent(parsed: ParsedProviderSignal) -> dict[str, Any]:
+    return {
+        "platform": parsed.platform,
+        "content_kind": parsed.content_kind,
+        "identity": parsed.identity.model_dump(mode="json"),
+        "content": parsed.content,
+        "provider_timestamp": parsed.provider_timestamp.isoformat(),
+        "canonical_url": parsed.canonical_url,
+        "author_handle": parsed.author_handle,
+        "observed_public_metrics": parsed.observed_public_metrics,
+        "comments_dataset_url": parsed.comments_dataset_url,
+    }
+
+
+def _deserialize_parent(payload: Mapping[str, Any]) -> ParsedProviderSignal:
+    from resound.social.contracts import CanonicalIdentity
+
+    return ParsedProviderSignal(
+        platform=str(payload["platform"]),
+        content_kind=str(payload["content_kind"]),
+        identity=CanonicalIdentity.model_validate(payload["identity"]),
+        content=str(payload["content"]),
+        provider_timestamp=datetime.fromisoformat(str(payload["provider_timestamp"])),
+        canonical_url=payload.get("canonical_url"),
+        author_handle=payload.get("author_handle"),
+        observed_public_metrics=dict(payload.get("observed_public_metrics") or {}),
+        comments_dataset_url=payload.get("comments_dataset_url"),
+    )
+
+
+def _usage_total(run: Mapping[str, Any]) -> Decimal:
+    try:
+        usage = Decimal(str(run.get("usageTotalUsd")))
+    except (DecimalException, ValueError) as exc:
+        raise RuntimeError("terminal Apify Run has missing or malformed usageTotalUsd") from exc
+    if not usage.is_finite() or usage < 0:
+        raise RuntimeError("terminal Apify Run has missing or malformed usageTotalUsd")
+    return usage
+
+
+def _abort_provider_run(client: Any, run_id: str) -> None:
+    abort = getattr(client, "abort_run", None)
+    if abort is None:
+        return
+    try:
+        abort(run_id, timeout_seconds=5.0)
+    except Exception:
+        # Cancellation must not be delayed or replaced by a best-effort cleanup failure.
+        pass
 
 
 def execute_public_listening_source(
@@ -421,190 +659,439 @@ def execute_public_listening_source(
     memory = memory or SqlMemory()
     client = apify_client or ApifyClient()
     snapshot = request.source
-    _assert_source_owner(request, memory)
-    budget = _provider_budget(snapshot)
+    state = SourceActivityCheckpoint.load()
+    if state.source is not None and state.source != snapshot.source.value:
+        raise ValueError("heartbeat checkpoint belongs to a different source")
+    if state.fingerprint is not None and state.fingerprint != snapshot.approval_fingerprint.value:
+        raise ValueError("heartbeat checkpoint belongs to a different immutable snapshot")
+    state.source = snapshot.source.value
+    state.fingerprint = snapshot.approval_fingerprint.value
+    if state.reservations:
+        unresolved = next(
+            (reservation for reservation in state.reservations if reservation not in state.runs),
+            None,
+        )
+        if unresolved is not None:
+            raise UnresolvedActorStartError(
+                unresolved,
+                "heartbeat checkpoint contains an actor reservation without an acknowledged Run",
+            )
+    _assert_source_owner(request, memory, state, "source_entry")
+    budget = _provider_budget(snapshot, state)
+    deadline = _activity_deadline_monotonic()
+    deadline_context = snapshot.limits.deadline_context(
+        deadline_monotonic=deadline,
+        monotonic=time.monotonic,
+    )
     components: list[AdapterComponentResult] = []
-    total_accepted = 0
-    discovery_parents: dict[SourcePath, list[ParsedProviderSignal]] = {}
+    accepted_identities = set(state.processed_identities)
+    total_accepted = len(accepted_identities)
+    total_comments_accepted = sum(
+        value.startswith("official_comments:") or value.startswith("mention_comments:")
+        for value in accepted_identities
+    )
+    discovery_parents: dict[SourcePath, list[ParsedProviderSignal]] = {
+        SourcePath(path): [_deserialize_parent(item) for item in items]
+        for path, items in state.discovery_parents.items()
+    }
+    active_run_ids: set[str] = set()
+    run_count = len(state.runs)
 
     for path_config in snapshot.paths:
         path = path_config.path
+        if path.value in state.completed_paths:
+            payload = state.components.get(path.value)
+            if payload is None:
+                raise RuntimeError(f"completed path {path.value} is missing its component summary")
+            components.append(AdapterComponentResult.model_validate(payload))
+            continue
         fetched = processed = resumed = duplicates = skipped = 0
         issues: list[AdapterIssue] = []
         associations: list[SignalAssociation] = []
-        runs = []
-        datasets = []
-        try:
-            plans = _plans_for_path(snapshot, path_config, discovery_parents)
-            for index, plan in enumerate(plans):
-                _assert_source_owner(request, memory)
-                reservation_id = f"{path.value}:{index}"
-                charge_cap = budget.remaining_charge_cap()
-                _heartbeat(
-                    {
-                        "source": snapshot.source.value,
-                        "path": path.value,
-                        "checkpoint": "before_actor_start",
-                        "reservation": reservation_id,
-                    }
-                )
-                run = client.run_actor(
-                    plan.actor.actor_id,
-                    plan.actor_input,
-                    build_number=plan.actor.build_number,
-                    expected_build_id=plan.actor.build_id,
-                    max_total_charge_usd=charge_cap,
-                    reservation_callback=lambda rid=reservation_id: budget.reserve(rid),
-                    cancellation_requested=activity.is_cancelled,
-                )
-                _heartbeat(
-                    {
-                        "source": snapshot.source.value,
-                        "path": path.value,
-                        "checkpoint": "after_actor_start",
-                        "run_id": run.get("id"),
-                    }
-                )
-                completed = client.wait_for_run(
-                    run,
-                    progress_callback=lambda: _heartbeat(
-                        {
-                            "source": snapshot.source.value,
-                            "path": path.value,
-                            "checkpoint": "actor_poll",
-                            "run_id": run.get("id"),
-                        }
-                    ),
-                    cancellation_requested=activity.is_cancelled,
-                )
-                usage = Decimal(str(completed.get("usageTotalUsd")))
-                budget.reconcile(reservation_id, usage)
-                dataset_id = str(completed.get("defaultDatasetId") or "")
-                if not dataset_id:
-                    raise RuntimeError("successful Apify Run is missing defaultDatasetId")
-                items = client.fetch_dataset_items(
-                    dataset_id,
-                    limit=plan.requested_row_maximum,
-                    page_size=snapshot.limits.page_size,
-                    cancellation_requested=activity.is_cancelled,
-                )
-                fetched += len(items)
-                from resound.social import ProviderDatasetRef, ProviderRunRef
+        runs: list[ProviderRunRef] = []
+        datasets: list[ProviderDatasetRef] = []
 
-                runs.append(
-                    ProviderRunRef(
+        def provider_acceptance_cap_reached() -> bool:
+            if total_accepted >= snapshot.limits.max_signals_per_source:
+                code = "signal_cap_reached"
+                message = "source signal cap reached"
+            elif (
+                path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}
+                and total_comments_accepted >= snapshot.limits.max_comments_per_source
+            ):
+                code = "comment_cap_reached"
+                message = "source comment cap reached"
+            else:
+                return False
+            if not any(issue.code == code for issue in issues):
+                issues.append(
+                    AdapterIssue(
                         path=path,
-                        actor_id=plan.actor.actor_id,
-                        build_id=plan.actor.build_id,
-                        build_number=plan.actor.build_number,
-                        run_id=str(completed.get("id") or "") or None,
-                        requested_row_maximum=plan.requested_row_maximum,
-                        max_total_charge_usd=charge_cap,
-                        usage_total_usd=usage,
-                        status=str(completed.get("status") or "SUCCEEDED"),
-                        input_schema_reference=snapshot.provider_evidence[
-                            0
-                        ].provider_declared_input_schema_reference,
-                        output_schema_reference=snapshot.provider_evidence[
-                            0
-                        ].provider_declared_output_schema_reference,
-                        fixture_shape_reference=snapshot.provider_evidence[
-                            0
-                        ].fixture_derived_shape_reference,
-                        dataset_ids=(dataset_id,),
+                        code=code,
+                        issue_class="LimitReached",
+                        message=message,
+                        preserved_work=True,
                     )
                 )
-                for item_index, item in enumerate(items):
-                    if total_accepted >= snapshot.limits.max_signals_per_source:
-                        issues.append(
-                            AdapterIssue(
-                                path=path,
-                                code="signal_cap_reached",
-                                issue_class="LimitReached",
-                                message="source signal cap reached",
-                                preserved_work=True,
-                            )
+            return True
+
+        def consume_items(
+            items: list[dict[str, Any]],
+            *,
+            dataset_id: str,
+            parent: ParentContext | None,
+        ) -> int:
+            nonlocal processed, resumed, duplicates, skipped
+            nonlocal total_accepted, total_comments_accepted
+            accepted_here = 0
+            for item_index, item in enumerate(items):
+                if total_accepted >= snapshot.limits.max_signals_per_source:
+                    issues.append(
+                        AdapterIssue(
+                            path=path,
+                            code="signal_cap_reached",
+                            issue_class="LimitReached",
+                            message="source signal cap reached",
+                            preserved_work=True,
                         )
-                        skipped += len(items) - item_index
-                        break
-                    _heartbeat(
-                        {
-                            "source": snapshot.source.value,
-                            "path": path.value,
-                            "checkpoint": "parser_batch",
-                            "dataset_id": dataset_id,
-                            "item": item_index,
-                        }
                     )
-                    try:
-                        parsed = _parse_provider_item(snapshot.source.value, path, item)
-                    except ValueError as exc:
-                        skipped += 1
-                        issues.append(
-                            AdapterIssue(
-                                path=path,
-                                code="parser_rejected",
-                                issue_class=type(exc).__name__,
-                                message=str(exc),
-                                preserved_work=True,
-                            )
+                    skipped += len(items) - item_index
+                    break
+                if (
+                    path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}
+                    and total_comments_accepted >= snapshot.limits.max_comments_per_source
+                ):
+                    issues.append(
+                        AdapterIssue(
+                            path=path,
+                            code="comment_cap_reached",
+                            issue_class="LimitReached",
+                            message="source comment cap reached",
+                            preserved_work=True,
                         )
-                        continue
-                    if path.value.endswith("discovery"):
-                        discovery_parents.setdefault(path, []).append(parsed)
-                    _assert_source_owner(request, memory)
-                    processing = process_signal(
-                        SignalProcessingRequest(
-                            brand_slug=request.brand_slug,
-                            raw_signal=_raw_signal(parsed, path),
-                            brand_context=snapshot.processing.brand_context,
-                            routing_config=dict(snapshot.processing.routing_config),
-                            people_config=dict(snapshot.processing.people_config),
-                            organization_id=request.organization_id,
-                            brand_id=request.brand_id,
-                            workflow_id=str(request.workflow_job_id),
-                            model_profile=snapshot.processing.model_profile,
-                            owner_token=request.owner_token,
-                        ),
-                        memory=memory,
-                        heartbeat=lambda stage, signal_id: _heartbeat(
-                            {
-                                "source": snapshot.source.value,
-                                "path": path.value,
-                                "checkpoint": stage,
-                                "signal_id": signal_id,
-                            }
-                        ),
                     )
-                    total_accepted += 1
-                    if processing.status == "duplicate":
-                        duplicates += 1
-                    elif processing.status == "failed":
-                        skipped += 1
-                    else:
-                        processed += 1
+                    skipped += len(items) - item_index
+                    break
+                _heartbeat(request, state, f"parser:{path.value}:{dataset_id}:{item_index}")
+                try:
+                    parsed = _parse_provider_item(
+                        snapshot.source.value,
+                        path,
+                        item,
+                        parent=parent,
+                    )
+                except ValueError as exc:
+                    skipped += 1
+                    issues.append(
+                        AdapterIssue(
+                            path=path,
+                            code="parser_rejected",
+                            issue_class=type(exc).__name__,
+                            message=str(exc),
+                            preserved_work=True,
+                            dataset_id=dataset_id,
+                        )
+                    )
+                    continue
+                if path.value.endswith("discovery"):
+                    known = {
+                        parent_signal.identity.value
+                        for parent_signal in discovery_parents.setdefault(path, [])
+                    }
+                    if parsed.identity.value not in known:
+                        discovery_parents[path].append(parsed)
+                        state.discovery_parents[path.value] = [
+                            _serialize_parent(parent_signal)
+                            for parent_signal in discovery_parents[path]
+                        ]
+                identity_key = _checkpoint_identity(path, parsed.identity.value)
+                if identity_key in accepted_identities:
+                    duplicates += 1
                     associations.append(
                         SignalAssociation(
                             path=path,
                             identity=parsed.identity,
-                            signal_id=processing.signal_id,
-                            processing_state="duplicate"
-                            if processing.status == "duplicate"
-                            else "failed"
-                            if processing.status == "failed"
-                            else "processed",
+                            processing_state="duplicate",
                         )
                     )
-                datasets.append(
-                    ProviderDatasetRef(
+                    continue
+                _assert_source_owner(
+                    request,
+                    memory,
+                    state,
+                    f"before_signal_processing:{identity_key}",
+                )
+
+                def processing_heartbeat(stage: str, signal_id: int) -> None:
+                    stages = state.committed_stages.setdefault(identity_key, [])
+                    if stage not in stages:
+                        stages.append(stage)
+                    _assert_source_owner(
+                        request,
+                        memory,
+                        state,
+                        f"{stage}:{signal_id}",
+                    )
+
+                processing = process_signal(
+                    SignalProcessingRequest(
+                        brand_slug=request.brand_slug,
+                        raw_signal=_raw_signal(parsed, path),
+                        brand_context=snapshot.processing.brand_context,
+                        routing_config=dict(snapshot.processing.routing_config),
+                        people_config=dict(snapshot.processing.people_config),
+                        organization_id=request.organization_id,
+                        brand_id=request.brand_id,
+                        workflow_id=str(request.workflow_job_id),
+                        model_profile=snapshot.processing.model_profile,
+                        owner_token=request.owner_token,
+                    ),
+                    memory=memory,
+                    heartbeat=processing_heartbeat,
+                )
+                is_resume = signal_processing_is_resume(processing)
+                if processing.status == "failed":
+                    skipped += 1
+                    processing_state = "failed"
+                else:
+                    accepted_identities.add(identity_key)
+                    state.processed_identities.append(identity_key)
+                    total_accepted += 1
+                    accepted_here += 1
+                    if path in {SourcePath.OFFICIAL_COMMENTS, SourcePath.MENTION_COMMENTS}:
+                        total_comments_accepted += 1
+                    if processing.status == "duplicate":
+                        duplicates += 1
+                        processing_state = "duplicate"
+                    elif is_resume:
+                        resumed += max(1, processing.resumed_count)
+                        processing_state = "resumed"
+                    else:
+                        processed += 1
+                        processing_state = "processed"
+                associations.append(
+                    SignalAssociation(
                         path=path,
-                        dataset_id=dataset_id,
-                        run_id=str(completed.get("id") or "") or None,
-                        requested_limit=plan.requested_row_maximum,
-                        fetched_count=len(items),
-                        processed_count=processed,
+                        identity=parsed.identity,
+                        signal_id=processing.signal_id,
+                        processing_state=processing_state,
                     )
                 )
+                _heartbeat(request, state, f"signal_accounted:{identity_key}")
+            return accepted_here
+
+        try:
+            path_plan = _path_plan(snapshot, path_config, discovery_parents)
+            for index, registry_plan in enumerate(path_plan.actor_runs):
+                if provider_acceptance_cap_reached():
+                    break
+                plan, evidence = _bind_plan_to_snapshot(snapshot, registry_plan)
+                reservation_id = f"{path.value}:{index}"
+                run_state = state.runs.get(reservation_id)
+                if run_state is None:
+                    if run_count >= snapshot.limits.max_runs_per_source:
+                        raise RuntimeError("source actor Run cap reached")
+                    budget.charge_quantum_usd = evidence.charge_quantum_usd
+                    budget.minimum_call_charge_usd = evidence.minimum_call_charge_usd
+                    budget.conservative_request_cost_usd = evidence.conservative_request_cost_usd
+                    charge_cap = budget.remaining_charge_cap()
+                    if charge_cap < plan.minimum_call_charge_usd:
+                        raise RuntimeError(
+                            "remaining provider budget is below the actor call minimum"
+                        )
+
+                    def reserve_start() -> Any:
+                        reservation = budget.reserve(reservation_id)
+                        state.reservations[reservation_id] = format(reservation.amount_usd, "f")
+                        _heartbeat(request, state, f"actor_reserved:{reservation_id}")
+                        return reservation
+
+                    _assert_source_owner(
+                        request,
+                        memory,
+                        state,
+                        f"before_actor_start:{reservation_id}",
+                    )
+                    run = client.run_actor(
+                        plan.actor.actor_id,
+                        plan.actor_input,
+                        build_number=plan.actor.build_number,
+                        expected_build_id=plan.actor.build_id,
+                        max_total_charge_usd=charge_cap,
+                        reservation_callback=reserve_start,
+                        deadline_context=deadline_context,
+                        deadline_monotonic=deadline,
+                        deadline_reserve_seconds=snapshot.limits.deadline_reserve_seconds,
+                        cancellation_requested=_cancellation_requested,
+                    )
+                    run_id = str(run.get("id") or "").strip()
+                    if not run_id:
+                        raise UnresolvedActorStartError(
+                            reservation_id,
+                            "Apify actor start response omitted its acknowledged Run ID",
+                        )
+                    budget.resolve_start(reservation_id)
+                    state.reservations.pop(reservation_id, None)
+                    run_state = {
+                        "run": dict(run),
+                        "charge_cap": format(charge_cap, "f"),
+                        "usage_reconciled": False,
+                    }
+                    state.runs[reservation_id] = run_state
+                    run_count += 1
+                    _heartbeat(request, state, f"actor_acknowledged:{reservation_id}:{run_id}")
+                else:
+                    run = dict(run_state["run"])
+                    charge_cap = Decimal(str(run_state["charge_cap"]))
+                    run_id = str(run.get("id") or "").strip()
+                    if not run_id:
+                        raise RuntimeError("checkpointed Apify Run is missing its ID")
+                active_run_ids.add(run_id)
+
+                def abort_acknowledged_run(cancelled_run_id: str) -> None:
+                    _abort_provider_run(client, cancelled_run_id)
+                    active_run_ids.discard(cancelled_run_id)
+
+                completed = client.wait_for_run(
+                    run,
+                    progress_callback=lambda rid=run_id: _assert_source_owner(
+                        request, memory, state, f"actor_poll:{rid}"
+                    ),
+                    deadline_context=deadline_context,
+                    deadline_monotonic=deadline,
+                    cancellation_requested=_cancellation_requested,
+                    cancellation_callback=abort_acknowledged_run,
+                )
+                active_run_ids.discard(run_id)
+                usage = _usage_total(completed)
+                if not bool(run_state.get("usage_reconciled")):
+                    budget.reconcile(reservation_id, usage)
+                    state.reconciled_spend_usd = format(budget.reconciled_spend_usd, "f")
+                run_state.update({"run": dict(completed), "usage_reconciled": True})
+                _heartbeat(request, state, f"actor_terminal:{reservation_id}:{run_id}")
+                dataset_id = str(completed.get("defaultDatasetId") or "")
+                if not dataset_id:
+                    raise RuntimeError("successful Apify Run is missing defaultDatasetId")
+                run_ref = ProviderRunRef(
+                    path=path,
+                    actor_id=evidence.actor_id,
+                    build_id=evidence.build_id,
+                    build_number=evidence.build_number,
+                    run_id=run_id,
+                    requested_row_maximum=plan.requested_row_maximum,
+                    max_total_charge_usd=charge_cap,
+                    usage_total_usd=usage,
+                    status=str(completed.get("status") or "SUCCEEDED"),
+                    input_schema_reference=evidence.provider_declared_input_schema_reference,
+                    output_schema_reference=evidence.provider_declared_output_schema_reference,
+                    fixture_shape_reference=evidence.fixture_derived_shape_reference,
+                    dataset_ids=(dataset_id,),
+                )
+                runs.append(run_ref)
+                dataset_key = f"run:{reservation_id}:{dataset_id}"
+                dataset_state = state.datasets.get(dataset_key)
+                if dataset_state and dataset_state.get("complete"):
+                    datasets.append(ProviderDatasetRef.model_validate(dataset_state["reference"]))
+                    continue
+                if provider_acceptance_cap_reached():
+                    continue
+                _assert_source_owner(request, memory, state, f"before_dataset:{dataset_key}")
+                items = client.fetch_dataset_items(
+                    dataset_id,
+                    limit=plan.requested_row_maximum,
+                    page_size=snapshot.limits.page_size,
+                    deadline_context=deadline_context,
+                    deadline_monotonic=deadline,
+                    cancellation_requested=_cancellation_requested,
+                )
+                fetched += len(items)
+                before = processed + resumed + duplicates
+                consume_items(list(items), dataset_id=dataset_id, parent=None)
+                raw_count = int(getattr(items, "raw_count", len(items)))
+                over_return_count = max(0, raw_count - plan.requested_row_maximum)
+                over_return = getattr(items, "over_return", None)
+                if over_return is not None:
+                    issues.append(over_return.as_issue(path=path, dataset_id=dataset_id))
+                dataset_ref = ProviderDatasetRef(
+                    path=path,
+                    dataset_id=dataset_id,
+                    run_id=run_id,
+                    requested_limit=plan.requested_row_maximum,
+                    fetched_count=len(items),
+                    processed_count=processed + resumed + duplicates - before,
+                    raw_fetched_count=raw_count,
+                    provider_over_return_count=over_return_count,
+                )
+                datasets.append(dataset_ref)
+                state.datasets[dataset_key] = {
+                    "complete": True,
+                    "reference": dataset_ref.model_dump(mode="json"),
+                }
+                state.pages[dataset_key] = len(items)
+                _heartbeat(request, state, f"dataset_complete:{dataset_key}")
+
+            for index, dataset_plan in enumerate(path_plan.dataset_fetches):
+                if provider_acceptance_cap_reached():
+                    break
+                evidence = snapshot.evidence_for(
+                    path,
+                    actor_role_for_path(snapshot.source.value, path),
+                )
+                dataset_key = f"secondary:{path.value}:{index}:{dataset_plan.dataset_id}"
+                dataset_state = state.datasets.get(dataset_key)
+                if dataset_state and dataset_state.get("complete"):
+                    datasets.append(ProviderDatasetRef.model_validate(dataset_state["reference"]))
+                    continue
+                _assert_source_owner(request, memory, state, f"before_dataset:{dataset_key}")
+                items = client.fetch_dataset_items(
+                    dataset_plan.dataset_id,
+                    dataset_url=dataset_plan.dataset_url,
+                    limit=dataset_plan.requested_limit,
+                    page_size=snapshot.limits.page_size,
+                    deadline_context=deadline_context,
+                    deadline_monotonic=deadline,
+                    cancellation_requested=_cancellation_requested,
+                )
+                fetched += len(items)
+                before = processed + resumed + duplicates
+                consume_items(
+                    list(items),
+                    dataset_id=dataset_plan.dataset_id,
+                    parent=dataset_plan.parent,
+                )
+                raw_count = int(getattr(items, "raw_count", len(items)))
+                over_return_count = max(0, raw_count - dataset_plan.requested_limit)
+                over_return = getattr(items, "over_return", None)
+                if over_return is not None:
+                    issues.append(
+                        over_return.as_issue(path=path, dataset_id=dataset_plan.dataset_id)
+                    )
+                provenance = {
+                    **dataset_plan.provenance,
+                    "dataset_url": dataset_plan.dataset_url,
+                    "actor_role": evidence.actor_role.value,
+                    "input_schema_reference": evidence.provider_declared_input_schema_reference,
+                    "output_schema_reference": evidence.provider_declared_output_schema_reference,
+                    "fixture_shape_reference": evidence.fixture_derived_shape_reference,
+                }
+                dataset_ref = ProviderDatasetRef(
+                    path=path,
+                    dataset_id=dataset_plan.dataset_id,
+                    parent_identity_value=dataset_plan.provenance.get("parent_identity"),
+                    requested_limit=dataset_plan.requested_limit,
+                    fetched_count=len(items),
+                    processed_count=processed + resumed + duplicates - before,
+                    raw_fetched_count=raw_count,
+                    provider_over_return_count=over_return_count,
+                    provenance=provenance,
+                )
+                datasets.append(dataset_ref)
+                state.datasets[dataset_key] = {
+                    "complete": True,
+                    "reference": dataset_ref.model_dump(mode="json"),
+                }
+                state.pages[dataset_key] = len(items)
+                _heartbeat(request, state, f"dataset_complete:{dataset_key}")
             component_status = "partial" if issues else "ok"
         except (
             AdapterBlockedError,
@@ -612,11 +1099,18 @@ def execute_public_listening_source(
             LLMGatewayAuthError,
             LLMGatewayConfigError,
             SourceConfigError,
+            UnresolvedActorStartError,
             ValueError,
             asyncio.CancelledError,
         ):
+            for run_id in active_run_ids:
+                _abort_provider_run(client, run_id)
             raise
         except Exception as exc:
+            if _cancellation_requested():
+                for run_id in active_run_ids:
+                    _abort_provider_run(client, run_id)
+                raise asyncio.CancelledError from exc
             component_status = "partial" if processed or duplicates else "failed"
             issues.append(
                 AdapterIssue(
@@ -642,7 +1136,7 @@ def execute_public_listening_source(
             issues=tuple(issues),
             associations=tuple(associations),
         )
-        _assert_source_owner(request, memory)
+        _assert_source_owner(request, memory, state, f"before_health:{path.value}")
         memory.record_source_health(
             organization_id=request.organization_id,
             brand_id=request.brand_id,
@@ -662,13 +1156,14 @@ def execute_public_listening_source(
             },
             issues=[issue.model_dump(mode="json") for issue in component.issues],
         )
-        _heartbeat(
-            {"source": snapshot.source.value, "path": path.value, "checkpoint": "health_write"}
-        )
+        state.components[path.value] = component.model_dump(mode="json")
+        if path.value not in state.completed_paths:
+            state.completed_paths.append(path.value)
+        _heartbeat(request, state, f"path_complete:{path.value}")
         components.append(component)
 
     rank = {"ok": 0, "partial": 1, "failed": 2}
-    source_status = max((component.status for component in components), key=rank.get)
+    source_status = max((component.status for component in components), key=rank.get, default="ok")
     return AdapterResult(
         source=snapshot.source,
         platform=snapshot.storage_platform,
@@ -681,7 +1176,10 @@ def execute_public_listening_source(
         duplicate_count=sum(item.duplicate_count for item in components),
         skipped_count=sum(item.skipped_count for item in components),
         cost_usd=sum((item.cost_usd for item in components), Decimal("0")),
-        cap_reached=total_accepted >= snapshot.limits.max_signals_per_source,
+        cap_reached=(
+            total_accepted >= snapshot.limits.max_signals_per_source
+            or total_comments_accepted >= snapshot.limits.max_comments_per_source
+        ),
         config_fingerprint=snapshot.approval_fingerprint,
     )
 

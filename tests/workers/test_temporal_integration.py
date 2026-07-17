@@ -18,6 +18,7 @@ from temporalio.worker._workflow_instance import UnsandboxedWorkflowRunner
 
 from resound.models import RawSignal
 from resound.social import (
+    ActorRole,
     AdapterLimits,
     AdapterResult,
     ApprovedSourceConfigFingerprint,
@@ -26,6 +27,7 @@ from resound.social import (
     ResolvedProviderEvidence,
     ResolvedPublicListeningRequest,
     ResolvedSourceConfigSnapshot,
+    SourcePath,
 )
 from resound.workflows import public_listening, signal_processing
 from resound.workflows.public_listening import (
@@ -84,6 +86,9 @@ class ThreadOverlapWorkflow:
 def _snapshot(source: PublicSource) -> ResolvedSourceConfigSnapshot:
     digest = "a" * 64
     evidence = ResolvedProviderEvidence(
+        source=source,
+        path=SourcePath.OFFICIAL_DISCOVERY,
+        actor_role=ActorRole.DISCOVERY,
         actor_id="test/actor",
         build_id="build-id",
         build_number="1.0.0",

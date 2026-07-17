@@ -74,8 +74,11 @@ class ApifyClient:
             env_name="APIFY_ACTOR_START_WAIT_SECONDS",
             default=10.0,
         )
-        if self.actor_start_wait_seconds > 30:
-            raise RuntimeError("actor_start_wait_seconds must not exceed the heartbeat interval")
+        if self.actor_start_wait_seconds >= 30:
+            raise RuntimeError(
+                "actor_start_wait_seconds must not exceed the heartbeat interval; "
+                "it must be shorter"
+            )
         self.sleep = sleep
         self.monotonic = monotonic
         self.transport = transport
@@ -102,6 +105,7 @@ class ApifyClient:
             deadline_monotonic=deadline_monotonic,
             reserve_seconds=deadline_reserve_seconds,
         )
+        timeout = min(timeout, 20.0)
         url = f"https://api.apify.com/v2/acts/{apify_actor_path_id(actor_id)}/runs"
         params = {"waitForFinish": f"{self.actor_start_wait_seconds:g}"}
         if not build_number.strip() or not expected_build_id.strip():
@@ -215,6 +219,16 @@ class ApifyClient:
         if not isinstance(data, dict):
             raise RuntimeError(f"Apify run status response was invalid (run_id={run_id})")
         return data
+
+    def abort_run(self, run_id: str, *, timeout_seconds: float = 5.0) -> None:
+        """Best-effort abort for an acknowledged Run during activity cancellation."""
+
+        if not run_id.strip():
+            return
+        url = f"https://api.apify.com/v2/actor-runs/{run_id}/abort"
+        with self._client(timeout_seconds=timeout_seconds) as client:
+            response = client.post(url, headers=self._headers())
+            response.raise_for_status()
 
     def fetch_dataset_items(
         self,

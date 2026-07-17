@@ -77,9 +77,7 @@ def _sync_classifications(is_about_brand_values: list[bool]):
                     area="product",
                     sentiment=Sentiment.NEGATIVE,
                     severity=Severity.MEDIUM,
-                    action_class=(
-                        ActionClass.SPRINT if is_about_brand else ActionClass.IGNORE
-                    ),
+                    action_class=(ActionClass.SPRINT if is_about_brand else ActionClass.IGNORE),
                     summary=f"Relevance fixture {index}",
                     confidence=0.9,
                 ),
@@ -252,9 +250,7 @@ def test_default_mode_targets_only_two_demo_brands_and_honors_item_cap(tmp_path)
     assert [request.brand_slug for request in requests] == ["liquiddeath", "notion"]
     assert all(request.enabled_sources == ["reddit"] for request in requests)
     assert all(request.max_items_per_source == 7 for request in requests)
-    assert all(
-        request.model_profile == DEMO_POPULATION_MODEL_PROFILE for request in requests
-    )
+    assert all(request.model_profile == DEMO_POPULATION_MODEL_PROFILE for request in requests)
 
 
 def test_reliable_classifier_selects_sonnet_primary_profile_for_both_brands(tmp_path):
@@ -279,8 +275,7 @@ def test_reliable_classifier_selects_sonnet_primary_profile_for_both_brands(tmp_
 
     assert [request.brand_slug for request in requests] == ["liquiddeath", "notion"]
     assert all(
-        request.model_profile == DEMO_POPULATION_RELIABLE_MODEL_PROFILE
-        for request in requests
+        request.model_profile == DEMO_POPULATION_RELIABLE_MODEL_PROFILE for request in requests
     )
 
 
@@ -576,7 +571,8 @@ def test_retry_of_preexisting_raw_only_signal_counts_current_classification_and_
             memory=memory,
             classifier=RetryClassifier(),
         )
-        assert result.status == "processed"
+        assert result.status == "resumed"
+        assert result.processing_state == "resumed"
         assert result.signal_id == original_signal_id
         return ProcessedResult()
 

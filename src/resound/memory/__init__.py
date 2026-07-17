@@ -1449,6 +1449,51 @@ class SqlMemory(Memory):
             s.commit()
             return result.rowcount == 1
 
+    def mark_workflow_start_unknown(
+        self,
+        *,
+        workflow_job_id: int,
+        organization_id: int,
+        brand_id: int,
+        owner_token: str,
+        diagnostics: dict[str, Any],
+        workflow_kind: str = "public_listening_sync",
+        ttl_seconds: int = 600,
+        now: datetime | None = None,
+    ) -> bool:
+        """Atomically preserve an ambiguous start and extend only its owning active lease."""
+
+        if ttl_seconds <= 0:
+            raise ValueError("start-unknown lease TTL must be positive")
+        with self.session() as s:
+            database_now = now or s.execute(select(func.current_timestamp())).scalar_one()
+            lease = s.execute(
+                select(WorkflowLeaseRow).where(
+                    WorkflowLeaseRow.organization_id == organization_id,
+                    WorkflowLeaseRow.brand_id == brand_id,
+                    WorkflowLeaseRow.workflow_kind == workflow_kind,
+                    WorkflowLeaseRow.workflow_job_id == workflow_job_id,
+                    WorkflowLeaseRow.owner_token == owner_token,
+                    WorkflowLeaseRow.status == "active",
+                    WorkflowLeaseRow.expires_at > database_now,
+                )
+            ).scalar_one_or_none()
+            job = s.get(WorkflowJobRow, workflow_job_id)
+            if (
+                lease is None
+                or job is None
+                or job.organization_id != organization_id
+                or job.brand_id != brand_id
+            ):
+                s.rollback()
+                return False
+            job.status = "start_unknown"
+            job.start_reconciliation_diagnostics = diagnostics
+            lease.renewed_at = database_now
+            lease.expires_at = database_now + timedelta(seconds=ttl_seconds)
+            s.commit()
+            return True
+
     def finalize_workflow_job(
         self,
         *,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from temporalio.service import RPCError, RPCStatusCode
 
@@ -160,3 +161,57 @@ def test_start_unknown_preserves_owner_lease_and_diagnostics(tmp_path, monkeypat
         assert job.start_reconciliation_diagnostics["attempt_error_classes"] == ["TimeoutError"]
         assert lease.status == "active"
         assert lease.owner_token == "owner"
+
+
+def test_start_unknown_atomic_update_rejects_wrong_owner_and_extends_correct_lease(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("RESOUND_DATABASE_URL", f"sqlite:///{tmp_path / 'atomic-unknown.db'}")
+    memory = SqlMemory()
+    organization_id = memory.ensure_organization("atomic-org")
+    brand = memory.ensure_brand(organization_id, "atomic-brand")
+    job_id = memory.create_workflow_job(
+        workflow_id="atomic-workflow",
+        workflow_type="PublicListeningSyncWorkflow",
+        organization_id=organization_id,
+        brand_id=brand.id,
+    )
+    now = datetime(2026, 7, 17, 12, 0, 0)
+    memory.acquire_workflow_lease(
+        organization_id=organization_id,
+        brand_id=brand.id,
+        workflow_job_id=job_id,
+        owner_token="owner",
+        now=now,
+    )
+
+    assert not memory.mark_workflow_start_unknown(
+        workflow_job_id=job_id,
+        organization_id=organization_id,
+        brand_id=brand.id,
+        owner_token="wrong-owner",
+        diagnostics={"wrong": True},
+        now=now + timedelta(seconds=1),
+    )
+    with memory.session() as session:
+        job = session.get(WorkflowJobRow, job_id)
+        lease = session.query(WorkflowLeaseRow).one()
+        assert job.status == "queued"
+        assert job.start_reconciliation_diagnostics is None
+        assert lease.expires_at == now + timedelta(seconds=120)
+
+    diagnostics = {"attempt_error_classes": ["TimeoutError"]}
+    assert memory.mark_workflow_start_unknown(
+        workflow_job_id=job_id,
+        organization_id=organization_id,
+        brand_id=brand.id,
+        owner_token="owner",
+        diagnostics=diagnostics,
+        now=now + timedelta(seconds=2),
+    )
+    with memory.session() as session:
+        job = session.get(WorkflowJobRow, job_id)
+        lease = session.query(WorkflowLeaseRow).one()
+        assert job.status == "start_unknown"
+        assert job.start_reconciliation_diagnostics == diagnostics
+        assert lease.expires_at == now + timedelta(seconds=602)
