@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deltaDisplay, sparklinePath } from "./viewModels.ts";
+import { barChart, deltaDisplay, sparklinePath } from "./viewModels.ts";
 
 test("deltaDisplay renders a neutral flat treatment when delta is 0", () => {
   const d = deltaDisplay(0, { unit: "pt", flatText: "0pt · flat" });
@@ -58,4 +58,19 @@ test("sparklinePath scales higher values to the top of the viewBox", () => {
   assert.ok(points[0][1] > points[1][1]);
   assert.equal(points[0][0], 0);
   assert.equal(points[1][0], 70);
+});
+
+test("barChart returns no rects for an empty series", () => {
+  assert.deepEqual(barChart([], 70, 18), []);
+});
+
+test("barChart slots bars evenly and scales the tallest to full height", () => {
+  const bars = barChart([0, 1, 2], 60, 18);
+  assert.equal(bars.length, 3);
+  // Bars are left-to-right in slot order.
+  assert.ok(bars[0].x < bars[1].x && bars[1].x < bars[2].x);
+  // Empty bucket renders a faint 1px stub; tallest count reaches full height.
+  assert.equal(bars[0].height, 1);
+  assert.equal(bars[0].opacity, "0.25");
+  assert.equal(bars[2].height, 18);
 });

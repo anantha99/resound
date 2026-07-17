@@ -378,12 +378,9 @@ def list_patterns(
     since: datetime | None = None,
 ) -> list[schemas.Pattern]:
     rows = _joined_rows(memory, brand_slug, tenant=tenant, since=since, limit=None, offset=0)
-    groups: dict[str, list[SignalJoinedRow]] = {}
-    for row in rows:
-        if area and row.classification.area != area:
-            continue
-        key = row.classification.subarea or row.classification.area
-        groups.setdefault(key, []).append(row)
+    if area:
+        rows = [row for row in rows if row.classification.area == area]
+    groups = _group_by_pattern(rows)
 
     patterns = [_pattern_from_group(key, grouped) for key, grouped in groups.items()]
     return sorted(patterns, key=lambda p: (p.velocity_multiple, p.signal_count), reverse=True)
@@ -892,7 +889,8 @@ def _emerging_summary(
     previous_count = len(_group_by_pattern(previous).get(top_key, []))
 
     if previous_count == 0:
-        return summary.model_copy(update={"velocity_state": "no_baseline"})
+        # _pattern_summary already defaults velocity_state to "no_baseline".
+        return summary
 
     ratio = round(current_count / previous_count, 1)
     if ratio > 1.05:

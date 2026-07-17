@@ -216,6 +216,37 @@ export function sparklinePath(values: number[], w: number, h: number): string {
     .join(" ");
 }
 
+export interface BarRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Pre-formatted opacity string (fades empty buckets). */
+  opacity: string;
+}
+
+/**
+ * Layout a mini bar chart of counts into a w×h viewBox. Bars are evenly slotted
+ * and scaled to the largest count; empty buckets render as a faint 1px stub.
+ */
+export function barChart(counts: number[], w: number, h: number): BarRect[] {
+  const n = counts.length;
+  if (n === 0) return [];
+  const maxCount = Math.max(1, ...counts);
+  const slot = w / n;
+  const barW = Math.max(2, Math.min(6, slot - 6));
+  return counts.map((count, i) => {
+    const height = count === 0 ? 1 : Math.max(1, Math.round((count / maxCount) * h));
+    return {
+      x: +(i * slot + (slot - barW) / 2).toFixed(2),
+      y: h - height,
+      width: barW,
+      height,
+      opacity: (count === 0 ? 0.25 : 0.4 + 0.5 * (count / maxCount)).toFixed(2),
+    };
+  });
+}
+
 export function formatSource(source: string): string {
   const normalized = source.toLowerCase();
   if (normalized === "g2") return "G2";

@@ -7,6 +7,7 @@ import SignalRow from "@/components/SignalRow";
 import { useBrand } from "@/context/BrandContext";
 import {
   apiPeriod,
+  barChart,
   deltaDisplay,
   sparklinePath,
   toPatternView,
@@ -224,21 +225,9 @@ export default function Dashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, fontFamily: MONO, fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: c.label }}>
               <span>{period} trend</span>
               <svg width="70" height="18" viewBox="0 0 70 18">
-                {(() => {
-                  const counts = trend.map(p => p.criticalCount);
-                  const maxCount = Math.max(1, ...counts);
-                  const n = counts.length;
-                  if (n === 0) return null;
-                  const slot = 70 / n;
-                  const barW = Math.max(2, Math.min(6, slot - 6));
-                  return counts.map((count, i) => {
-                    const h = count === 0 ? 1 : Math.max(1, Math.round((count / maxCount) * 18));
-                    const x = +(i * slot + (slot - barW) / 2).toFixed(2);
-                    const y = 18 - h;
-                    const opacity = count === 0 ? 0.25 : 0.4 + 0.5 * (count / maxCount);
-                    return <rect key={i} x={x} y={y} width={barW} height={h} fill={c.spark} opacity={opacity.toFixed(2)} />;
-                  });
-                })()}
+                {barChart(trend.map(p => p.criticalCount), 70, 18).map((bar, i) => (
+                  <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height} fill={c.spark} opacity={bar.opacity} />
+                ))}
               </svg>
             </div>
           </motion.div>
@@ -254,14 +243,9 @@ export default function Dashboard() {
                 <div style={{ fontFamily: CG, fontStyle: "italic", fontWeight: 300, fontSize: 26, lineHeight: 1.15, letterSpacing: "-0.01em", marginBottom: 8, color: e.number }}>
                   "{emergingIssue!.name}"
                 </div>
-                {(() => {
-                  const vel = velocityLabel(emergingIssue!, period);
-                  return (
-                    <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(vel.tone, activePane === "emerging"), letterSpacing: "0.02em" }}>
-                      {vel.text}
-                    </div>
-                  );
-                })()}
+                <div style={{ fontFamily: MONO, fontSize: 11, color: toneColor(velocityLabel(emergingIssue!, period).tone, activePane === "emerging"), letterSpacing: "0.02em" }}>
+                  {velocityLabel(emergingIssue!, period).text}
+                </div>
                 <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: e.label, marginTop: "auto", paddingTop: 16 }}>
                   {emergingIssue!.area.toUpperCase()} · {emergingIssue!.signalCount} signals
                 </div>
