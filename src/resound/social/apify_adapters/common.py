@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
+from enum import StrEnum
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit, urlunsplit
 
 from resound.social.common import ProviderBudget, fallback_identity, provider_native_identity
-from resound.social.contracts import CanonicalIdentity, ResolvedSelector, SourcePath
+from resound.social.contracts import CanonicalIdentity, SourcePath
 from resound.social.registry import ActorRegistration
 
 
@@ -22,7 +23,29 @@ class ParserError(ValueError):
     """A provider row cannot produce a trustworthy normalized signal."""
 
 
-TypedSelector = ResolvedSelector
+class SelectorKind(StrEnum):
+    """Wire-compatible selector kinds accepted from Task 1's resolved selector model."""
+
+    URL = "url"
+    HANDLE = "handle"
+    SUBREDDIT = "subreddit"
+    SEARCH = "search"
+    HASHTAG = "hashtag"
+    PROFILE = "profile"
+    PLACE = "place"
+    USER = "user"
+
+
+@dataclass(frozen=True)
+class TypedSelector:
+    kind: SelectorKind
+    value: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", SelectorKind(self.kind))
+        object.__setattr__(self, "value", self.value.strip())
+        if not self.value:
+            raise ValueError("selector value cannot be empty")
 
 
 @dataclass(frozen=True)

@@ -7,6 +7,7 @@ from resound.social.apify_adapters.common import (
     AdapterPathPlan,
     ParentContext,
     ParsedProviderSignal,
+    SelectorKind,
     TypedSelector,
     actor_minimum_charge,
     canonical_http_url,
@@ -19,7 +20,7 @@ from resound.social.apify_adapters.common import (
     require_approved,
     required_text,
 )
-from resound.social.contracts import SelectorKind, SourcePath
+from resound.social.contracts import SourcePath
 from resound.social.registry import ACTOR_REGISTRY
 
 
