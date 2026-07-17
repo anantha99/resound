@@ -6,6 +6,7 @@ import { BrandProvider } from "@/context/BrandContext";
 import NotFound from "@/pages/not-found";
 import DashboardPage from "@/pages/dashboard";
 import SignalsPage from "@/pages/signals";
+import SignalDetailPage from "@/pages/signal-detail";
 import MemoryPage from "@/pages/memory";
 import PatternsPage from "@/pages/patterns";
 
@@ -23,6 +24,7 @@ function Router() {
     <Switch>
       <Route path="/" component={DashboardPage} />
       <Route path="/signals" component={SignalsPage} />
+      <Route path="/signals/:signalId" component={SignalDetailPage} />
       <Route path="/memory" component={MemoryPage} />
       <Route path="/patterns" component={PatternsPage} />
       <Route component={NotFound} />

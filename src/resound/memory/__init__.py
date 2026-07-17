@@ -1480,6 +1480,52 @@ class SqlMemory(Memory):
                 select(WorkflowJobRow).where(WorkflowJobRow.workflow_id == workflow_id),
             ).scalar_one_or_none()
 
+    def configure_workflow_job(
+        self,
+        *,
+        workflow_job_id: int,
+        workflow_id: str,
+        resolved_config_snapshot: dict,
+        request_fingerprint_summary: dict,
+    ) -> None:
+        """Attach the deterministic identity and bounded immutable request after ID allocation."""
+        from resound.workflows.result_persistence import bounded_request_snapshot
+
+        snapshot = bounded_request_snapshot(resolved_config_snapshot)
+        with self.session() as s:
+            row = s.get(WorkflowJobRow, workflow_job_id)
+            if row is None:
+                raise ValueError("workflow job not found")
+            row.workflow_id = workflow_id
+            row.resolved_config_snapshot = snapshot
+            row.request_fingerprint_summary = request_fingerprint_summary
+            s.commit()
+
+    def fail_workflow_start(
+        self,
+        *,
+        workflow_job_id: int,
+        owner_token: str | None,
+        status: str = "failed",
+    ) -> None:
+        """Mark a definite pre-start failure and release only its owned lease."""
+        with self.session() as s:
+            row = s.get(WorkflowJobRow, workflow_job_id)
+            if row is not None:
+                row.status = status
+            if owner_token:
+                lease = s.execute(
+                    select(WorkflowLeaseRow).where(
+                        WorkflowLeaseRow.workflow_job_id == workflow_job_id,
+                        WorkflowLeaseRow.owner_token == owner_token,
+                        WorkflowLeaseRow.status == "active",
+                    )
+                ).scalar_one_or_none()
+                if lease is not None:
+                    lease.status = status
+                    lease.expires_at = datetime.utcnow()
+            s.commit()
+
     def update_workflow_job_handle(
         self,
         *,

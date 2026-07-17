@@ -217,6 +217,34 @@ export interface ListeningProfileSuggestionDecision {
   editedValue?: string | null;
 }
 
+export interface ObservedPublicMetrics {
+  metricType?: 'observed_public';
+  views?: number | null;
+  plays?: number | null;
+  likes?: number | null;
+  replies?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  reposts?: number | null;
+  upvotes?: number | null;
+}
+
+export type ParentContextContentKind = typeof ParentContextContentKind[keyof typeof ParentContextContentKind];
+
+
+export const ParentContextContentKind = {
+  post: 'post',
+  video: 'video',
+} as const;
+
+export interface ParentContext {
+  platform: string;
+  contentKind: ParentContextContentKind;
+  url?: string | null;
+  authorHandle?: string | null;
+  excerpt?: string | null;
+}
+
 export interface Pattern {
   id: number;
   brandId: string;
@@ -229,6 +257,22 @@ export interface Pattern {
   startedAt: string;
 }
 
+export type SignalProvenancePath = typeof SignalProvenancePath[keyof typeof SignalProvenancePath] | null;
+
+
+export const SignalProvenancePath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export interface SignalProvenance {
+  provider?: string | null;
+  sourceMode: string;
+  path?: SignalProvenancePath;
+}
+
 export interface Signal {
   id: number;
   brandId: string;
@@ -238,6 +282,11 @@ export interface Signal {
   authorHandle: string;
   authorMeta?: string | null;
   reach?: number | null;
+  canonicalPlatform: string;
+  contentKind: string;
+  metrics: ObservedPublicMetrics;
+  parentContext?: ParentContext | null;
+  provenance: SignalProvenance;
   content: string;
   postedAt: string;
   createdAt: string;
@@ -307,6 +356,135 @@ export interface PublicFeedModerationInput {
   actor?: string | null;
 }
 
+export type PublicListeningResultSummaryStatus = typeof PublicListeningResultSummaryStatus[keyof typeof PublicListeningResultSummaryStatus];
+
+
+export const PublicListeningResultSummaryStatus = {
+  completed: 'completed',
+  partial: 'partial',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export type PublicListeningResultSummarySelectedPathsItem = typeof PublicListeningResultSummarySelectedPathsItem[keyof typeof PublicListeningResultSummarySelectedPathsItem];
+
+
+export const PublicListeningResultSummarySelectedPathsItem = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export type PublicListeningResultSummarySelectedPaths = {[key: string]: PublicListeningResultSummarySelectedPathsItem[]};
+
+export type PublicListeningResultSummaryEffectiveSignalCaps = {[key: string]: number};
+
+export type WorkflowSourceResultStatus = typeof WorkflowSourceResultStatus[keyof typeof WorkflowSourceResultStatus];
+
+
+export const WorkflowSourceResultStatus = {
+  ok: 'ok',
+  partial: 'partial',
+  failed: 'failed',
+} as const;
+
+export type WorkflowPathResultPath = typeof WorkflowPathResultPath[keyof typeof WorkflowPathResultPath];
+
+
+export const WorkflowPathResultPath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export type WorkflowPathResultStatus = typeof WorkflowPathResultStatus[keyof typeof WorkflowPathResultStatus];
+
+
+export const WorkflowPathResultStatus = {
+  ok: 'ok',
+  partial: 'partial',
+  failed: 'failed',
+} as const;
+
+export type WorkflowPathResultIssuesItem = { [key: string]: unknown };
+
+export type WorkflowPathResultRunsItem = { [key: string]: unknown };
+
+export type WorkflowPathResultDatasetsItem = { [key: string]: unknown };
+
+export type WorkflowPathResultAssociationsItem = { [key: string]: unknown };
+
+export interface WorkflowPathResult {
+  path: WorkflowPathResultPath;
+  status: WorkflowPathResultStatus;
+  fetchedCount?: number;
+  processedCount?: number;
+  resumedCount?: number;
+  duplicateCount?: number;
+  skippedCount?: number;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  costUsd?: string;
+  issues?: WorkflowPathResultIssuesItem[];
+  issuesOriginalCount?: number;
+  issuesTruncatedCount?: number;
+  runs?: WorkflowPathResultRunsItem[];
+  runsOriginalCount?: number;
+  runsTruncatedCount?: number;
+  datasets?: WorkflowPathResultDatasetsItem[];
+  datasetsOriginalCount?: number;
+  datasetsTruncatedCount?: number;
+  associations?: WorkflowPathResultAssociationsItem[];
+  associationsOriginalCount?: number;
+  associationsTruncatedCount?: number;
+  [key: string]: unknown;
+ }
+
+export type WorkflowSourceResultIssuesItem = { [key: string]: unknown };
+
+export interface WorkflowSourceResult {
+  source: string;
+  platform: string;
+  status: WorkflowSourceResultStatus;
+  maxSignalsPerSource: number;
+  fetchedCount?: number;
+  processedCount?: number;
+  resumedCount?: number;
+  duplicateCount?: number;
+  skippedCount?: number;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  costUsd?: string;
+  capReached?: boolean;
+  paths: WorkflowPathResult[];
+  pathsOriginalCount?: number;
+  pathsTruncatedCount?: number;
+  issues?: WorkflowSourceResultIssuesItem[];
+  issuesOriginalCount?: number;
+  issuesTruncatedCount?: number;
+  [key: string]: unknown;
+ }
+
+export interface PublicListeningResultSummary {
+  schemaVersion: 1;
+  status: PublicListeningResultSummaryStatus;
+  selectedSources?: string[];
+  selectedPaths?: PublicListeningResultSummarySelectedPaths;
+  sources: WorkflowSourceResult[];
+  sourcesOriginalCount: number;
+  sourcesTruncatedCount: number;
+  effectiveSignalCaps?: PublicListeningResultSummaryEffectiveSignalCaps;
+  fetchedCount?: number;
+  processedCount?: number;
+  resumedCount?: number;
+  duplicateCount?: number;
+  skippedCount?: number;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  costUsd?: string;
+  leaseOutcome?: string | null;
+  [key: string]: unknown;
+ }
+
 export type ReadinessCheckStatus = typeof ReadinessCheckStatus[keyof typeof ReadinessCheckStatus];
 
 
@@ -372,6 +550,8 @@ export interface RouteAudit {
   severity: string;
   sentiment: string;
   source: string;
+  canonicalPlatform: string;
+  contentKind: string;
   content: string;
   summary: string;
   confidence: number;
@@ -381,25 +561,80 @@ export interface RouteAudit {
   feedbackCorrect: boolean | null;
 }
 
+export type SelectedPathInputPathsItem = typeof SelectedPathInputPathsItem[keyof typeof SelectedPathInputPathsItem];
+
+
+export const SelectedPathInputPathsItem = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export interface SelectedPathInput {
+  source: string;
+  paths: SelectedPathInputPathsItem[];
+}
+
 export interface SignalList {
   signals: SignalDetail[];
   total: number;
 }
 
+export type SourceHealthPath = typeof SourceHealthPath[keyof typeof SourceHealthPath];
+
+
+export const SourceHealthPath = {
+  official_discovery: 'official_discovery',
+  mention_discovery: 'mention_discovery',
+  official_comments: 'official_comments',
+  mention_comments: 'mention_comments',
+} as const;
+
+export type SourceHealthProvenance = { [key: string]: unknown };
+
+export type SourceHealthIssuesItem = { [key: string]: unknown };
+
 export interface SourceHealth {
   sourceType: string;
+  canonicalSource: string;
+  path: SourceHealthPath;
   provider: string;
   status: string;
   lastSuccessAt?: string | null;
   lastFailureAt?: string | null;
   lastRunId?: string | null;
   itemCount: number;
+  fetchedCount: number;
+  processedCount: number;
+  duplicateCount: number;
+  costUsd: number;
+  provenance: SourceHealthProvenance;
+  issues: SourceHealthIssuesItem[];
   errorMessage?: string | null;
+}
+
+export interface SourceLimitOverrides {
+  maxSignalsPerSource?: number | null;
+  maxItemsPerPath?: number | null;
+  maxParentsPerPath?: number | null;
+  maxCommentsPerParent?: number | null;
+  maxCommentsPerPath?: number | null;
+  maxCommentsPerSource?: number | null;
+  maxRunsPerSource?: number | null;
+  maxCostUsdPerSource?: number | string | null;
 }
 
 export interface SourceSyncInput {
   brandId: string;
+  selectedSources?: string[] | null;
+  selectedPaths?: SelectedPathInput[] | null;
+  limits?: SourceLimitOverrides;
 }
+
+export type WorkflowJobRequestFingerprintSummary = { [key: string]: unknown } | null;
+
+export type WorkflowJobStartReconciliationDiagnostics = { [key: string]: unknown } | null;
 
 export interface WorkflowJob {
   id: number;
@@ -408,6 +643,10 @@ export interface WorkflowJob {
   workflowType: string;
   status: string;
   taskQueue?: string | null;
+  resultSchemaVersion?: number | null;
+  resultSummary?: PublicListeningResultSummary | null;
+  requestFingerprintSummary?: WorkflowJobRequestFingerprintSummary;
+  startReconciliationDiagnostics?: WorkflowJobStartReconciliationDiagnostics;
   createdAt: string;
 }
 
@@ -452,6 +691,7 @@ brandId?: string | null;
 period?: ListRoutesPeriod;
 limit?: number;
 };
+
 export type ListRoutesPeriod = typeof ListRoutesPeriod[keyof typeof ListRoutesPeriod];
 
 

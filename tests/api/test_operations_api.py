@@ -111,6 +111,9 @@ def test_source_health_telemetry_and_evaluation_are_tenant_scoped(operations_cli
 
     assert health.status_code == 200
     assert health.json()[0]["status"] == "failed"
+    assert health.json()[0]["canonicalSource"] == "reddit"
+    assert health.json()[0]["path"] == "official_discovery"
+    assert health.json()[0]["fetchedCount"] == 0
     assert telemetry.status_code == 200
     assert telemetry.json()["costs"][0]["total_cost_usd"] == 0.25
     assert evaluation.status_code == 200

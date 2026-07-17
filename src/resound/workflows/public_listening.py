@@ -391,7 +391,7 @@ def _parse_provider_item(
     return adapter.parse(item)
 
 
-def _raw_signal(parsed: ParsedProviderSignal) -> RawSignal:
+def _raw_signal(parsed: ParsedProviderSignal, path: SourcePath) -> RawSignal:
     return RawSignal(
         source=parsed.platform,
         provider="apify",
@@ -403,6 +403,7 @@ def _raw_signal(parsed: ParsedProviderSignal) -> RawSignal:
         raw_metadata={
             "canonical_platform": parsed.platform,
             "content_kind": parsed.content_kind,
+            "path": path.value,
             parsed.identity.kind: parsed.identity.value,
             "parent_url": parsed.parent_url,
         },
@@ -555,7 +556,7 @@ def execute_public_listening_source(
                     processing = process_signal(
                         SignalProcessingRequest(
                             brand_slug=request.brand_slug,
-                            raw_signal=_raw_signal(parsed),
+                            raw_signal=_raw_signal(parsed, path),
                             brand_context=snapshot.processing.brand_context,
                             routing_config=dict(snapshot.processing.routing_config),
                             people_config=dict(snapshot.processing.people_config),

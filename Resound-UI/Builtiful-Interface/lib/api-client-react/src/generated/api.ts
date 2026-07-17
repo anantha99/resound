@@ -155,6 +155,13 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getReadinessCheckUrl = () => {
 
 
@@ -225,6 +232,13 @@ export function useReadinessCheck<TData = Awaited<ReturnType<typeof readinessChe
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getListBrandsUrl = () => {
 
 
@@ -295,6 +309,13 @@ export function useListBrands<TData = Awaited<ReturnType<typeof listBrands>>, TE
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetBrandStatsUrl = (brandId: string,
     period: '24h' | '7d' | '30d' | 'qtd',) => {
 
@@ -1078,6 +1099,83 @@ export const useStartSourceSync = <TError = ErrorType<HTTPValidationError>,
       > => {
       return useMutation(getStartSourceSyncMutationOptions(options));
     }
+
+export const getGetWorkflowUrl = (workflowId: string,) => {
+
+
+
+
+  return `/api/workflows/${workflowId}`
+}
+
+/**
+ * @summary Get Workflow
+ */
+export const getWorkflow = async (workflowId: string, options?: RequestInit): Promise<WorkflowJob> => {
+
+  return customFetch<WorkflowJob>(getGetWorkflowUrl(workflowId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkflowQueryKey = (workflowId: string,) => {
+    return [
+    `/api/workflows/${workflowId}`
+    ] as const;
+    }
+
+
+export const getGetWorkflowQueryOptions = <TData = Awaited<ReturnType<typeof getWorkflow>>, TError = ErrorType<HTTPValidationError>>(workflowId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflow>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkflowQueryKey(workflowId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkflow>>> = ({ signal }) => getWorkflow(workflowId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: workflowId !== null && workflowId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkflow>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkflowQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkflow>>>
+export type GetWorkflowQueryError = ErrorType<HTTPValidationError>
+
+
+/**
+ * @summary Get Workflow
+ */
+
+export function useGetWorkflow<TData = Awaited<ReturnType<typeof getWorkflow>>, TError = ErrorType<HTTPValidationError>>(
+ workflowId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflow>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkflowQueryOptions(workflowId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getStartListeningProfileSetupUrl = () => {
 

@@ -725,6 +725,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /workflows/{workflowId}:
+    get:
+      tags:
+      - workflows
+      summary: Get Workflow
+      operationId: getWorkflow
+      parameters:
+      - name: workflowId
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Workflowid
+      - name: X-Resound-Organization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Organization
+      - name: X-Resound-Team
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-Team
+      - name: X-Resound-User
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Resound-User
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowJob'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /listening-profiles/setup:
     post:
       tags:
@@ -1708,6 +1758,55 @@ components:
       required:
       - decision
       title: ListeningProfileSuggestionDecision
+    ObservedPublicMetrics:
+      properties:
+        metricType:
+          type: string
+          const: observed_public
+          title: Metrictype
+          default: observed_public
+        views:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Views
+        plays:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Plays
+        likes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Likes
+        replies:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Replies
+        comments:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Comments
+        shares:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Shares
+        reposts:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reposts
+        upvotes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Upvotes
+      type: object
+      title: ObservedPublicMetrics
     OwnerOption:
       properties:
         owner:
@@ -1725,6 +1824,37 @@ components:
       - label
       - hint
       title: OwnerOption
+    ParentContext:
+      properties:
+        platform:
+          type: string
+          title: Platform
+        contentKind:
+          type: string
+          enum:
+          - post
+          - video
+          title: Contentkind
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+        authorHandle:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorhandle
+        excerpt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Excerpt
+      type: object
+      required:
+      - platform
+      - contentKind
+      title: ParentContext
     Pattern:
       properties:
         id:
@@ -1913,6 +2043,92 @@ components:
       required:
       - action
       title: PublicFeedModerationInput
+    PublicListeningResultSummary:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+        status:
+          type: string
+          enum:
+          - completed
+          - partial
+          - failed
+          - cancelled
+          title: Status
+        selectedSources:
+          items:
+            type: string
+          type: array
+          title: Selectedsources
+        selectedPaths:
+          additionalProperties:
+            items:
+              type: string
+              enum:
+              - official_discovery
+              - mention_discovery
+              - official_comments
+              - mention_comments
+            type: array
+          type: object
+          title: Selectedpaths
+        sources:
+          items:
+            $ref: '#/components/schemas/WorkflowSourceResult'
+          type: array
+          title: Sources
+        sourcesOriginalCount:
+          type: integer
+          title: Sourcesoriginalcount
+        sourcesTruncatedCount:
+          type: integer
+          title: Sourcestruncatedcount
+        effectiveSignalCaps:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Effectivesignalcaps
+        fetchedCount:
+          type: integer
+          title: Fetchedcount
+          default: 0
+        processedCount:
+          type: integer
+          title: Processedcount
+          default: 0
+        resumedCount:
+          type: integer
+          title: Resumedcount
+          default: 0
+        duplicateCount:
+          type: integer
+          title: Duplicatecount
+          default: 0
+        skippedCount:
+          type: integer
+          title: Skippedcount
+          default: 0
+        costUsd:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Costusd
+          default: '0'
+        leaseOutcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Leaseoutcome
+      additionalProperties: true
+      type: object
+      required:
+      - schemaVersion
+      - status
+      - sources
+      - sourcesOriginalCount
+      - sourcesTruncatedCount
+      title: PublicListeningResultSummary
     ReadinessCheck:
       properties:
         name:
@@ -2111,6 +2327,12 @@ components:
         source:
           type: string
           title: Source
+        canonicalPlatform:
+          type: string
+          title: Canonicalplatform
+        contentKind:
+          type: string
+          title: Contentkind
         content:
           type: string
           title: Content
@@ -2147,6 +2369,8 @@ components:
       - severity
       - sentiment
       - source
+      - canonicalPlatform
+      - contentKind
       - content
       - summary
       - confidence
@@ -2154,6 +2378,26 @@ components:
       - createdAt
       - feedbackCorrect
       title: RouteAudit
+    SelectedPathInput:
+      properties:
+        source:
+          type: string
+          title: Source
+        paths:
+          items:
+            type: string
+            enum:
+            - official_discovery
+            - mention_discovery
+            - official_comments
+            - mention_comments
+          type: array
+          title: Paths
+      type: object
+      required:
+      - source
+      - paths
+      title: SelectedPathInput
     SentimentBreakdown:
       properties:
         positive:
@@ -2201,6 +2445,20 @@ components:
           - type: integer
           - type: 'null'
           title: Reach
+        canonicalPlatform:
+          type: string
+          title: Canonicalplatform
+        contentKind:
+          type: string
+          title: Contentkind
+        metrics:
+          $ref: '#/components/schemas/ObservedPublicMetrics'
+        parentContext:
+          anyOf:
+          - $ref: '#/components/schemas/ParentContext'
+          - type: 'null'
+        provenance:
+          $ref: '#/components/schemas/SignalProvenance'
         content:
           type: string
           title: Content
@@ -2218,6 +2476,10 @@ components:
       - externalId
       - url
       - authorHandle
+      - canonicalPlatform
+      - contentKind
+      - metrics
+      - provenance
       - content
       - postedAt
       - createdAt
@@ -2261,11 +2523,46 @@ components:
       - signals
       - total
       title: SignalList
+    SignalProvenance:
+      properties:
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        sourceMode:
+          type: string
+          title: Sourcemode
+        path:
+          anyOf:
+          - type: string
+            enum:
+            - official_discovery
+            - mention_discovery
+            - official_comments
+            - mention_comments
+          - type: 'null'
+          title: Path
+      type: object
+      required:
+      - sourceMode
+      title: SignalProvenance
     SourceHealth:
       properties:
         sourceType:
           type: string
           title: Sourcetype
+        canonicalSource:
+          type: string
+          title: Canonicalsource
+        path:
+          type: string
+          enum:
+          - official_discovery
+          - mention_discovery
+          - official_comments
+          - mention_comments
+          title: Path
         provider:
           type: string
           title: Provider
@@ -2290,6 +2587,28 @@ components:
         itemCount:
           type: integer
           title: Itemcount
+        fetchedCount:
+          type: integer
+          title: Fetchedcount
+        processedCount:
+          type: integer
+          title: Processedcount
+        duplicateCount:
+          type: integer
+          title: Duplicatecount
+        costUsd:
+          type: number
+          title: Costusd
+        provenance:
+          additionalProperties: true
+          type: object
+          title: Provenance
+        issues:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Issues
         errorMessage:
           anyOf:
           - type: string
@@ -2298,10 +2617,72 @@ components:
       type: object
       required:
       - sourceType
+      - canonicalSource
+      - path
       - provider
       - status
       - itemCount
+      - fetchedCount
+      - processedCount
+      - duplicateCount
+      - costUsd
+      - provenance
+      - issues
       title: SourceHealth
+    SourceLimitOverrides:
+      properties:
+        maxSignalsPerSource:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxsignalspersource
+        maxItemsPerPath:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxitemsperpath
+        maxParentsPerPath:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxparentsperpath
+        maxCommentsPerParent:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxcommentsperparent
+        maxCommentsPerPath:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxcommentsperpath
+        maxCommentsPerSource:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxcommentspersource
+        maxRunsPerSource:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Maxrunspersource
+        maxCostUsdPerSource:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          - type: 'null'
+          title: Maxcostusdpersource
+      type: object
+      title: SourceLimitOverrides
     SourceStat:
       properties:
         source:
@@ -2324,6 +2705,22 @@ components:
         brandId:
           type: string
           title: Brandid
+        selectedSources:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Selectedsources
+        selectedPaths:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/SelectedPathInput'
+            type: array
+          - type: 'null'
+          title: Selectedpaths
+        limits:
+          $ref: '#/components/schemas/SourceLimitOverrides'
       type: object
       required:
       - brandId
@@ -2378,6 +2775,27 @@ components:
           - type: string
           - type: 'null'
           title: Taskqueue
+        resultSchemaVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Resultschemaversion
+        resultSummary:
+          anyOf:
+          - $ref: '#/components/schemas/PublicListeningResultSummary'
+          - type: 'null'
+        requestFingerprintSummary:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Requestfingerprintsummary
+        startReconciliationDiagnostics:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Startreconciliationdiagnostics
         createdAt:
           type: string
           title: Createdat
@@ -2389,6 +2807,193 @@ components:
       - status
       - createdAt
       title: WorkflowJob
+    WorkflowPathResult:
+      properties:
+        path:
+          type: string
+          enum:
+          - official_discovery
+          - mention_discovery
+          - official_comments
+          - mention_comments
+          title: Path
+        status:
+          type: string
+          enum:
+          - ok
+          - partial
+          - failed
+          title: Status
+        fetchedCount:
+          type: integer
+          title: Fetchedcount
+          default: 0
+        processedCount:
+          type: integer
+          title: Processedcount
+          default: 0
+        resumedCount:
+          type: integer
+          title: Resumedcount
+          default: 0
+        duplicateCount:
+          type: integer
+          title: Duplicatecount
+          default: 0
+        skippedCount:
+          type: integer
+          title: Skippedcount
+          default: 0
+        costUsd:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Costusd
+          default: '0'
+        issues:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Issues
+        issuesOriginalCount:
+          type: integer
+          title: Issuesoriginalcount
+          default: 0
+        issuesTruncatedCount:
+          type: integer
+          title: Issuestruncatedcount
+          default: 0
+        runs:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Runs
+        runsOriginalCount:
+          type: integer
+          title: Runsoriginalcount
+          default: 0
+        runsTruncatedCount:
+          type: integer
+          title: Runstruncatedcount
+          default: 0
+        datasets:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Datasets
+        datasetsOriginalCount:
+          type: integer
+          title: Datasetsoriginalcount
+          default: 0
+        datasetsTruncatedCount:
+          type: integer
+          title: Datasetstruncatedcount
+          default: 0
+        associations:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Associations
+        associationsOriginalCount:
+          type: integer
+          title: Associationsoriginalcount
+          default: 0
+        associationsTruncatedCount:
+          type: integer
+          title: Associationstruncatedcount
+          default: 0
+      additionalProperties: true
+      type: object
+      required:
+      - path
+      - status
+      title: WorkflowPathResult
+    WorkflowSourceResult:
+      properties:
+        source:
+          type: string
+          title: Source
+        platform:
+          type: string
+          title: Platform
+        status:
+          type: string
+          enum:
+          - ok
+          - partial
+          - failed
+          title: Status
+        maxSignalsPerSource:
+          type: integer
+          title: Maxsignalspersource
+        fetchedCount:
+          type: integer
+          title: Fetchedcount
+          default: 0
+        processedCount:
+          type: integer
+          title: Processedcount
+          default: 0
+        resumedCount:
+          type: integer
+          title: Resumedcount
+          default: 0
+        duplicateCount:
+          type: integer
+          title: Duplicatecount
+          default: 0
+        skippedCount:
+          type: integer
+          title: Skippedcount
+          default: 0
+        costUsd:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Costusd
+          default: '0'
+        capReached:
+          type: boolean
+          title: Capreached
+          default: false
+        paths:
+          items:
+            $ref: '#/components/schemas/WorkflowPathResult'
+          type: array
+          title: Paths
+        pathsOriginalCount:
+          type: integer
+          title: Pathsoriginalcount
+          default: 0
+        pathsTruncatedCount:
+          type: integer
+          title: Pathstruncatedcount
+          default: 0
+        issues:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Issues
+        issuesOriginalCount:
+          type: integer
+          title: Issuesoriginalcount
+          default: 0
+        issuesTruncatedCount:
+          type: integer
+          title: Issuestruncatedcount
+          default: 0
+      additionalProperties: true
+      type: object
+      required:
+      - source
+      - platform
+      - status
+      - maxSignalsPerSource
+      - paths
+      title: WorkflowSourceResult
 servers:
 - url: /api
   description: Base API path

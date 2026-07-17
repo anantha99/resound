@@ -275,6 +275,45 @@
     padding-inline: 16px;
   }
 
+  .resound-page-shell {
+    width: 100%;
+    padding-inline: 16px;
+  }
+
+  .resound-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+
+  .resound-detail-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .resound-health-row {
+    grid-template-columns: 88px minmax(0, 1fr) 78px !important;
+  }
+
+  .resound-health-row > :last-child {
+    display: none;
+  }
+
+  .resound-memory-row {
+    grid-template-columns: 110px minmax(0, 1fr) !important;
+    gap: 12px;
+  }
+
+  .resound-memory-row > :nth-child(n + 3) {
+    margin-left: 122px;
+    grid-column: 1 / -1;
+  }
+
+  .resound-parent-context {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .resound-masthead {
     align-items: flex-start;
     flex-wrap: wrap;

@@ -14,6 +14,8 @@ export interface RouteAudit {
   severity: string;
   sentiment: string;
   source: string;
+  canonicalPlatform: string;
+  contentKind: string;
   content: string;
   summary: string;
   confidence: number;

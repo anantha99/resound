@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from resound.api.app import app
 from resound.api.openapi import client_openapi_schema
-from resound.memory import SqlMemory
+from resound.memory import SignalRow, SqlMemory
 from resound.models import ActionClass, Classification, RawSignal, Route, Sentiment, Severity
 
 
@@ -15,6 +15,7 @@ from resound.models import ActionClass, Classification, RawSignal, Route, Sentim
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "api.db"
     monkeypatch.setenv("RESOUND_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("RESOUND_REQUIRE_TENANT_HEADER", "false")
     return TestClient(app)
 
 
@@ -85,8 +86,56 @@ def test_list_signals_projects_memory_rows(client, seeded_route):
     detail = body["signals"][0]
     assert detail["signal"]["id"] == seeded_route["signal_id"]
     assert detail["signal"]["source"] == "reddit"
+    assert detail["signal"]["canonicalPlatform"] == "reddit"
+    assert detail["signal"]["contentKind"] == "post"
+    assert detail["signal"]["metrics"]["upvotes"] == 42
+    assert detail["signal"]["metrics"]["comments"] == 7
+    assert detail["signal"]["provenance"]["sourceMode"] == "public_listening"
     assert detail["classification"]["summary"] == "Repeated shipping damage"
     assert detail["route"]["owner"] == "@retail-ops"
+
+
+def test_signal_source_aliases_normalize_to_x(client, seeded_route):
+    memory = SqlMemory()
+    with memory.session() as session:
+        signal = session.get(SignalRow, seeded_route["signal_id"])
+        signal.source = "x_public"
+        session.commit()
+
+    response = client.get("/api/signals", params={"source": "twitter", "period": "qtd"})
+
+    assert response.status_code == 200
+    assert response.json()["signals"][0]["signal"]["canonicalPlatform"] == "x"
+    assert response.json()["signals"][0]["signal"]["contentKind"] == "post"
+
+
+def test_comment_signal_projects_parent_context_metrics_and_path(client, seeded_route):
+    memory = SqlMemory()
+    with memory.session() as session:
+        signal = session.get(SignalRow, seeded_route["signal_id"])
+        signal.source = "instagram"
+        signal.raw_metadata = {
+            "content_kind": "comment",
+            "path": "mention_comments",
+            "likes": 1800,
+            "reply_count": 93,
+            "parent_url": "https://instagram.com/p/parent",
+            "parent_author_handle": "@acme",
+            "parent_excerpt": "New look. Same product.",
+        }
+        session.commit()
+
+    signal = client.get(f"/api/signals/{seeded_route['signal_id']}").json()["signal"]
+
+    assert signal["contentKind"] == "comment"
+    assert signal["metrics"] == {
+        "metricType": "observed_public", "views": None, "plays": None,
+        "likes": 1800, "replies": 93, "comments": None, "shares": None,
+        "reposts": None, "upvotes": None,
+    }
+    assert signal["parentContext"]["contentKind"] == "post"
+    assert signal["parentContext"]["excerpt"] == "New look. Same product."
+    assert signal["provenance"]["path"] == "mention_comments"
 
 
 def test_reroute_appends_handoff_and_projects_current_owner(client, seeded_route):
@@ -133,5 +182,12 @@ def test_exported_openapi_schema_matches_react_client_base_path():
     assert schema["servers"] == [{"url": "/api", "description": "Base API path"}]
     assert "/brands" in schema["paths"]
     assert "/routes/{routeId}/reroute" in schema["paths"]
+    assert "/workflows/{workflowId}" in schema["paths"]
+    workflow = schema["components"]["schemas"]["WorkflowJob"]["properties"]
+    assert "resultSummary" in workflow
+    result = schema["components"]["schemas"]["PublicListeningResultSummary"]["properties"]
+    assert {"effectiveSignalCaps", "sourcesTruncatedCount"} <= result.keys()
+    signal = schema["components"]["schemas"]["Signal"]["properties"]
+    assert {"contentKind", "metrics", "parentContext", "provenance"} <= signal.keys()
     assert "/api/brands" not in schema["paths"]
     assert "/api/v1/brands" not in schema["paths"]

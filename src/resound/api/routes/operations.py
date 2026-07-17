@@ -24,16 +24,32 @@ def list_source_health(
     return [
         schemas.SourceHealth(
             source_type=row.source_type,
+            canonical_source=row.canonical_source,
+            path=row.path,
             provider=row.provider,
             status=row.status,
             last_success_at=row.last_success_at.isoformat() if row.last_success_at else None,
             last_failure_at=row.last_failure_at.isoformat() if row.last_failure_at else None,
             last_run_id=row.last_run_id,
             item_count=row.item_count,
+            fetched_count=row.fetched_count,
+            processed_count=row.processed_count,
+            duplicate_count=row.duplicate_count,
+            cost_usd=row.cost_usd,
+            provenance=row.provenance or {},
+            issues=[_safe_issue(issue) for issue in (row.issues or [])],
             error_message=row.error_message,
         )
         for row in memory.list_source_health(tenant.organization_id, brand.id)
     ]
+
+
+def _safe_issue(issue: dict) -> dict:
+    return {
+        key: issue[key]
+        for key in ("path", "code", "issue_class", "message", "retryable", "preserved_work")
+        if key in issue
+    }
 
 
 @router.get("/telemetry/llm", operation_id="getLlmTelemetry", response_model=schemas.LLMTelemetry)

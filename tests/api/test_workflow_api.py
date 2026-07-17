@@ -5,12 +5,16 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from resound.api.app import create_app
 from resound.api.dependencies import get_workflow_starter, reset_memory_cache
-from resound.memory import SqlMemory
+from resound.config import BrandConfig
+from resound.memory import SqlMemory, WorkflowJobRow
 from resound.models import RawSignal
+from resound.social.config import approval_envelope_fingerprint
 from resound.workflows.client import WorkflowStartResult
+from resound.workflows.result_persistence import bounded_result_summary
 
 
 class FakeWorkflowStarter:
@@ -41,6 +45,7 @@ def production_client(tmp_path, monkeypatch):
     monkeypatch.setenv("RESOUND_REQUIRE_TENANT_HEADER", "true")
     reset_memory_cache()
     app = create_app()
+    monkeypatch.setattr("resound.api.routes.workflows.load_brand_config", lambda _slug: _brand())
     starter = FakeWorkflowStarter()
     app.dependency_overrides[get_workflow_starter] = lambda: starter
     client = TestClient(app)
@@ -57,12 +62,57 @@ def _seed_brand() -> tuple[int, int]:
     return org, brand.id
 
 
+def _brand() -> BrandConfig:
+    source = {
+        "enabled": True,
+        "preflight_required": False,
+        "manifest_version": "test-1",
+        "paths": {
+            "official_discovery": {"enabled": True, "selectors": ["https://acme.test"]},
+            "mention_discovery": {"enabled": True, "selectors": ["Acme"]},
+        },
+        "limits": {
+            "max_signals_per_source": 100,
+            "max_items_per_path": 25,
+            "max_parents_per_path": 10,
+            "max_comments_per_parent": 5,
+            "max_comments_per_path": 25,
+            "max_comments_per_source": 50,
+            "max_runs_per_source": 10,
+            "max_cost_usd_per_source": "1.00",
+            "page_size": 100,
+            "deadline_reserve_seconds": 30,
+        },
+        "provider_evidence": [{
+            "actor_id": "owner/reddit", "build_id": "build", "build_number": "1",
+            "provider_declared_input_schema_reference": "provider://input",
+            "provider_declared_input_schema_sha256": "a" * 64,
+            "provider_declared_output_schema_reference": "provider://output",
+            "provider_declared_output_schema_sha256": "b" * 64,
+            "fixture_derived_shape_reference": "fixtures/reddit.json",
+            "fixture_derived_shape_sha256": "c" * 64,
+            "canary_required": False, "charge_quantum_usd": "0.001",
+            "minimum_call_charge_usd": "0.01", "conservative_request_cost_usd": "0.05",
+        }],
+    }
+    source["approved_envelope_fingerprint"] = approval_envelope_fingerprint(source)
+    return BrandConfig(
+        slug="acme", sources={"reddit": source}, understanding="Acme context",
+        routing={"rules": []}, people={"people": {}},
+    )
+
+
 def test_source_sync_command_returns_workflow_identity_without_blocking(production_client):
     _seed_brand()
 
     response = production_client.post(
         "/api/workflows/source-sync",
-        json={"brandId": "acme"},
+        json={
+            "brandId": "acme",
+            "selectedSources": ["reddit"],
+            "selectedPaths": [{"source": "reddit", "paths": ["official_discovery"]}],
+            "limits": {"maxSignalsPerSource": 9},
+        },
         headers={"X-Resound-Organization": "org-a"},
     )
 
@@ -71,8 +121,87 @@ def test_source_sync_command_returns_workflow_identity_without_blocking(producti
     assert body["status"] == "queued"
     assert body["runId"] == "run-public"
     assert body["workflowType"] == "PublicListeningSyncWorkflow"
-    assert body["workflowId"].startswith("public-listening-sync-acme-")
+    assert body["workflowId"].startswith(f"public-listening-sync:org:{_seed_brand()[0]}:")
+    assert body["resultSummary"] is None
+    assert body["requestFingerprintSummary"]["reddit"]["value"]
     assert production_client.workflow_starter.calls[0][0] == "public"
+    request = production_client.workflow_starter.calls[0][2]
+    assert request.sources[0].limits.max_signals_per_source == 9
+
+
+def test_source_sync_rejects_upward_signal_cap_and_missing_tenant(production_client):
+    _seed_brand()
+    payload = {
+        "brandId": "acme",
+        "selectedSources": ["reddit"],
+        "limits": {"maxSignalsPerSource": 101},
+    }
+
+    missing = production_client.post("/api/workflows/source-sync", json=payload)
+    rejected = production_client.post(
+        "/api/workflows/source-sync", json=payload,
+        headers={"X-Resound-Organization": "org-a"},
+    )
+
+    assert missing.status_code == 401
+    assert rejected.status_code == 422
+    assert "may only lower" in rejected.json()["detail"]
+
+
+@pytest.mark.parametrize("terminal_status", ["completed", "partial", "failed"])
+def test_workflow_retrieval_is_tenant_scoped_and_projects_bounded_results(
+    production_client, terminal_status,
+):
+    org, brand_id = _seed_brand()
+    memory = SqlMemory()
+    other_org = memory.ensure_organization("org-b", "Org B")
+    summary = bounded_result_summary({
+        "schema_version": "1", "status": terminal_status, "selected_sources": ["reddit"],
+        "selected_paths": {"reddit": ["official_discovery"]},
+        "effective_signal_caps": {"reddit": 9}, "processed_count": 3,
+        "sources": [{
+            "source": "reddit", "platform": "reddit",
+            "status": "ok" if terminal_status == "completed" else terminal_status,
+            "max_signals_per_source": 9, "processed_count": 3, "cap_reached": False,
+            "paths": [{
+                "path": "official_discovery",
+                "status": "ok" if terminal_status == "completed" else terminal_status,
+                "processed_count": 3,
+            }],
+        }],
+    })
+    job_id = memory.create_workflow_job(
+        workflow_id="bounded-job", workflow_type="PublicListeningSyncWorkflow",
+        organization_id=org, brand_id=brand_id, status=terminal_status,
+        request_fingerprint_summary={"reddit": {"value": "a" * 64}},
+    )
+    null_job = memory.create_workflow_job(
+        workflow_id="running-job", workflow_type="PublicListeningSyncWorkflow",
+        organization_id=org, brand_id=brand_id, status="running",
+    )
+    with Session(memory.engine) as session:
+        job = session.get(WorkflowJobRow, job_id)
+        job.result_schema_version = 1
+        job.result_summary = summary
+        session.commit()
+
+    own = production_client.get(
+        "/api/workflows/bounded-job", headers={"X-Resound-Organization": "org-a"},
+    )
+    running = production_client.get(
+        "/api/workflows/running-job", headers={"X-Resound-Organization": "org-a"},
+    )
+    hidden = production_client.get(
+        "/api/workflows/bounded-job", headers={"X-Resound-Organization": "org-b"},
+    )
+
+    assert null_job > 0 and other_org > 0
+    assert own.status_code == 200
+    assert own.json()["resultSummary"]["status"] == terminal_status
+    assert own.json()["resultSummary"]["effectiveSignalCaps"] == {"reddit": 9}
+    assert own.json()["resultSummary"]["sources"][0]["pathsTruncatedCount"] == 0
+    assert running.json()["resultSummary"] is None
+    assert hidden.status_code == 404
 
 
 def test_report_generation_command_starts_temporal_workflow(production_client):

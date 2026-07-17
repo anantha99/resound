@@ -5,7 +5,12 @@
  * Resound customer signal intelligence API
  * OpenAPI spec version: 0.1.0
  */
+import type { SelectedPathInput } from './selectedPathInput';
+import type { SourceLimitOverrides } from './sourceLimitOverrides';
 
 export interface SourceSyncInput {
   brandId: string;
+  selectedSources?: string[] | null;
+  selectedPaths?: SelectedPathInput[] | null;
+  limits?: SourceLimitOverrides;
 }

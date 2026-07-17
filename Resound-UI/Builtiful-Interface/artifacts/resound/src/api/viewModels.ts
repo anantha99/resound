@@ -32,9 +32,19 @@ export interface SignalView {
   routeId: number;
   brandId: string;
   source: string;
+  platform: string;
+  contentKind: string;
   authorHandle: string;
   authorMeta: string;
   reach: string;
+  metrics: string;
+  parentContext?: {
+    label: string;
+    excerpt: string;
+    url?: string | null;
+  };
+  provenancePath?: string;
+  canonicalUrl: string;
   content: string;
   postedAt: string;
   area: Area;
@@ -86,10 +96,20 @@ export function toSignalView(detail: SignalDetail): SignalView {
     id: detail.signal.id,
     routeId: detail.route.id,
     brandId: detail.signal.brandId,
-    source: formatSource(detail.signal.source),
+    source: formatSourceLabel(detail.signal.canonicalPlatform, detail.signal.contentKind),
+    platform: formatSource(detail.signal.canonicalPlatform),
+    contentKind: detail.signal.contentKind,
     authorHandle: detail.signal.authorHandle || "unknown",
     authorMeta: detail.signal.authorMeta || "source metadata unavailable",
     reach: formatReach(detail.signal.source, detail.signal.reach),
+    metrics: formatMetrics(detail.signal.metrics),
+    parentContext: detail.signal.parentContext ? {
+      label: `On ${formatSource(detail.signal.parentContext.platform)} ${detail.signal.parentContext.contentKind}`,
+      excerpt: [detail.signal.parentContext.authorHandle, detail.signal.parentContext.excerpt].filter(Boolean).join(" · ") || "Parent content",
+      url: detail.signal.parentContext.url,
+    } : undefined,
+    provenancePath: detail.signal.provenance.path ?? undefined,
+    canonicalUrl: detail.signal.url,
     content: detail.signal.content,
     postedAt: relativeTime(detail.signal.postedAt),
     area: normalizeArea(detail.classification.area),
@@ -111,10 +131,14 @@ export function routeAuditToSignalView(route: RouteAudit, brandId: string): Sign
     id: route.signalId,
     routeId: route.id,
     brandId,
-    source: formatSource(route.source),
+    source: formatSourceLabel(route.canonicalPlatform, route.contentKind),
+    platform: formatSource(route.canonicalPlatform),
+    contentKind: route.contentKind,
     authorHandle: "memory",
     authorMeta: "routing audit",
     reach: "recorded",
+    metrics: "",
+    canonicalUrl: "",
     content: route.content,
     postedAt: relativeTime(route.createdAt),
     area: normalizeArea(route.area),
@@ -151,9 +175,33 @@ export function apiPeriod(period: "24h" | "7d" | "30d" | "QTD"): "24h" | "7d" | 
 export function formatSource(source: string): string {
   const normalized = source.toLowerCase();
   if (normalized === "g2") return "G2";
-  if (normalized === "twitter") return "Twitter";
+  if (["twitter", "x", "x_public"].includes(normalized)) return "X";
+  if (["youtube", "youtube_comments"].includes(normalized)) return "YouTube";
+  if (normalized === "tiktok") return "TikTok";
   if (normalized === "reddit") return "Reddit";
   return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+export function formatSourceLabel(platform: string, contentKind: string): string {
+  return `${formatSource(platform)} ${contentKind}`;
+}
+
+export function formatPath(path?: string | null): string {
+  if (!path) return "Unknown path";
+  return path.replaceAll("_", " ").replace(/^./, value => value.toUpperCase());
+}
+
+type Metrics = SignalDetail["signal"]["metrics"];
+
+function formatMetrics(metrics: Metrics): string {
+  const values: Array<[number | null | undefined, string]> = [
+    [metrics.views, "views"], [metrics.plays, "plays"], [metrics.likes, "likes"],
+    [metrics.replies, "replies"], [metrics.comments, "comments"], [metrics.shares, "shares"],
+    [metrics.reposts, "reposts"], [metrics.upvotes, "upvotes"],
+  ];
+  const rendered = values.filter(([value]) => value != null).slice(0, 3)
+    .map(([value, label]) => `${Number(value).toLocaleString()} ${label}`);
+  return rendered.length ? `Observed · ${rendered.join(" · ")}` : "Observed public metrics unavailable";
 }
 
 function formatReach(source: string, reach?: number | null): string {
